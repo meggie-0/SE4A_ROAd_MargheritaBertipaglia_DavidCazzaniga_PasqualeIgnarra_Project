@@ -1,0 +1,114 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Pagina-1" id="IDMSp7__3iEpqqyqZVUW">
+    <mxGraphModel dx="1230" dy="544" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-5" parent="1" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="Robotaxi" vertex="1">
+          <mxGeometry height="190" width="290" x="49" y="93" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-6" parent="4ygdosTS_3QX8qdu6_m1-5" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="- state: RobotaxiState" vertex="1">
+          <mxGeometry height="26" width="290" y="26" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-7" parent="4ygdosTS_3QX8qdu6_m1-5" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" value="" vertex="1">
+          <mxGeometry height="8" width="290" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-8" parent="4ygdosTS_3QX8qdu6_m1-5" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ assignRide(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ startRide(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ completeRide(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ setUnavailable(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ setAvailable(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ sendToMaintenance(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ finishMaintenance(): void&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;font-size: 12px;&quot;&gt;+ setState(state: RobotaxiState): void&lt;/span&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="130" width="290" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-17" parent="1" style="verticalAlign=top;align=left;overflow=fill;html=1;whiteSpace=wrap;" value="&lt;p style=&quot;margin:0px;margin-top:4px;text-align:center;&quot;&gt;&lt;i&gt;&amp;lt;&amp;lt;Interface&amp;gt;&amp;gt;&lt;/i&gt;&lt;br&gt;&lt;b&gt;RobotaxiState&lt;/b&gt;&lt;/p&gt;&lt;hr size=&quot;1&quot; style=&quot;border-style:solid;&quot;&gt;&lt;p style=&quot;margin:0px;margin-left:4px;&quot;&gt;+ assignRide(r: Robotaxi): void&lt;br&gt;+ startRide(r: Robotaxi): void&lt;br&gt;+ completeRide(r: Robotaxi): void&lt;br&gt;+ setUnavailable(r: Robotaxi): void&lt;br&gt;+ setAvailable(r: Robotaxi): void&lt;br&gt;+ sendToMaintenance(r: Robotaxi): void&lt;br&gt;+ finishMaintenance(r: Robotaxi): void&lt;/p&gt;" vertex="1">
+          <mxGeometry height="160" width="280" x="530" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-18" edge="1" parent="1" source="4ygdosTS_3QX8qdu6_m1-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="188" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-19" connectable="0" parent="4ygdosTS_3QX8qdu6_m1-18" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.7748" as="geometry">
+            <mxPoint x="-11" y="-9" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-20" connectable="0" parent="4ygdosTS_3QX8qdu6_m1-18" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+          <mxGeometry relative="1" x="-0.7748" as="geometry">
+            <mxPoint x="154" y="-8" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-21" connectable="0" parent="4ygdosTS_3QX8qdu6_m1-18" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="State" vertex="1">
+          <mxGeometry relative="1" x="0.0846" as="geometry">
+            <mxPoint x="-13" y="2" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-22" edge="1" parent="1" source="4ygdosTS_3QX8qdu6_m1-24" style="endArrow=block;endSize=16;endFill=0;html=1;rounded=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;edgeStyle=elbowEdgeStyle;elbow=vertical;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" target="4ygdosTS_3QX8qdu6_m1-17" value="">
+          <mxGeometry relative="1" width="160" as="geometry">
+            <mxPoint x="540" y="310" as="sourcePoint" />
+            <mxPoint x="700" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-24" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=none;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="Idle" vertex="1">
+          <mxGeometry height="110" width="240" x="290" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-25" parent="4ygdosTS_3QX8qdu6_m1-24" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ assignRide(r: Robotaxi): void" vertex="1">
+          <mxGeometry height="26" width="240" y="26" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-26" parent="4ygdosTS_3QX8qdu6_m1-24" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ setUnavailable(r: Robotaxi): void" vertex="1">
+          <mxGeometry height="26" width="240" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-27" parent="4ygdosTS_3QX8qdu6_m1-24" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ sendToMaintenance(r: Robotaxi): void" vertex="1">
+          <mxGeometry height="32" width="240" y="78" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-28" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=none;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="Assigned" vertex="1">
+          <mxGeometry height="52" width="240" x="550" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-29" parent="4ygdosTS_3QX8qdu6_m1-28" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ startRide(r: Robotaxi): void" vertex="1">
+          <mxGeometry height="26" width="240" y="26" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-36" edge="1" parent="1" style="endArrow=none;html=1;edgeStyle=orthogonalEdgeStyle;rounded=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="4ygdosTS_3QX8qdu6_m1-28" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="670" y="320" as="sourcePoint" />
+            <mxPoint x="670" y="370" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-40" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=none;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="InService" vertex="1">
+          <mxGeometry height="52" width="240" x="820" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-41" parent="4ygdosTS_3QX8qdu6_m1-40" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ startRide(r: Robotaxi): void" vertex="1">
+          <mxGeometry height="26" width="240" y="26" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-42" edge="1" parent="1" style="endArrow=none;html=1;edgeStyle=orthogonalEdgeStyle;rounded=0;entryX=0.578;entryY=-0.043;entryDx=0;entryDy=0;entryPerimeter=0;" target="4ygdosTS_3QX8qdu6_m1-40" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="670" y="330" as="sourcePoint" />
+            <mxPoint x="680" y="410" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-43" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=none;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="Unavailable" vertex="1">
+          <mxGeometry height="70" width="240" x="1100" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-44" parent="4ygdosTS_3QX8qdu6_m1-43" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ setAvailable(r: Robotaxi): void&lt;div&gt;+ sendToMaintenance(r: Robotaxi): void&lt;/div&gt;" vertex="1">
+          <mxGeometry height="44" width="240" y="26" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-45" edge="1" parent="1" style="endArrow=none;html=1;edgeStyle=orthogonalEdgeStyle;rounded=0;entryX=0.476;entryY=-0.043;entryDx=0;entryDy=0;entryPerimeter=0;" target="4ygdosTS_3QX8qdu6_m1-43" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="950" y="330" as="sourcePoint" />
+            <mxPoint x="1249" y="400" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-46" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=none;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="Maintenance" vertex="1">
+          <mxGeometry height="50" width="240" x="981" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-47" parent="4ygdosTS_3QX8qdu6_m1-46" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" value="+ finishMaintenance(r: Robotaxi): void" vertex="1">
+          <mxGeometry height="24" width="240" y="26" as="geometry" />
+        </mxCell>
+        <mxCell id="4ygdosTS_3QX8qdu6_m1-49" edge="1" parent="1" style="endArrow=none;html=1;edgeStyle=orthogonalEdgeStyle;rounded=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1084" y="330" />
+            </Array>
+            <mxPoint x="1083" y="330" as="sourcePoint" />
+            <mxPoint x="1084" y="550" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
