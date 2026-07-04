@@ -1,0 +1,106 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+participant "p:PassengerClient" as P
+participant "api:APIGateway" as API
+participant "rrm:RideRequestManager" as RRM
+participant "pm:PersistenceManager" as PM
+database "db:Database" as DB
+participant "nm:NotificationManager" as NM
+
+P -> API : submitAdvanceBooking(pickup, destination, timeWindow)
+activate P
+activate API
+
+API -> RRM : submitAdvance(passengerId, pickup, destination, timeWindow)
+activate RRM
+
+RRM -> PM : checkConflicts(passengerId, timeWindow)
+activate PM
+
+PM -> DB : findOverlappingBookings(passengerId, timeWindow)
+activate DB
+DB --> PM : conflicts
+deactivate DB
+
+PM --> RRM : conflicts
+deactivate PM
+
+alt no conflict
+    RRM -> PM : reserve(advanceRequest)
+    activate PM
+
+    PM -> DB : insertBooking(advanceRequest)
+    activate DB
+    DB --> PM : bookingId
+    deactivate DB
+
+    PM --> RRM : bookingConfirmed
+    deactivate PM
+
+    RRM --> API : advanceBookingConfirmed(bookingId)
+    API --> P : booking confirmation
+
+    RRM ->> NM : update(BookingConfirmedEvent)
+    activate NM
+    NM ->> P : push(BookingConfirmedEvent)
+    deactivate NM
+
+else conflict found
+    RRM --> API : bookingRejected(conflictReason)
+    API --> P : conflict error
+end
+
+deactivate RRM
+deactivate API
+deactivate P
+
+@enduml

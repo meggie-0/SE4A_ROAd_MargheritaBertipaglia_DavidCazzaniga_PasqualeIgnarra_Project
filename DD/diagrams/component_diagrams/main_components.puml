@@ -1,0 +1,132 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam linetype spline
+skinparam nodesep 45
+skinparam ranksep 40
+
+skinparam component {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+}
+
+skinparam interface {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+}
+
+skinparam package {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+}
+
+skinparam database {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+}
+
+skinparam node {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+}
+
+top to bottom direction
+
+component "Passenger Client" as PassengerClient
+component "Fleet Operator" as FleetOperator
+
+package "Backend" as Backend {
+
+    component "API Gateway" as APIGateway
+
+    component "Authentication Manager" as AuthenticationManager
+    component "Ride Request Manager" as RideRequestManager
+    component "Fleet Monitor" as FleetMonitor
+    component "Mode Controller" as ModeController
+    component "Maintenance Manager" as MaintenanceManager
+    component "Rebalancing Manager" as RebalancingManager
+
+    component "Allocation Manager" as AllocationManager
+    component "Persistence Manager" as PersistenceManager
+    component "External Services Gateway" as ExternalServicesGateway
+    component "Notification Manager" as NotificationManager
+
+    () "IClientAPI" as IClientAPI
+    () "IOperatorAPI" as IOperatorAPI
+
+    () "IAuthenticationService" as IAuthenticationService
+    () "IRideRequestService" as IRideRequestService
+    () "IFleetMonitorService" as IFleetMonitorService
+    () "IModeControlService" as IModeControlService
+    () "IMaintenanceService" as IMaintenanceService
+
+    () "IAllocationService" as IAllocationService
+    () "IPersistenceService" as IPersistenceService
+    () "IExternalServices" as IExternalServices
+    () "INotificationService" as INotificationService
+}
+
+database "Database" as DB
+
+node "External Systems\n\nmaps, traffic,\ndemand,\nrobotaxi fleet" as ExternalSystems
+
+PassengerClient -(0- IClientAPI : uses
+FleetOperator -(0- IOperatorAPI : uses
+
+APIGateway -( IClientAPI
+APIGateway -- IOperatorAPI
+
+APIGateway ..> IAuthenticationService : uses
+APIGateway ..> IRideRequestService : uses
+APIGateway ..> IFleetMonitorService : uses
+APIGateway ..> IModeControlService : uses
+APIGateway ..> IMaintenanceService : uses
+
+AuthenticationManager -up- IAuthenticationService
+RideRequestManager -up- IRideRequestService
+FleetMonitor -up- IFleetMonitorService
+ModeController -up- IModeControlService
+MaintenanceManager -up- IMaintenanceService
+
+AllocationManager -up- IAllocationService
+PersistenceManager -up- IPersistenceService
+ExternalServicesGateway -up- IExternalServices
+NotificationManager -up- INotificationService
+
+RideRequestManager ..> IPersistenceService : uses
+RideRequestManager ..> IAllocationService : uses
+RideRequestManager ..> INotificationService : publishes events
+
+AllocationManager ..> IExternalServices : uses ETA data
+
+FleetMonitor ..> IPersistenceService : stores state
+FleetMonitor ..> IExternalServices : reads telemetry
+
+ModeController ..> IAllocationService : changes strategy
+ModeController ..> INotificationService : publishes events
+
+MaintenanceManager ..> IFleetMonitorService : updates availability
+MaintenanceManager ..> IPersistenceService : stores status
+MaintenanceManager ..> INotificationService : publishes events
+
+RebalancingManager ..> IFleetMonitorService : reads fleet status
+RebalancingManager ..> IExternalServices : reads demand and traffic
+RebalancingManager ..> IPersistenceService : stores plans
+RebalancingManager ..> INotificationService : publishes events
+
+PersistenceManager --> DB : persists data
+ExternalServicesGateway --> ExternalSystems : adapts external APIs
+
+@enduml

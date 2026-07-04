@@ -1,0 +1,124 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+participant "esg:ExternalServicesGateway" as ESG
+participant "mc:ModeController" as MC
+participant "am:AllocationManager" as AM
+participant "pm:PersistenceManager" as PM
+participant "nm:NotificationManager" as NM
+participant "api:APIGateway" as API
+participant "operatorClient:FleetOperatorClient" as Operator
+
+autonumber
+
+== Automatic strategy switching in Auto Mode ==
+
+ESG ->> MC : onTrafficLevel(level)
+activate MC
+
+MC -> MC : checkAutoMode()
+MC -> MC : checkHysteresis(level)
+
+alt autoMode enabled and hysteresis satisfied
+    MC -> AM : setActiveStrategy(strategy)
+    activate AM
+    AM --> MC : strategyUpdated
+    deactivate AM
+
+    MC -> PM : update(modeConfig)
+    activate PM
+    PM --> MC : ok
+    deactivate PM
+
+    MC ->> NM : update(StrategyChangedEvent)
+    activate NM
+    NM ->> Operator : push(StrategyChangedEvent)
+    deactivate NM
+
+else hysteresis not satisfied
+    MC -> MC : keepCurrentStrategy()
+
+else manualMode enabled
+    MC -> MC : ignoreAutomaticSwitch()
+end
+
+deactivate MC
+
+== Human manual override ==
+
+Operator -> API : setManualStrategy(strategy)
+activate API
+
+API -> MC : setManual(strategy)
+activate MC
+
+MC -> AM : setActiveStrategy(strategy)
+activate AM
+AM --> MC : strategyUpdated
+deactivate AM
+
+MC -> PM : update(modeConfig)
+activate PM
+PM --> MC : ok
+deactivate PM
+
+MC --> API : manualModeEnabled
+deactivate MC
+
+API --> Operator : manual override confirmation
+deactivate API
+
+MC ->> NM : update(ManualOverrideEvent)
+activate NM
+NM ->> Operator : push(ManualOverrideEvent)
+deactivate NM
+
+@enduml

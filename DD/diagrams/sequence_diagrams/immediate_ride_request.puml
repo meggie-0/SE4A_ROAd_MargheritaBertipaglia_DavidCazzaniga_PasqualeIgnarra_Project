@@ -1,0 +1,124 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+participant "p:PassengerClient" as P
+participant "api:APIGateway" as API
+participant "rrm:RideRequestManager" as RRM
+participant "pm:PersistenceManager" as PM
+database "db:Database" as DB
+participant "fm:FleetMonitor" as FM
+participant "am:AllocationManager" as AM
+participant "esg:ExternalServicesGateway" as ESG
+participant "nm:NotificationManager" as NM
+
+P -> API : submitImmediateRide(pickup, destination)
+activate P
+activate API
+
+API -> RRM : submitImmediate(passengerId, pickup, destination)
+activate RRM
+
+RRM -> PM : create(request)
+activate PM
+
+PM -> DB : insertRideRequest(request)
+activate DB
+DB --> PM : requestId
+deactivate DB
+
+PM --> RRM : rideRequest
+deactivate PM
+
+RRM -> FM : getCandidates(pickup)
+activate FM
+FM --> RRM : candidates
+deactivate FM
+
+RRM -> AM : allocate(request, candidates)
+activate AM
+
+AM -> ESG : getETA(candidates, pickup)
+activate ESG
+ESG --> AM : etaList
+deactivate ESG
+
+AM --> RRM : selectedRobotaxi
+deactivate AM
+
+RRM -> FM : assign(selectedRobotaxi, request)
+activate FM
+FM --> RRM : assignmentConfirmed
+deactivate FM
+
+RRM -> PM : reserve(request, selectedRobotaxi)
+activate PM
+
+PM -> DB : updateAssignment(request, selectedRobotaxi)
+activate DB
+DB --> PM : ok
+deactivate DB
+
+PM --> RRM : reservationConfirmed
+deactivate PM
+
+RRM --> API : rideConfirmed(rideId, robotaxi, ETA)
+API --> P : ride confirmation
+
+RRM ->> NM : update(RideAssignedEvent)
+activate NM
+NM ->> P : push(RideAssignedEvent)
+deactivate NM
+
+deactivate RRM
+deactivate API
+deactivate P
+
+@enduml
