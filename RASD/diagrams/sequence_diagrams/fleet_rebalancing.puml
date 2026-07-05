@@ -1,0 +1,102 @@
+@startuml
+
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    ActorBorderColor #444444
+    ActorBackgroundColor white
+    ActorFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+participant "road:ROAdSystem" as ROAD
+participant "demand:ExternalDemandDataService" as DEMAND
+participant "fleet:Fleet" as FLEET
+actor "operator:FleetOperator" as OP
+participant "selectedRobotaxis:RobotaxiGroup" as TAXIS
+
+ROAD -> DEMAND : requestDemandData()
+activate ROAD
+activate DEMAND
+DEMAND --> ROAD : demandData
+deactivate DEMAND
+
+ROAD -> ROAD : identifyHighDemandZones()
+
+ROAD -> FLEET : getIdleRobotaxis()
+activate FLEET
+FLEET --> ROAD : idleRobotaxis
+deactivate FLEET
+
+ROAD -> ROAD : selectRebalancingRobotaxis()
+
+alt manual approval required
+    ROAD -> OP : suggestRebalancing(targetZone, selectedRobotaxis)
+    activate OP
+    OP --> ROAD : approveRebalancing()
+    deactivate OP
+
+    ROAD -> TAXIS : sendRebalancingInstruction(targetZone)
+    activate TAXIS
+    TAXIS --> ROAD : rebalancingStarted
+    deactivate TAXIS
+
+    ROAD -> ROAD : updateRebalancingStatus(TRIGGERED)
+
+else automatic rebalancing enabled
+    ROAD -> TAXIS : sendRebalancingInstruction(targetZone)
+    activate TAXIS
+    TAXIS --> ROAD : rebalancingStarted
+    deactivate TAXIS
+
+    ROAD -> ROAD : updateRebalancingStatus(TRIGGERED)
+end
+
+deactivate ROAD
+
+@enduml

@@ -1,0 +1,151 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam pageMargin 20
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam nodesep 45
+skinparam ranksep 45
+skinparam ArrowThickness 1.5
+
+skinparam class {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+skinparam enum {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+hide circle
+left to right direction
+
+class FleetOperator {
+    - operatorID: String
+}
+
+class AllocationStrategy <<abstract>> {
+    - strategyID: String
+    - name: String
+}
+
+class NearestAvailableStrategy {
+}
+
+class MinimumETAStrategy {
+}
+
+class RideRequest <<abstract>> {
+    - requestID: String
+    - status: RequestStatus
+    - creationTime: DateTime
+}
+
+class Passenger {
+    - phoneNumber: String
+}
+
+class Notification {
+    - notificationID: String
+    - message: String
+    - creationTime: DateTime
+    - type: NotificationType
+}
+
+class Robotaxi {
+    - robotaxiID: String
+    - currentPosition: GNSSPose
+    - state: RobotaxiState
+}
+
+class Zone {
+    - zoneID: String
+    - zoneName: String
+    - demandLevel: DemandLevel
+}
+
+class RebalancingAction {
+    - actionID: String
+    - status: RebalancingStatus
+    - creationTime: DateTime
+}
+
+enum DemandLevel <<enumeration>> {
+    LOW
+    MEDIUM
+    HIGH
+}
+
+enum RebalancingStatus <<enumeration>> {
+    SUGGESTED
+    TRIGGERED
+    COMPLETED
+    CANCELLED
+}
+
+enum NotificationType <<enumeration>> {
+    VEHICLE_ASSIGNED
+    VEHICLE_ARRIVING
+    VEHICLE_ARRIVED
+    RIDE_STATUS_CHANGED
+    REBALANCING_ALERT
+}
+
+' =========================
+' Layout constraints
+' =========================
+
+' Allocation area
+FleetOperator -[hidden]right- AllocationStrategy
+AllocationStrategy -[hidden]right- NearestAvailableStrategy
+NearestAvailableStrategy -[hidden]left- MinimumETAStrategy
+AllocationStrategy -[hidden]down- RideRequest
+
+' Notification area
+RideRequest -[hidden]down- Notification
+Passenger -[hidden]right- Notification
+
+' Rebalancing area
+Robotaxi -[hidden]right- Zone
+Zone -[hidden]down- RebalancingAction
+Robotaxi -[hidden]down- RebalancingAction
+
+' Keep right-side area separated from left-side area
+NearestAvailableStrategy -[hidden]right- Robotaxi
+MinimumETAStrategy -[hidden]right- Robotaxi
+
+' Enumerations area
+Passenger -[hidden]down- DemandLevel
+DemandLevel -[hidden]right- RebalancingStatus
+RebalancingStatus -[hidden]right- NotificationType
+
+' =========================
+' Visible relations
+' =========================
+
+NearestAvailableStrategy --|> AllocationStrategy
+MinimumETAStrategy -left-|> AllocationStrategy
+
+FleetOperator "0..*" -right-> "1" AllocationStrategy : selects
+
+AllocationStrategy "1" -down-> "0..*" RideRequest : used for
+
+Notification "0..*" -left-> "1" Passenger : sent to
+Notification "0..*" -up-> "0..1" RideRequest : refers to
+
+Robotaxi "0..*" -right-> "1" Zone : located in
+
+RebalancingAction "1" -up-> "1..*" Robotaxi : involves
+RebalancingAction "0..*" -up-> "1" Zone : targets
+
+@enduml

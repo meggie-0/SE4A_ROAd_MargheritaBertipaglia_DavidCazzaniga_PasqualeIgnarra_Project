@@ -1,0 +1,175 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam pageMargin 20
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam nodesep 45
+skinparam ranksep 45
+skinparam ArrowThickness 1.5
+
+skinparam class {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+skinparam enum {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+skinparam package {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+}
+
+hide circle
+left to right direction
+
+package "Data types" as DT {
+    class DateTime <<datatype>> {
+        + day: Integer
+        + month: Integer
+        + year: Integer
+        + hour: Integer
+        + minutes: Integer
+        + seconds: Integer
+    }
+
+    class GNSSPose <<datatype>> {
+        + latitude: Real
+        + longitude: Real
+        + altitude: Real
+    }
+}
+
+package "Enumerations" as EN {
+    enum RequestStatus <<enumeration>> {
+        PENDING
+        ACCEPTED
+        REJECTED
+        CANCELLED
+        COMPLETED
+    }
+
+    enum RobotaxiState <<enumeration>> {
+        AVAILABLE
+        ASSIGNED
+        ARRIVING
+        ARRIVED
+        IN_RIDE
+        MAINTENANCE
+    }
+}
+
+class User <<abstract>> {
+    - userID: String
+    - name: String
+    - surname: String
+    - email: String
+    - password: String
+}
+
+class Passenger {
+    - phoneNumber: String
+}
+
+class FleetOperator {
+    - operatorID: String
+}
+
+class Fleet {
+    - fleetID: String
+    - city: String
+}
+
+class Robotaxi {
+    - robotaxiID: String
+    - currentPosition: GNSSPose
+    - state: RobotaxiState
+}
+
+class RideRequest <<abstract>> {
+    - requestID: String
+    - status: RequestStatus
+    - creationTime: DateTime
+}
+
+class ImmediateRide {
+}
+
+class AdvanceBooking {
+    - scheduledDateTime: DateTime
+}
+
+class Location {
+    - locationPose: GNSSPose
+    - address: String
+}
+
+
+package "Data types" as DT {
+    class DateTime <<datatype>> {
+        + day: Integer
+        + month: Integer
+        + year: Integer
+        + hour: Integer
+        + minutes: Integer
+        + seconds: Integer
+    }
+
+    class GNSSPose <<datatype>> {
+        + latitude: Real
+        + longitude: Real
+        + altitude: Real
+    }
+}
+
+package "Enumerations" as EN {
+    enum RequestStatus <<enumeration>> {
+        PENDING
+        ACCEPTED
+        REJECTED
+        CANCELLED
+        COMPLETED
+    }
+
+    enum RobotaxiState <<enumeration>> {
+        AVAILABLE
+        ASSIGNED
+        ARRIVING
+        ARRIVED
+        IN_RIDE
+        MAINTENANCE
+    }
+}
+
+DT -[hidden]up- EN
+User <|-- Passenger
+User <|-- FleetOperator
+
+RideRequest <|-- ImmediateRide
+RideRequest <|-- AdvanceBooking
+
+Passenger "1" --> "0..* " RideRequest : submits
+
+FleetOperator "1..*" --> "1 " Fleet : monitors
+
+Fleet "1" *-- "1..*" Robotaxi : contains
+
+RideRequest "0..*" --> "\n0..1" Robotaxi : assigned to\n
+
+RideRequest "1" -down- "1" Location : pickup
+RideRequest "1" -down- "1" Location : destination
+
+@enduml

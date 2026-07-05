@@ -1,0 +1,105 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam pageMargin 20
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam nodesep 45
+skinparam ranksep 45
+skinparam ArrowThickness 1.5
+
+skinparam class {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+skinparam enum {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+hide circle
+left to right direction
+
+class RideRequest <<abstract>> {
+    - requestID: String
+    - status: RequestStatus
+    - creationTime: DateTime
+}
+
+class Ride {
+    - rideID: String
+    - startTime: DateTime
+    - endTime: DateTime
+    - status: RideStatus
+}
+
+class Location {
+    - locationPose: GNSSPose
+    - address: String
+}
+
+class Passenger {
+    - phoneNumber: String
+}
+
+class Robotaxi {
+    - robotaxiID: String
+    - currentPosition: GNSSPose
+    - state: RobotaxiState
+}
+
+class MaintenanceEvent {
+    - maintenanceID: String
+    - startTime: DateTime
+    - endTime: DateTime
+    - reason: String
+    - status: MaintenanceStatus
+}
+
+enum RideStatus <<enumeration>> {
+    SCHEDULED
+    WAITING_FOR_PICKUP
+    IN_PROGRESS
+    COMPLETED
+    CANCELLED
+}
+
+enum MaintenanceStatus <<enumeration>> {
+    SCHEDULED
+    ONGOING
+    COMPLETED
+    CANCELLED
+}
+
+' Layout constraints
+RideRequest -[hidden]right- Ride
+Ride -[hidden]right- Robotaxi
+Location -[hidden]down- Ride
+Ride -[hidden]down- Passenger
+Robotaxi -[hidden]down- MaintenanceEvent
+RideRequest -[hidden]down- RideStatus
+RideStatus -[hidden]right- MaintenanceStatus
+
+' Visible relations
+RideRequest "1 " --> "0..1 " Ride : \n\ngenerates\n\n
+
+Passenger "1" --> " \n 0..*" Ride : takes
+
+Robotaxi "0..1 " --> "0..1 " Ride : \nserves\n
+
+Robotaxi "1" --> "0..*" MaintenanceEvent : has
+
+Ride "1" -up- "1" Location : pickup
+Ride "1" -up- "1" Location : destination
+
+@enduml

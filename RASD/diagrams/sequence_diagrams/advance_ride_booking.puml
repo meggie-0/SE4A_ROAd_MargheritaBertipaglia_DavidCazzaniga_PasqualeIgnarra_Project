@@ -1,0 +1,97 @@
+@startuml
+
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    ActorBorderColor #444444
+    ActorBackgroundColor white
+    ActorFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+actor "p:PassengerClient" as P
+participant "road:ROAdSystem" as ROAD
+participant "map:ExternalMapService" as MAP
+participant "fleet:Fleet" as FLEET
+
+P -> ROAD : submitAdvanceBooking(pickup, destination, dateTime)
+activate P
+activate ROAD
+
+ROAD -> ROAD : validateBookingRequest()
+
+ROAD -> FLEET : getAvailableRobotaxis(dateTime)
+activate FLEET
+FLEET --> ROAD : availableRobotaxis
+deactivate FLEET
+
+ROAD -> MAP : estimateTravelTimes(pickup, destination, robotaxiPoses)
+activate MAP
+MAP --> ROAD : travelTimes
+deactivate MAP
+
+ROAD -> ROAD : checkBookingConflicts()
+
+alt booking accepted
+    ROAD -> ROAD : applyActiveAllocationStrategy()
+    ROAD -> ROAD : selectRobotaxi()
+    ROAD -> ROAD : createAdvanceBooking()
+    ROAD -> ROAD : updateRideRequestStatus(ACCEPTED)
+
+    ROAD --> P : notifyBookingConfirmed(bookingInfo)
+
+else booking rejected
+    ROAD -> ROAD : updateRideRequestStatus(REJECTED)
+
+    ROAD --> P : notifyRideRequestRejected()
+end
+
+deactivate ROAD
+deactivate P
+
+@enduml
