@@ -1,0 +1,81 @@
+@startuml
+
+scale 0.8
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam nodesep 45
+skinparam ranksep 45
+skinparam ArrowThickness 1.5
+skinparam pageMargin 20
+skinparam class {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+hide circle
+top to bottom direction
+
+class Robotaxi {
+    - state: RobotaxiState
+    --
+    + assignRide(): void
+    + startRide(): void
+    + completeRide(): void
+    + setUnavailable(): void
+    + setAvailable(): void
+    + sendToMaintenance(): void
+    + finishMaintenance(): void
+    + setState(state: RobotaxiState): void
+}
+
+class RobotaxiState <<interface>> {
+    + assignRide(r: Robotaxi): void
+    + startRide(r: Robotaxi): void
+    + completeRide(r: Robotaxi): void
+    + setUnavailable(r: Robotaxi): void
+    + setAvailable(r: Robotaxi): void
+    + sendToMaintenance(r: Robotaxi): void
+    + finishMaintenance(r: Robotaxi): void
+}
+
+class IdleState {
+    + assignRide(r: Robotaxi): void
+    + setUnavailable(r: Robotaxi): void
+    + sendToMaintenance(r: Robotaxi): void
+}
+
+class AssignedState {
+    + startRide(r: Robotaxi): void
+}
+
+class InServiceState {
+    + completeRide(r: Robotaxi): void
+}
+
+class UnavailableState {
+    + setAvailable(r: Robotaxi): void
+    + sendToMaintenance(r: Robotaxi): void
+}
+
+class MaintenanceState {
+    + finishMaintenance(r: Robotaxi): void
+}
+
+Robotaxi "1 " o-- "1 " RobotaxiState : current state
+
+RobotaxiState <|.. IdleState
+RobotaxiState <|.. AssignedState
+RobotaxiState <|.. InServiceState
+RobotaxiState <|.. UnavailableState
+RobotaxiState <|.. MaintenanceState
+
+@enduml

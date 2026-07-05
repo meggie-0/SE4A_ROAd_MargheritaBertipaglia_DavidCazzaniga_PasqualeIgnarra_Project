@@ -1,0 +1,58 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam nodesep 45
+skinparam ranksep 45
+
+skinparam class {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+hide circle
+top to bottom direction
+
+class AllocationStrategy <<interface>> {
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+}
+
+class NearestAvailableStrategy {
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+}
+
+class MinimumETAStrategy {
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+}
+
+class AllocationManager {
+    - strategy: AllocationStrategy
+    --
+    + allocate(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+    + setStrategy(strategy: AllocationStrategy): void
+}
+
+class ModeController {
+    - autoMode: boolean
+    - currentTrafficLevel: TrafficLevel
+    --
+    + onTrafficLevel(level: TrafficLevel): void
+    + setManual(strategy: AllocationStrategy): void
+    + enableAuto(): void
+}
+
+AllocationStrategy <|.. NearestAvailableStrategy
+AllocationStrategy <|.. MinimumETAStrategy
+
+AllocationManager "1 " o--> "1 " AllocationStrategy : current strategy
+ModeController "1 " --> "1 " AllocationManager : selects active strategy
+
+@enduml

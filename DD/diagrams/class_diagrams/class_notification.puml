@@ -1,0 +1,78 @@
+@startuml
+
+scale 0.5
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam nodesep 45
+skinparam ranksep 45
+skinparam pageMargin 60
+
+skinparam class {
+    BackgroundColor white
+    BorderColor #444444
+    FontColor black
+    HeaderBackgroundColor white
+}
+
+hide circle
+top to bottom direction
+
+class Subject <<interface>> {
+    + registerObserver(o: Observer): void
+    + removeObserver(o: Observer): void
+    + notifyObservers(event: DomainEvent): void
+}
+
+class Observer <<interface>> {
+    + update(event: DomainEvent): void
+}
+
+class Robotaxi {
+    - observers: List<Observer>
+    - state: RobotaxiState
+    --
+    + updateState(state: RobotaxiState): void
+    + notifyObservers(event: DomainEvent): void
+}
+
+class Ride {
+    - observers: List<Observer>
+    - status: RideStatus
+    --
+    + updateStatus(status: RideStatus): void
+    + notifyObservers(event: DomainEvent): void
+}
+
+class NotificationManager {
+    + update(event: DomainEvent): void
+    + dispatch(event: DomainEvent): void
+}
+
+class PassengerAppSession {
+    + update(event: DomainEvent): void
+    + pushToPassenger(event: DomainEvent): void
+}
+
+class OperatorDashboardSession {
+    + update(event: DomainEvent): void
+    + pushToOperator(event: DomainEvent): void
+}
+
+class DomainEvent <<event>>
+
+Subject "1" o-left-> "0..*" Observer: observed_by
+
+Subject <|.. Robotaxi
+Subject <|.. Ride
+
+Observer <|.. NotificationManager
+Observer <|.. PassengerAppSession
+Observer <|.. OperatorDashboardSession
+
+@enduml
