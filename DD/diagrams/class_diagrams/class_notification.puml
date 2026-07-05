@@ -1,6 +1,5 @@
 @startuml
 
-scale 0.5
 skinparam backgroundColor white
 skinparam shadowing false
 skinparam defaultFontName Arial
@@ -11,7 +10,6 @@ skinparam classAttributeIconSize 0
 skinparam linetype polyline
 skinparam nodesep 45
 skinparam ranksep 45
-skinparam pageMargin 60
 
 skinparam class {
     BackgroundColor white
