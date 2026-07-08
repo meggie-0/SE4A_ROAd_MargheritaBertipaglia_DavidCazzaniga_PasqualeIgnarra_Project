@@ -1,0 +1,120 @@
+@startuml deployment
+
+left to right direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam roundCorner 12
+skinparam componentStyle uml2
+skinparam linetype polyline
+
+skinparam node {
+    BackgroundColor white
+    BorderColor black
+    FontColor black
+}
+
+skinparam database {
+    BackgroundColor white
+    BorderColor black
+    FontColor black
+}
+
+skinparam component {
+    BackgroundColor white
+    BorderColor black
+    FontColor black
+}
+
+skinparam artifact {
+    BackgroundColor white
+    BorderColor black
+    FontColor black
+}
+
+skinparam cloud {
+    BackgroundColor white
+    BorderColor black
+    FontColor black
+}
+
+' =========================
+' Client tier
+' =========================
+
+node "Passenger Device" <<device>> as PassengerDevice {
+    artifact "Passenger Client" as PassengerClient
+}
+
+node "Fleet Operator Device" <<device>> as OperatorDevice {
+    artifact "Fleet Operator Client" as OperatorClient
+}
+
+' =========================
+' Network
+' =========================
+
+cloud "Internet / Network" as Network
+
+' =========================
+' Application tier
+' =========================
+
+node "Application Server\n(replicable)" <<server>> as AppServer {
+    component "API Gateway" as APIGateway
+    component "Authentication\nManager" as AuthManager
+    component "Ride Request\nManager" as RideRequestManager
+    component "Allocation\nManager" as AllocationManager
+    component "Notification\nManager" as NotificationManager
+    component "Maintenance\nManager" as MaintenanceManager
+    component "Rebalancing\nManager" as RebalancingManager
+}
+
+' =========================
+' Data tier
+' =========================
+
+database "Database Node" as DB {
+    artifact "ROAd Database" as RoadDB
+}
+
+' =========================
+' Robotaxi tier
+' =========================
+
+node "Robotaxi" <<device>> as Robotaxi {
+    component "On-board\nControl API" as RobotaxiAPI
+}
+
+' =========================
+' Connections
+' =========================
+
+PassengerClient --> Network : HTTPS / WebSocket
+OperatorClient --> Network : HTTPS / WebSocket
+
+Network --> APIGateway : REST API requests
+
+APIGateway --> AuthManager
+APIGateway --> RideRequestManager
+APIGateway --> NotificationManager
+APIGateway --> MaintenanceManager
+APIGateway --> RebalancingManager
+
+RideRequestManager --> AllocationManager
+AllocationManager --> RobotaxiAPI
+MaintenanceManager --> RobotaxiAPI
+RebalancingManager --> RobotaxiAPI 
+
+AuthManager --> RoadDB
+RideRequestManager --> RoadDB
+AllocationManager --> RoadDB
+NotificationManager --> RoadDB
+MaintenanceManager --> RoadDB
+RebalancingManager --> RoadDB
+
+RobotaxiAPI --> Network : telemetry / availability
+
+@enduml
