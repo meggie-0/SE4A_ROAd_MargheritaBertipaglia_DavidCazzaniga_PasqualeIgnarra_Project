@@ -54,6 +54,9 @@ participant "api:APIGateway" as API
 participant "rrm:RideRequestManager" as RRM
 participant "pm:PersistenceManager" as PM
 database "db:Database" as DB
+participant "fm:FleetMonitor" as FM
+participant "am:AllocationManager" as AM
+participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
 P -> API : submitAdvanceBooking(pickup, destination, timeWindow)
@@ -63,40 +66,65 @@ activate API
 API -> RRM : submitAdvance(passengerId, pickup, destination, timeWindow)
 activate RRM
 
-RRM -> PM : checkConflicts(passengerId, timeWindow)
+RRM -> RRM : validateAdvanceRequest()
+
+RRM -> FM : getCandidates(pickup)
+activate FM
+FM --> RRM : candidates
+deactivate FM
+
+RRM -> PM : filterAvailable(candidates, timeWindow)
 activate PM
 
-PM -> DB : findOverlappingBookings(passengerId, timeWindow)
+PM -> DB : findOverlappingAssignments(candidateIds, timeWindow)
 activate DB
 DB --> PM : conflicts
 deactivate DB
 
-PM --> RRM : conflicts
+PM --> RRM : availableCandidates
 deactivate PM
 
-alt no conflict
-    RRM -> PM : reserve(advanceRequest)
+RRM -> AM : allocate(advanceRequest, availableCandidates)
+activate AM
+
+AM -> ESG : getETA(availableCandidates, pickup)
+activate ESG
+ESG --> AM : etaList
+deactivate ESG
+
+AM --> RRM : selectedRobotaxi
+deactivate AM
+
+alt feasible robotaxi found
+    RRM -> PM : reserve(advanceRequest, selectedRobotaxi, timeWindow)
     activate PM
 
-    PM -> DB : insertBooking(advanceRequest)
+    PM -> DB : insertBookingAndReservation(advanceRequest, selectedRobotaxi, timeWindow)
     activate DB
-    DB --> PM : bookingId
+    DB --> PM : reservationResult
     deactivate DB
 
-    PM --> RRM : bookingConfirmed
+    PM --> RRM : reservationResult
     deactivate PM
 
-    RRM --> API : advanceBookingConfirmed(bookingId)
-    API --> P : booking confirmation
+    alt reservation committed
+        RRM --> API : advanceBookingConfirmed(bookingId)
+        API --> P : booking confirmation
 
-    RRM ->> NM : update(BookingConfirmedEvent)
-    activate NM
-    NM ->> P : push(BookingConfirmedEvent)
-    deactivate NM
+        RRM ->> NM : update(BookingConfirmedEvent)
+        activate NM
+        NM ->> API : push(BookingConfirmedEvent)
+        deactivate NM
+        API ->> P : push(BookingConfirmedEvent)
 
-else conflict found
-    RRM --> API : bookingRejected(conflictReason)
-    API --> P : conflict error
+    else concurrent reservation conflict
+        RRM --> API : bookingRejected(conflictReason)
+        API --> P : conflict error
+    end
+
+else no feasible robotaxi
+    RRM --> API : bookingRejected(noAvailabilityReason)
+    API --> P : no availability error
 end
 
 deactivate RRM

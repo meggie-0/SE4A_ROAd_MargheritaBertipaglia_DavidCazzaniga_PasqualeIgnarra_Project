@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram name="Pagina-1" id="m0ea9uvRru3Q6ZvX4jMl">
-    <mxGraphModel dx="1017" dy="776" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1133" dy="510" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -50,9 +50,9 @@
             <mxPoint x="190" y="80" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="bNL_Pn7j6eNi4Ta2vI4A-19" connectable="0" parent="bNL_Pn7j6eNi4Ta2vI4A-18" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="maintenenace required" vertex="1">
+        <mxCell id="bNL_Pn7j6eNi4Ta2vI4A-19" connectable="0" parent="bNL_Pn7j6eNi4Ta2vI4A-18" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="maintenance required" vertex="1">
           <mxGeometry relative="1" x="-0.0226" y="2" as="geometry">
-            <mxPoint x="-69" y="2" as="offset" />
+            <mxPoint x="-59" y="-3" as="offset" />
           </mxGeometry>
         </mxCell>
         <mxCell id="bNL_Pn7j6eNi4Ta2vI4A-20" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;font style=&quot;font-size: 11px;&quot;&gt;maintenance completed&lt;/font&gt;" vertex="1">

@@ -75,17 +75,18 @@ activate MAP
 MAP --> ROAD : travelTimes
 deactivate MAP
 
-ROAD -> ROAD : checkBookingConflicts()
+ROAD -> ROAD : applyActiveAllocationStrategy()
+ROAD -> ROAD : selectRobotaxi()
+ROAD -> ROAD : checkBookingConflicts(selectedRobotaxi, dateTime)
 
-alt booking accepted
-    ROAD -> ROAD : applyActiveAllocationStrategy()
-    ROAD -> ROAD : selectRobotaxi()
-    ROAD -> ROAD : createAdvanceBooking()
+alt robotaxi selected and no conflicting assignment
+    ROAD -> ROAD : reserveRobotaxi(selectedRobotaxi, dateTime)
+    ROAD -> ROAD : createAdvanceBooking(selectedRobotaxi)
     ROAD -> ROAD : updateRideRequestStatus(ACCEPTED)
 
     ROAD --> P : notifyBookingConfirmed(bookingInfo)
 
-else booking rejected
+else no feasible robotaxi or conflicting assignment
     ROAD -> ROAD : updateRideRequestStatus(REJECTED)
 
     ROAD --> P : notifyRideRequestRejected()

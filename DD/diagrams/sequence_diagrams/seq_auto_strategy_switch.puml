@@ -80,8 +80,9 @@ alt autoMode enabled and hysteresis satisfied
 
     MC ->> NM : update(StrategyChangedEvent)
     activate NM
-    NM ->> Operator : push(StrategyChangedEvent)
+    NM ->> API : push(StrategyChangedEvent)
     deactivate NM
+    API ->> Operator : push(StrategyChangedEvent)
 
 else hysteresis not satisfied
     MC -> MC : keepCurrentStrategy()
@@ -110,15 +111,16 @@ activate PM
 PM --> MC : ok
 deactivate PM
 
+MC ->> NM : update(ManualOverrideEvent)
+activate NM
+NM ->> API : push(ManualOverrideEvent)
+deactivate NM
+API ->> Operator : push(ManualOverrideEvent)
+
 MC --> API : manualModeEnabled
 deactivate MC
 
 API --> Operator : manual override confirmation
 deactivate API
-
-MC ->> NM : update(ManualOverrideEvent)
-activate NM
-NM ->> Operator : push(ManualOverrideEvent)
-deactivate NM
 
 @enduml

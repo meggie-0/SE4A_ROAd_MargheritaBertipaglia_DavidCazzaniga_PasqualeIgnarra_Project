@@ -25,55 +25,69 @@ top to bottom direction
 class Robotaxi {
     - state: RobotaxiState
     --
-    + assignRide(): void
+    + assignRide(request: RideRequest): void
+    + startPickupNavigation(): void
+    + pickupReached(): void
     + startRide(): void
     + completeRide(): void
-    + setUnavailable(): void
-    + setAvailable(): void
-    + sendToMaintenance(): void
-    + finishMaintenance(): void
+    + requestRebalancing(): void
+    + completeRebalancing(): void
+    + requestMaintenance(): void
+    + completeMaintenance(): void
     + setState(state: RobotaxiState): void
 }
 
 class RobotaxiState <<interface>> {
-    + assignRide(r: Robotaxi): void
+    + assignRide(r: Robotaxi, request: RideRequest): void
+    + startPickupNavigation(r: Robotaxi): void
+    + pickupReached(r: Robotaxi): void
     + startRide(r: Robotaxi): void
     + completeRide(r: Robotaxi): void
-    + setUnavailable(r: Robotaxi): void
-    + setAvailable(r: Robotaxi): void
-    + sendToMaintenance(r: Robotaxi): void
-    + finishMaintenance(r: Robotaxi): void
+    + requestRebalancing(r: Robotaxi): void
+    + completeRebalancing(r: Robotaxi): void
+    + requestMaintenance(r: Robotaxi): void
+    + completeMaintenance(r: Robotaxi): void
 }
 
-class IdleState {
-    + assignRide(r: Robotaxi): void
-    + setUnavailable(r: Robotaxi): void
-    + sendToMaintenance(r: Robotaxi): void
+class AvailableState {
+    + assignRide(r: Robotaxi, request: RideRequest): void
+    + requestRebalancing(r: Robotaxi): void
+    + requestMaintenance(r: Robotaxi): void
 }
 
 class AssignedState {
+    + startPickupNavigation(r: Robotaxi): void
+}
+
+class ArrivingState {
+    + pickupReached(r: Robotaxi): void
+}
+
+class ArrivedState {
     + startRide(r: Robotaxi): void
 }
 
-class InServiceState {
+class InRideState {
     + completeRide(r: Robotaxi): void
 }
 
-class UnavailableState {
-    + setAvailable(r: Robotaxi): void
-    + sendToMaintenance(r: Robotaxi): void
+class RebalancingState {
+    + assignRide(r: Robotaxi, request: RideRequest): void
+    + completeRebalancing(r: Robotaxi): void
 }
 
 class MaintenanceState {
-    + finishMaintenance(r: Robotaxi): void
+    + completeMaintenance(r: Robotaxi): void
 }
 
 Robotaxi "1 " o-- "1 " RobotaxiState : current state
 
-RobotaxiState <|.. IdleState
+RobotaxiState <|.. AvailableState
 RobotaxiState <|.. AssignedState
-RobotaxiState <|.. InServiceState
-RobotaxiState <|.. UnavailableState
+RobotaxiState <|.. ArrivingState
+RobotaxiState <|.. ArrivedState
+RobotaxiState <|.. InRideState
+RobotaxiState <|.. RebalancingState
 RobotaxiState <|.. MaintenanceState
 
 @enduml

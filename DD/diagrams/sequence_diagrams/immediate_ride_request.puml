@@ -114,8 +114,9 @@ API --> P : ride confirmation
 
 RRM ->> NM : update(RideAssignedEvent)
 activate NM
-NM ->> P : push(RideAssignedEvent)
+NM ->> API : push(RideAssignedEvent)
 deactivate NM
+API ->> P : push(RideAssignedEvent)
 
 deactivate RRM
 deactivate API

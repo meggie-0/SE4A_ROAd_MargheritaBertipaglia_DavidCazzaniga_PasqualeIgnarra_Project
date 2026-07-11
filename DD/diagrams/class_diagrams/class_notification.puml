@@ -35,7 +35,6 @@ class Robotaxi {
     - observers: List<Observer>
     - state: RobotaxiState
     --
-    + updateState(state: RobotaxiState): void
     + notifyObservers(event: DomainEvent): void
 }
 
@@ -53,12 +52,10 @@ class NotificationManager {
 }
 
 class PassengerAppSession {
-    + update(event: DomainEvent): void
     + pushToPassenger(event: DomainEvent): void
 }
 
 class OperatorDashboardSession {
-    + update(event: DomainEvent): void
     + pushToOperator(event: DomainEvent): void
 }
 
@@ -70,7 +67,8 @@ Subject <|.. Robotaxi
 Subject <|.. Ride
 
 Observer <|.. NotificationManager
-Observer <|.. PassengerAppSession
-Observer <|.. OperatorDashboardSession
+
+NotificationManager "1" --> "0..*" PassengerAppSession : pushes events
+NotificationManager "1" --> "0..*" OperatorDashboardSession : pushes events
 
 @enduml

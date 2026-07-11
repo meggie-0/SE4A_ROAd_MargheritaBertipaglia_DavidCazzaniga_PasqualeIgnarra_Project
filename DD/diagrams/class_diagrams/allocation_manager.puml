@@ -37,7 +37,7 @@ class AllocationManager {
     - strategy: AllocationStrategy
     --
     + allocate(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
-    + setStrategy(strategy: AllocationStrategy): void
+    + setActiveStrategy(strategy: AllocationStrategy): void
 }
 
 class ModeController {

@@ -117,43 +117,6 @@ class Location {
     - address: String
 }
 
-
-package "Data types" as DT {
-    class DateTime <<datatype>> {
-        + day: Integer
-        + month: Integer
-        + year: Integer
-        + hour: Integer
-        + minutes: Integer
-        + seconds: Integer
-    }
-
-    class GNSSPose <<datatype>> {
-        + latitude: Real
-        + longitude: Real
-        + altitude: Real
-    }
-}
-
-package "Enumerations" as EN {
-    enum RequestStatus <<enumeration>> {
-        PENDING
-        ACCEPTED
-        REJECTED
-        CANCELLED
-        COMPLETED
-    }
-
-    enum RobotaxiState <<enumeration>> {
-        AVAILABLE
-        ASSIGNED
-        ARRIVING
-        ARRIVED
-        IN_RIDE
-        MAINTENANCE
-    }
-}
-
 DT -[hidden]up- EN
 User <|-- Passenger
 User <|-- FleetOperator
