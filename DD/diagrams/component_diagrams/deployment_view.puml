@@ -70,6 +70,10 @@ node "Application Server\n(replicable)" <<server>> as AppServer {
     component "Notification\nManager" as NotificationManager
     component "Maintenance\nManager" as MaintenanceManager
     component "Rebalancing\nManager" as RebalancingManager
+    component "Fleet Monitor" as FleetMonitor
+    component "Mode Controller" as ModeController
+    component "Persistence\nManager" as PersistenceManager
+    component "External Services\nGateway" as ExternalServicesGateway
 }
 
 ' =========================
@@ -88,6 +92,8 @@ node "Robotaxi" <<device>> as Robotaxi {
     component "On-board\nControl API" as RobotaxiAPI
 }
 
+cloud "External Systems\nMaps / Traffic / Demand" as ExternalSystems
+
 ' =========================
 ' Connections
 ' =========================
@@ -102,19 +108,31 @@ APIGateway --> RideRequestManager
 APIGateway --> NotificationManager
 APIGateway --> MaintenanceManager
 APIGateway --> RebalancingManager
+APIGateway --> ModeController
 
 RideRequestManager --> AllocationManager
-AllocationManager --> RobotaxiAPI
-MaintenanceManager --> RobotaxiAPI
-RebalancingManager --> RobotaxiAPI 
+RideRequestManager --> FleetMonitor
+ModeController --> AllocationManager
+MaintenanceManager --> FleetMonitor
+RebalancingManager --> FleetMonitor
 
-AuthManager --> RoadDB
-RideRequestManager --> RoadDB
-AllocationManager --> RoadDB
-NotificationManager --> RoadDB
-MaintenanceManager --> RoadDB
-RebalancingManager --> RoadDB
+AllocationManager --> ExternalServicesGateway
+MaintenanceManager --> ExternalServicesGateway
+RebalancingManager --> ExternalServicesGateway
+FleetMonitor --> ExternalServicesGateway
 
-RobotaxiAPI --> Network : telemetry / availability
+AuthManager --> PersistenceManager
+RideRequestManager --> PersistenceManager
+AllocationManager --> PersistenceManager
+NotificationManager --> PersistenceManager
+MaintenanceManager --> PersistenceManager
+RebalancingManager --> PersistenceManager
+FleetMonitor --> PersistenceManager
+ModeController --> PersistenceManager
+PersistenceManager --> RoadDB
+
+ExternalServicesGateway --> Network : external API calls
+Network <--> RobotaxiAPI : commands / telemetry
+Network <--> ExternalSystems : maps / traffic / demand
 
 @enduml
