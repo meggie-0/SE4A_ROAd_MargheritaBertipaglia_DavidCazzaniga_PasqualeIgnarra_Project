@@ -1,0 +1,43 @@
+{
+  "$comment": "Sorgente unica per pnpm trace. I titoli vengono dal RASD. La colonna milestone dice quando il requisito deve risultare coperto da almeno un test.",
+  "functional": [
+    { "id": "R1", "title": "Registration and Login", "milestone": "M1b" },
+    { "id": "R2", "title": "Profile Management", "milestone": "M1b" },
+    { "id": "R3", "title": "Immediate Ride Request", "milestone": "M4" },
+    { "id": "R4", "title": "Advance Booking", "milestone": "M4" },
+    { "id": "R5", "title": "Automated Vehicle Allocation", "milestone": "M3" },
+    { "id": "R6", "title": "Ride Status Notifications", "milestone": "M5" },
+    { "id": "R7", "title": "Real-time Fleet Monitoring", "milestone": "M2" },
+    { "id": "R8", "title": "Runtime Strategy Selection", "milestone": "M3" },
+    { "id": "R9", "title": "Maintenance Management", "milestone": "M2" },
+    { "id": "R10", "title": "Demand Analysis", "milestone": "M6" },
+    { "id": "R11", "title": "Proactive Fleet Rebalancing", "milestone": "M6" },
+    { "id": "R12", "title": "Auto Mode (Default)", "milestone": "M6" },
+    { "id": "R13", "title": "Manual Mode (Override)", "milestone": "M6" }
+  ],
+  "nonFunctional": [
+    { "id": "NFR1", "title": "Concurrency Handling", "milestone": "M1" },
+    { "id": "NFR2", "title": "Real-time Responsiveness", "milestone": "M5" },
+    { "id": "NFR3", "title": "Scalability", "milestone": "M1b" },
+    { "id": "NFR4", "title": "Data Consistency", "milestone": "M1" },
+    { "id": "NFR5", "title": "Robustness", "milestone": "M2" },
+    { "id": "NFR6", "title": "Ease of Use", "milestone": "M8" },
+    { "id": "NFR7", "title": "Extensibility of Allocation Logic", "milestone": "M3" },
+    { "id": "NFR8", "title": "Separation of Concerns", "milestone": "M7" },
+    { "id": "NFR9", "title": "Stability of Auto-Switching", "milestone": "M6" },
+    { "id": "NFR10", "title": "Priority of Human Intervention", "milestone": "M6" }
+  ],
+  "goals": [
+    { "id": "G1", "title": "Register, log in and manage personal account", "milestone": "M1b" },
+    { "id": "G2", "title": "Request an immediate robotaxi ride", "milestone": "M4" },
+    { "id": "G3", "title": "Book a robotaxi ride in advance", "milestone": "M4" },
+    { "id": "G4", "title": "Assign a robotaxi according to the selected strategy", "milestone": "M3" },
+    { "id": "G5", "title": "Select and change the allocation strategy at runtime", "milestone": "M3" },
+    { "id": "G6", "title": "Track and update the state of each robotaxi", "milestone": "M2" },
+    { "id": "G7", "title": "Notify users about relevant ride updates", "milestone": "M5" },
+    { "id": "G8", "title": "Monitor status and position of the fleet", "milestone": "M2" },
+    { "id": "G9", "title": "Identify high-demand zones and rebalance idle robotaxis", "milestone": "M6" },
+    { "id": "G10", "title": "Prevent conflicting assignments or reservations", "milestone": "M1" }
+  ],
+  "milestoneOrder": ["M0", "M1", "M1b", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"]
+}

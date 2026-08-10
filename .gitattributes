@@ -1,0 +1,26 @@
+# Normalizzazione dei fine riga.
+# Senza questo file, chi lavora su Windows con core.autocrlf=true vede decine di file
+# "modificati" che in realtà differiscono solo per CRLF vs LF, e rischia di committarli.
+
+* text=auto eol=lf
+
+# File binari: git non deve toccarli.
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+
+# File di testo con estensioni non riconosciute automaticamente.
+*.puml    text eol=lf
+*.drawio  text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+
+# Script che devono restare eseguibili su Unix.
+*.sh text eol=lf
