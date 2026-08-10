@@ -1,0 +1,12 @@
+-- Estensioni richieste dallo schema ROAd.
+--
+-- btree_gist permette di mettere in uno stesso indice GiST una colonna scalare (robotaxi_id) e un
+-- intervallo (period). Senza, il vincolo di esclusione che impedisce due riserve sovrapposte sullo
+-- stesso veicolo non è esprimibile:
+--
+--   ALTER TABLE robotaxi_reservation
+--     ADD CONSTRAINT no_overlapping_reservations
+--     EXCLUDE USING gist (robotaxi_id WITH =, period WITH &&);
+--
+-- Il vincolo arriva con le migrazioni di M1; l'estensione dev'esserci già quando arriva.
+CREATE EXTENSION IF NOT EXISTS btree_gist;

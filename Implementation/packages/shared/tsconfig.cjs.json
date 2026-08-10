@@ -1,0 +1,14 @@
+{
+  "$comment": "Build CommonJS: è quella che consumano il backend NestJS e Jest. Emette anche i .d.ts.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDir": "src",
+    "outDir": "dist/cjs",
+    "declaration": true,
+    "tsBuildInfoFile": "dist/cjs/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,5 @@
+{
+  "$comment": "File di soluzione: il pacchetto si compila in due formati (vedi build.mjs). Serve agli editor e a `tsc -b packages/shared`.",
+  "files": [],
+  "references": [{ "path": "./tsconfig.cjs.json" }, { "path": "./tsconfig.esm.json" }]
+}

@@ -1,0 +1,11 @@
+{
+  "$comment": "Solo per il typecheck dei test del pacchetto: non emette nulla.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "noEmit": true,
+    "declaration": false,
+    "incremental": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

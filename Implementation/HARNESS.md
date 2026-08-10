@@ -17,12 +17,15 @@ Composizione, nell'ordine (fallisce al primo errore, dal più veloce al più len
 
 | # | Passo | Comando | Cosa protegge |
 |---|---|---|---|
-| 1 | Tipi | `tsc --noEmit` su tutti i workspace, strict | Errori grossolani, niente `any` |
-| 2 | Lint | `eslint` + regole custom di determinismo | Regola 3 di CLAUDE.md |
-| 3 | Architettura | `depcruise` con `.dependency-cruiser.cjs` | Confini fra moduli, Regola 1 |
-| 4 | Contratto | rigenera OpenAPI e diff con `contracts/openapi.json` | Intercambiabilità del frontend |
-| 5 | Unit | `jest --selectProjects unit` | Logica di dominio |
-| 6 | Integrazione | `jest --selectProjects integration` su Postgres Testcontainers | Persistenza, concorrenza, catene fra moduli |
+| 1 | Pacchetto condiviso | build di `packages/shared` nei due formati | I consumatori: Nest e Jest leggono CommonJS, Vite ES module |
+| 2 | Tipi | `tsc --noEmit` su tutti i workspace, strict | Errori grossolani, niente `any` |
+| 3 | Lint | `eslint` + regole custom di determinismo + Prettier | Regola 3 di CLAUDE.md |
+| 4 | Architettura | `depcruise` + test sugli `exports` dei `@Module` | Confini fra moduli, Regola 1 |
+| 5 | Contratto | rigenera OpenAPI e diff con `contracts/openapi.json` | Intercambiabilità del frontend |
+| 6 | Unit | `jest --selectProjects unit` | Logica di dominio |
+| 7 | Cancelli | `jest --selectProjects gate` | I criteri di completamento già superati (§6) |
+| 8 | Tracciabilità | `tools/trace/trace.mjs` | Regola 4 di CLAUDE.md: ogni requisito ha un test che lo nomina |
+| 9 | Integrazione | `jest --selectProjects integration` su Postgres Testcontainers | Persistenza, concorrenza, catene fra moduli |
 
 Obiettivo di durata: sotto i 3 minuti. Se cresce oltre, si sposta qualcosa in `verify:e2e`.
 
@@ -54,7 +57,16 @@ produzione lo chiama `@Cron`; nei test lo chiamano i test. Nessun `setInterval` 
 applicate e seed a valori fissi. Nessun test dipende dall'ordine di esecuzione degli altri.
 
 **Regola di lint.** `no-restricted-syntax` blocca `new Date()`, `Date.now()`, `Math.random()`,
-`setTimeout`, `setInterval` ovunque tranne `src/platform/**` e i file di configurazione.
+`setTimeout`, `setInterval` — anche nelle forme `globalThis.setTimeout(...)` — ovunque tranne
+`src/platform/**` e i file di configurazione. `no-restricted-imports` blocca `node:timers` e
+`node:timers/promises` negli stessi punti: rinominato in `import { setTimeout as delay }`, un timer
+non è più riconoscibile da nessun selettore sintattico, e la regola sembrerebbe attiva pur non
+essendolo.
+
+**Un'unica deroga, per i cancelli.** In `apps/api/test/gates/**` i timer sono ammessi: un cancello
+avvia processi veri — server HTTP, dev server dei client — e deve poterli attendere. Orologio di
+sistema e casualità restano vietati anche lì, perché sono quelli che rendono instabile una suite:
+dove serve un'attesa si contano i tentativi, non i millisecondi.
 
 ---
 
@@ -63,10 +75,13 @@ applicate e seed a valori fissi. Nessun test dipende dall'ordine di esecuzione d
 `.dependency-cruiser.cjs` codifica le regole di CLAUDE.md §Regola 1:
 
 Attenzione a due dettagli, perché la regola è facile da scrivere in modo che *sembri* funzionare:
-dependency-cruiser interpola i gruppi con `$<nome>`, e solo quelli catturati in `from` sono
-utilizzabili dentro `to`. Le eccezioni ammesse sono **tutti** i `*.port.ts` alla radice del modulo —
-al plurale, perché `platform` espone `clock.port.ts` e `random.port.ts` — più il `*.module.ts`, che
-serve agli `imports` di Nest.
+dependency-cruiser interpola dentro `to` solo i gruppi catturati in `from`, e li interpola con il
+**numero** del gruppo (`$1`), non con il nome. La forma nominata `$<mod>` non viene sostituita —
+verificato su dependency-cruiser 17.4.3, e sbaglia nel modo peggiore: la regola non riconosce più
+gli import interni a un modulo e segnala come violazione ogni file che importa un proprio vicino,
+sembrando severissima mentre è soltanto rotta. Le eccezioni ammesse sono **tutti** i `*.port.ts`
+alla radice del modulo — al plurale, perché `platform` espone `clock.port.ts` e `random.port.ts` —
+più il `*.module.ts`, che serve agli `imports` di Nest.
 
 ```js
 forbidden: [
@@ -74,11 +89,11 @@ forbidden: [
     name: 'no-cross-module-internals',
     comment: 'Un modulo è raggiungibile solo dalle sue porte.',
     severity: 'error',
-    from: { path: '^apps/api/src/(?<mod>[^/]+)/' },
+    from: { path: '^apps/api/src/([^/]+)/' },
     to: {
       path: '^apps/api/src/[^/]+/',
       pathNot: [
-        '^apps/api/src/$<mod>/',                    // dentro lo stesso modulo: libero
+        '^apps/api/src/$1/',                        // dentro lo stesso modulo: libero
         '^apps/api/src/[^/]+/[^/]+\\.port\\.ts$',   // le porte
         '^apps/api/src/[^/]+/[^/]+\\.module\\.ts$', // i moduli Nest
       ],
@@ -100,8 +115,18 @@ forbidden: [
 ]
 ```
 
+Servono altre due regole che lo snippet qui sopra non copre, e la cui assenza si nota tardi:
+
+- i file direttamente sotto `src/` (`main.ts`, `app.module.ts`, `openapi.ts`) non sono coperti dalla
+  prima regola, perché il suo `from` pretende un segmento di cartella;
+- `apps/api/test/**` non è coperto per lo stesso motivo, e CLAUDE.md Regola 1 dice «nessun file
+  fuori da `src/<modulo>/`» — i test non fanno eccezione. Un test che inietta `AllocationManager`
+  invece di `AllocationPort` smette di dimostrare che il modulo è sostituibile (§9). L'unica deroga
+  è `platform`: `FakeClock` e `FixedRandom` *sono* i doppi che i test devono poter costruire.
+
 Un test aggiuntivo (`test/arch/exports.spec.ts`) analizza i file `*.module.ts` e fallisce se un
-array `exports` contiene una classe il cui nome non finisce in `Port`.
+array `exports` contiene una classe il cui nome non finisce in `Port`. Controlla **tutti** gli
+array `exports` di ciascun file, non solo il primo.
 
 ---
 
@@ -147,6 +172,18 @@ Copertura milestone completate: 34/34 ✓
 
 Fallisce se un requisito assegnato a una milestone già completata ha zero test. L'output serve
 anche come base per la tabella di tracciabilità del DD §4.
+
+«Milestone completata» ha una definizione meccanica e non un elenco da tenere aggiornato a mano: è
+una milestone il cui cancello esiste (`apps/api/test/gates/<M>.gate.spec.ts`). Il cancello si
+scrive alla fine della milestone, quindi il tracciamento comincia a pretendere i requisiti di una
+milestone esattamente quando la si dichiara chiusa.
+
+La colonna TEST conta i blocchi `it`/`test` dentro i `describe` che portano il tag, `it.each`
+compreso (contato una volta, non una per caso). Il criterio di fallimento resta «almeno un test»,
+quindi il numero è indicativo, ma deve essere attribuito al requisito **giusto**: un tracciatore
+che conta male è peggio di nessun tracciatore, perché dichiara scoperto un requisito che ha i test
+e porta a inseguire un difetto che non esiste. Per questo il cancello M0 lo verifica su un albero
+di fixture (`ROAD_TRACE_ROOTS`) invece di fidarsi.
 
 ---
 

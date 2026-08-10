@@ -1,0 +1,81 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Ritorna 200 quando l'API è in grado di servire richieste.",
+        "operationId": "HealthController_getHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stato del servizio",
+        "tags": [
+          "system"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "ROAd API",
+    "description": "Contratto pubblico del backend ROAd. È la sola cosa che i client devono conoscere: nessun client importa codice da apps/api.",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ],
+            "example": "ok",
+            "description": "Stato del servizio."
+          },
+          "service": {
+            "type": "string",
+            "example": "road-api",
+            "description": "Nome del servizio che risponde."
+          },
+          "version": {
+            "type": "string",
+            "example": "0.1.0",
+            "description": "Versione dell'API in esecuzione."
+          },
+          "time": {
+            "type": "string",
+            "example": "2026-01-01T08:00:00.000Z",
+            "description": "Istante della risposta in ISO 8601, letto da ClockPort."
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "version",
+          "time"
+        ]
+      }
+    }
+  }
+}

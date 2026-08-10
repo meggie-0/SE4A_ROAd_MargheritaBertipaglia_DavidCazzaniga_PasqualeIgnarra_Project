@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm chiede esplicitamente quali pacchetti possono eseguire script di installazione.
+# esbuild e unrs-resolver ne hanno bisogno: scaricano/collegano il binario nativo usato
+# rispettivamente da Vite e da dependency-cruiser. @scarf/scarf invia solo telemetria.
+allowBuilds:
+  '@scarf/scarf': false
+  esbuild: true
+  unrs-resolver: true

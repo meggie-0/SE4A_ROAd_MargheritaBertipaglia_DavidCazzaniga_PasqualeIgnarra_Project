@@ -1,0 +1,14 @@
+{
+  "$comment": "Typecheck dei test di sistema. Playwright ha un runner suo, non passa da ts-jest.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "incremental": false
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}
