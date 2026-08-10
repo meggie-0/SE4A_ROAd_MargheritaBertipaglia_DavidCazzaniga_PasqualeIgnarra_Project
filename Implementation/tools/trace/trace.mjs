@@ -20,13 +20,21 @@ import { repoRoot, colors } from '../lib/run.mjs';
 const requirementsPath = join(repoRoot, 'docs', 'requirements.json');
 const gatesDir = join(repoRoot, 'apps', 'api', 'test', 'gates');
 
-/** Cartelle in cui cercare i test. Tutto ciò che finisce in .spec.ts o .e2e.spec.ts conta. */
-const testRoots = [
-  join(repoRoot, 'apps'),
-  join(repoRoot, 'packages'),
-  join(repoRoot, 'tools'),
-  join(repoRoot, 'e2e'),
-];
+/**
+ * Cartelle in cui cercare i test. Tutto ciò che finisce in .spec.ts o .e2e.spec.ts conta.
+ *
+ * `ROAD_TRACE_ROOTS` le sostituisce: serve al cancello, che punta il tracciatore su un albero di
+ * fixture per verificare che sappia contare davvero. Un tracciatore sbagliato è peggio di nessun
+ * tracciatore — dichiara scoperto un requisito che ha i test, o coperto uno che non li ha.
+ */
+const testRoots = process.env.ROAD_TRACE_ROOTS
+  ? process.env.ROAD_TRACE_ROOTS.split(';').filter((root) => root.length > 0)
+  : [
+      join(repoRoot, 'apps'),
+      join(repoRoot, 'packages'),
+      join(repoRoot, 'tools'),
+      join(repoRoot, 'e2e'),
+    ];
 
 const IGNORED_DIRS = new Set(['node_modules', 'dist', 'build', 'coverage', '.tsbuild', '.git']);
 
@@ -51,42 +59,147 @@ function tagsOf(title) {
   return [...title.matchAll(/\[([A-Za-z]+\d+)\]/g)].map((match) => match[1].toUpperCase());
 }
 
+/** Fine di una stringa o di un template literal che inizia in `start`. Ritorna l'indice del delimitatore di chiusura. */
+function endOfLiteral(source, start) {
+  const quote = source[start];
+  for (let i = start + 1; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === '\\') {
+      i += 1;
+      continue;
+    }
+    if (char === quote) return i;
+    // Dentro un template, `${...}` può contenere di tutto, comprese altre stringhe.
+    if (quote === '`' && char === '$' && source[i + 1] === '{') {
+      let nesting = 1;
+      i += 2;
+      while (i < source.length && nesting > 0) {
+        if (source[i] === '\\') i += 1;
+        else if (`'"\``.includes(source[i])) i = endOfLiteral(source, i);
+        else if (source[i] === '{') nesting += 1;
+        else if (source[i] === '}') nesting -= 1;
+        i += 1;
+      }
+      i -= 1;
+    }
+  }
+  return source.length;
+}
+
+/**
+ * Riconosce l'apertura di un blocco Jest a partire dalla parola chiave in `start`.
+ *
+ * Deve reggere tutte le forme che il progetto usa davvero, non solo la più semplice:
+ * `it('t')`, `it.only('t')`, `it.each([...])('t')` e `it.each\`tabella\`('t')`. La versione
+ * precedente pretendeva l'apice subito dopo la parentesi e quindi *non vedeva* i test scritti
+ * con `it.each` — che nel cancello M0 sono quattro su cinque. Un requisito coperto da soli
+ * `it.each` sarebbe risultato scoperto, e `pnpm trace` avrebbe accusato codice sano.
+ *
+ * Ritorna `{ title }` se il blocco è riconosciuto, altrimenti `null`.
+ */
+function parseBlockOpening(source, start) {
+  let i = start;
+  const skipSpace = () => {
+    while (i < source.length && /\s/.test(source[i])) i += 1;
+  };
+
+  skipSpace();
+
+  // Modificatori concatenati: .only, .skip, .concurrent, .failing, .each(...), .each`...`
+  while (source[i] === '.') {
+    i += 1;
+    skipSpace();
+    const modifier = /^\w+/.exec(source.slice(i));
+    if (!modifier) return null;
+    i += modifier[0].length;
+    skipSpace();
+
+    // `.each` porta con sé la tabella dei casi, che va saltata per intero.
+    if (source[i] === '(' || source[i] === '`') {
+      if (source[i] === '`') {
+        i = endOfLiteral(source, i) + 1;
+      } else {
+        let nesting = 0;
+        while (i < source.length) {
+          const char = source[i];
+          if (`'"\``.includes(char)) i = endOfLiteral(source, i);
+          else if (char === '(') nesting += 1;
+          else if (char === ')') {
+            nesting -= 1;
+            if (nesting === 0) {
+              i += 1;
+              break;
+            }
+          }
+          i += 1;
+        }
+      }
+      skipSpace();
+    }
+  }
+
+  if (source[i] !== '(') return null;
+  i += 1;
+  skipSpace();
+
+  if (!`'"\``.includes(source[i])) return null;
+  const titleEnd = endOfLiteral(source, i);
+  return { title: source.slice(i + 1, titleEnd) };
+}
+
 /**
  * Attribuisce ogni caso di test (`it` / `test`) ai tag dei `describe` che lo contengono.
  *
- * Lo scanner è volutamente semplice: segue la profondità delle graffe e tiene una pila dei
- * describe aperti. Non è un parser TypeScript, ma la forma dei file di test è regolare e il
- * criterio di fallimento — "almeno un test" — non dipende dall'esattezza del conteggio.
+ * Lo scanner segue la profondità delle graffe e tiene una pila dei describe aperti. Non è un
+ * parser TypeScript, ma salta il contenuto di stringhe e template — dove una graffa spaiata
+ * falserebbe il conteggio — e la forma dei file di test è regolare.
  */
+const BLOCK_KEYWORDS = ['describe', 'it', 'test'];
+
 function scan(file, counters, unknownTags, knownIds, milestoneIds) {
   const source = stripComments(readFileSync(file, 'utf8'));
   const openStack = [];
   let depth = 0;
 
-  const blockPattern = /\b(describe|it|test)\s*(?:\.\s*\w+\s*)?\(\s*(['"`])((?:\\.|(?!\2).)*)\2/g;
-  const events = [];
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
 
-  let match;
-  while ((match = blockPattern.exec(source)) !== null) {
-    events.push({ index: match.index, kind: match[1], title: match[3] });
-  }
-
-  let cursor = 0;
-  for (const event of events) {
-    for (let i = cursor; i < event.index; i += 1) {
-      const char = source[i];
-      if (char === '{') depth += 1;
-      else if (char === '}') {
-        depth -= 1;
-        while (openStack.length > 0 && openStack[openStack.length - 1].depth > depth) {
-          openStack.pop();
-        }
-      }
+    // Il contenuto di stringhe e template si salta per intero: una graffa dentro una stringa
+    // falserebbe la profondità, e un `describe(...)` citato dentro un test — per esempio nel test
+    // di questo stesso tracciatore — verrebbe contato come se fosse vero.
+    if (`'"\``.includes(char)) {
+      i = endOfLiteral(source, i);
+      continue;
     }
-    cursor = event.index;
 
-    if (event.kind === 'describe') {
-      const tags = tagsOf(event.title);
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      // `>` e non `>=`: il corpo di un describe vive a profondità depth+1, quindi quando la
+      // graffa si richiude e si torna a depth il describe dev'essere già stato tolto. Con la
+      // condizione sbagliata un describe di primo livello non usciva mai dalla pila e i suoi
+      // tag finivano addosso ai test dei describe successivi.
+      while (openStack.length > 0 && openStack[openStack.length - 1].depth > depth) {
+        openStack.pop();
+      }
+      continue;
+    }
+
+    const previous = i > 0 ? source[i - 1] : ' ';
+    if (/[\w$]/.test(previous)) continue;
+
+    const keyword = BLOCK_KEYWORDS.find((candidate) => source.startsWith(candidate, i));
+    if (!keyword || /[\w$]/.test(source[i + keyword.length] ?? ' ')) continue;
+
+    const block = parseBlockOpening(source, i + keyword.length);
+    if (!block) continue;
+
+    if (keyword === 'describe') {
+      const tags = tagsOf(block.title);
       for (const tag of tags) {
         // I cancelli si intitolano con la milestone, es. describe('[M0] Cancello: ...'):
         // è un tag legittimo, non un refuso.
@@ -94,10 +207,9 @@ function scan(file, counters, unknownTags, knownIds, milestoneIds) {
           unknownTags.set(tag, (unknownTags.get(tag) ?? 0) + 1);
         }
       }
-      openStack.push({ depth, tags });
+      openStack.push({ depth: depth + 1, tags });
     } else {
-      const active = new Set(openStack.flatMap((entry) => entry.tags));
-      for (const tag of active) {
+      for (const tag of new Set(openStack.flatMap((entry) => entry.tags))) {
         const counter = counters.get(tag);
         if (counter) {
           counter.tests += 1;
@@ -105,6 +217,8 @@ function scan(file, counters, unknownTags, knownIds, milestoneIds) {
         }
       }
     }
+
+    i += keyword.length - 1;
   }
 }
 

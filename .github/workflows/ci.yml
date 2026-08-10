@@ -5,8 +5,10 @@ name: CI
 # dell'harness, non del codice.
 
 on:
+  # Solo `main` sui push: sui branch di lavoro ci pensa l'evento `pull_request`, e sommare i due
+  # farebbe girare due volte la stessa verifica sullo stesso commit.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
 
 concurrency:

@@ -37,6 +37,40 @@ module.exports = {
       },
     },
     {
+      name: 'no-cross-module-internals-from-src-root',
+      comment:
+        'Stessa regola, per i file che stanno direttamente sotto src/ (main.ts, app.module.ts, ' +
+        'openapi.ts): il `from` della regola precedente pretende un segmento di cartella e non ' +
+        'li coprirebbe.',
+      severity: 'error',
+      from: { path: '^apps/api/src/[^/]+\\.ts$' },
+      to: {
+        path: '^apps/api/src/[^/]+/',
+        pathNot: [
+          '^apps/api/src/[^/]+/[^/]+\\.port\\.ts$',
+          '^apps/api/src/[^/]+/[^/]+\\.module\\.ts$',
+        ],
+      },
+    },
+    {
+      name: 'tests-reach-modules-only-through-ports',
+      comment:
+        'CLAUDE.md Regola 1 dice «nessun file fuori da src/<modulo>/», e i test non sono ' +
+        "un'eccezione: un test che inietta AllocationManager invece di AllocationPort smette di " +
+        'dimostrare che il modulo è sostituibile (HARNESS.md §9). Unica deroga: `platform`, ' +
+        'perché FakeClock e FixedRandom *sono* i doppi che i test devono poter costruire.',
+      severity: 'error',
+      from: { path: '^apps/api/test/' },
+      to: {
+        path: '^apps/api/src/[^/]+/',
+        pathNot: [
+          '^apps/api/src/platform/',
+          '^apps/api/src/[^/]+/[^/]+\\.port\\.ts$',
+          '^apps/api/src/[^/]+/[^/]+\\.module\\.ts$',
+        ],
+      },
+    },
+    {
       name: 'no-circular',
       comment: 'Nessuna dipendenza circolare fra moduli.',
       severity: 'error',

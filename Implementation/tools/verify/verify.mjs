@@ -43,6 +43,11 @@ const steps = [
     execute: () => run('npx', ['jest', '--selectProjects', 'gate']),
   },
   {
+    name: 'trace',
+    what: 'ogni requisito di una milestone chiusa ha almeno un test che lo nomina (Regola 4)',
+    execute: () => run('node', ['tools/trace/trace.mjs']),
+  },
+  {
     name: 'integration',
     what: 'test di integrazione su Postgres reale',
     execute: () => run('npx', ['jest', '--selectProjects', 'integration', '--passWithNoTests']),

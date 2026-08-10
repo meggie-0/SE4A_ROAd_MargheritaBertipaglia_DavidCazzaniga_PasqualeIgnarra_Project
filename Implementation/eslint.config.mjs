@@ -16,37 +16,57 @@ const determinismMessage = (what, port) =>
   `${what} è vietato nel codice di dominio (CLAUDE.md Regola 3): usa ${port}. ` +
   `Le uniche implementazioni ammesse stanno in apps/api/src/platform/.`;
 
-/** Regole di determinismo, applicate a tutto il codice sorgente tranne il modulo platform. */
-const determinism = {
-  'no-restricted-syntax': [
+/** Orologio di sistema e casualità: vietati ovunque tranne che dentro `platform`. */
+const clockAndRandomSelectors = [
+  {
+    selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+    message: determinismMessage('new Date()', 'ClockPort.now()'),
+  },
+  {
+    selector: "MemberExpression[object.name='Date'][property.name='now']",
+    message: determinismMessage('Date.now()', 'ClockPort.now()'),
+  },
+  {
+    selector: "MemberExpression[object.name='Math'][property.name='random']",
+    message: determinismMessage('Math.random()', 'RandomPort.next()'),
+  },
+];
+
+/**
+ * Timer.
+ *
+ * I selettori coprono anche `globalThis.setTimeout(...)`, perché la sola forma diretta si aggira
+ * senza volerlo. Gli import dei moduli `timers` sono bloccati a parte: `import { setTimeout as
+ * delay } from 'node:timers/promises'` è indistinguibile da qualunque altra chiamata a funzione
+ * una volta rinominato, e nessun selettore sintattico può riconoscerlo.
+ */
+const timerSelectors = [
+  {
+    selector: 'CallExpression[callee.name=/^set(Timeout|Interval|Immediate)$/]',
+    message: determinismMessage('setTimeout/setInterval', 'un metodo pubblico runOnce()'),
+  },
+  {
+    selector: 'MemberExpression[property.name=/^set(Timeout|Interval|Immediate)$/]',
+    message: determinismMessage('setTimeout/setInterval', 'un metodo pubblico runOnce()'),
+  },
+];
+
+const timerImports = {
+  'no-restricted-imports': [
     'error',
     {
-      selector: "NewExpression[callee.name='Date'][arguments.length=0]",
-      message: determinismMessage('new Date()', 'ClockPort.now()'),
-    },
-    {
-      selector: "MemberExpression[object.name='Date'][property.name='now']",
-      message: determinismMessage('Date.now()', 'ClockPort.now()'),
-    },
-    {
-      selector: "MemberExpression[object.name='Math'][property.name='random']",
-      message: determinismMessage('Math.random()', 'RandomPort.next()'),
-    },
-    {
-      selector: "CallExpression[callee.name='setTimeout']",
-      message: determinismMessage(
-        'setTimeout',
-        'un metodo pubblico runOnce() chiamato dallo scheduler',
-      ),
-    },
-    {
-      selector: "CallExpression[callee.name='setInterval']",
-      message: determinismMessage(
-        'setInterval',
-        'un metodo pubblico runOnce() chiamato dallo scheduler',
-      ),
+      paths: ['timers', 'node:timers', 'timers/promises', 'node:timers/promises'].map((name) => ({
+        name,
+        message: determinismMessage('importare i timer di Node', 'un metodo pubblico runOnce()'),
+      })),
     },
   ],
+};
+
+/** Regole di determinismo, applicate a tutto il codice sorgente tranne il modulo platform. */
+const determinism = {
+  'no-restricted-syntax': ['error', ...clockAndRandomSelectors, ...timerSelectors],
+  ...timerImports,
 };
 
 export default tseslint.config(
@@ -83,16 +103,18 @@ export default tseslint.config(
     },
   },
 
-  // Determinismo: vale su tutto il codice sorgente di applicazioni e pacchetti.
+  // Determinismo: vale su tutto il codice sorgente di applicazioni e pacchetti, e su `tools/`
+  // scritto in TypeScript — dove da M7 vivrà il simulatore di flotta, che sotto test deve
+  // avanzare solo su `tick()` espliciti.
   {
-    files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+    files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}', 'tools/**/*.{ts,tsx}'],
     rules: determinism,
   },
 
   // Unica eccezione: il modulo platform, che *è* l'adattatore verso orologio e casualità reali.
   {
     files: ['apps/api/src/platform/**/*.ts'],
-    rules: { 'no-restricted-syntax': 'off' },
+    rules: { 'no-restricted-syntax': 'off', 'no-restricted-imports': 'off' },
   },
 
   // I test possono usare i timer di Jest e costruire date esplicite; non possono comunque
@@ -103,17 +125,14 @@ export default tseslint.config(
   },
 
   // I cancelli di milestone avviano processi veri (server HTTP, dev server dei client) e devono
-  // poterli attendere. Restano vietati orologio di sistema e casualità, che sono ciò che rende
-  // instabile una suite; i timer, qui, servono a pilotare l'ambiente, non a definire il dominio.
+  // poterli attendere: qui i timer sono ammessi, ed è scritto in HARNESS.md §2 insieme alla
+  // regola che deroga. Restano vietati orologio di sistema e casualità, che sono ciò che rende
+  // instabile una suite — infatti l'attesa nel cancello M0 conta i tentativi, non i millisecondi.
   {
     files: ['apps/api/test/gates/**/*.ts'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        ...determinism['no-restricted-syntax']
-          .slice(1)
-          .filter((rule) => !/setTimeout|setInterval/.test(rule.selector)),
-      ],
+      'no-restricted-syntax': ['error', ...clockAndRandomSelectors],
+      'no-restricted-imports': 'off',
     },
   },
 

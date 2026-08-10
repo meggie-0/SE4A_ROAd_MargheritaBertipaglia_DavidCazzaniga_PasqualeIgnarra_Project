@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -40,6 +41,30 @@ const clients = [
 ] as const;
 
 const FAKE_NOW = '2026-05-04T09:30:00.000Z';
+
+/** Esegue `pnpm trace`, opzionalmente su un albero di fixture invece che sulla suite vera. */
+function runTrace(roots?: string): { status: number | null; output: string } {
+  const result = spawnSync(`node "${join('tools', 'trace', 'trace.mjs')}"`, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    shell: true,
+    env: roots ? { ...process.env, ROAD_TRACE_ROOTS: roots } : process.env,
+  });
+
+  // I codici colore ANSI vanno tolti, o le espressioni regolari sulla tabella non agganciano.
+  // La sequenza si costruisce a runtime: un byte 0x1b incollato nel sorgente è invisibile nel
+  // diff, ed ESLint lo rifiuta giustamente dentro un'espressione regolare.
+  const ansi = new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, 'g');
+  const raw = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  return { status: result.status, output: raw.replace(ansi, '') };
+}
+
+/** Numero di test che la tabella di `pnpm trace` attribuisce a un requisito. */
+function testsFor(output: string, id: string): number {
+  const row = new RegExp(`^${id}\\s+.*?\\s(\\d+)(\\s|$)`, 'm').exec(output);
+  if (!row) throw new Error(`Il requisito ${id} non compare nella tabella di trace.`);
+  return Number.parseInt(row[1] as string, 10);
+}
 
 /**
  * Riserva `count` porte libere e distinte.
@@ -148,15 +173,76 @@ describe('[M0] Cancello: walking skeleton', () => {
       expect(rootPackage.scripts[script]).toBeDefined();
     });
 
-    it('pnpm trace gira senza errori e non pretende ancora alcun requisito', () => {
-      const result = spawnSync(`node "${join('tools', 'trace', 'trace.mjs')}"`, {
-        cwd: repoRoot,
-        encoding: 'utf8',
-        shell: true,
-      });
+    it('pnpm verify esegue tutti i passi di HARNESS.md §1', () => {
+      const verify = readFileSync(join(repoRoot, 'tools', 'verify', 'verify.mjs'), 'utf8');
+      const steps = [...verify.matchAll(/name:\s*'([^']+)'/g)].map((match) => match[1]);
 
-      expect(result.stdout + result.stderr).toContain('Copertura milestone completate: 0/0');
+      // Che lo script esista non basta: dev'esserci dentro ogni controllo che HARNESS.md §1
+      // elenca, gate compreso (§6: i cancelli già passati non tornano mai rossi).
+      expect(steps).toEqual([
+        'shared',
+        'typecheck',
+        'lint',
+        'arch',
+        'contract',
+        'unit',
+        'gate',
+        'trace',
+        'integration',
+      ]);
+    });
+
+    it('pnpm trace gira senza errori e non lascia requisiti scoperti', () => {
+      const result = runTrace();
+
       expect(result.status).toBe(0);
+      // Si asserisce l'invariante — coperti uguale attesi — e non il letterale "0/0" che vale
+      // solo finché M0 è l'unica milestone chiusa. Un cancello che scade è un cancello che
+      // diventerà rosso accusando M0 per il lavoro di M1.
+      const summary = /Copertura milestone completate: (\d+)\/(\d+)/.exec(result.output);
+      expect(summary).not.toBeNull();
+      expect(summary?.[1]).toBe(summary?.[2]);
+    });
+
+    it('pnpm trace attribuisce i test al requisito giusto', () => {
+      // Il tracciatore è ciò che rende verificabile la Regola 4: se conta male, dichiara scoperto
+      // un requisito che ha i test (e porta a inseguire un difetto che non c'è) o coperto uno che
+      // non li ha. Entrambi gli errori sono già successi, ed è per questo che c'è questo test.
+      const roots = mkdtempSync(join(tmpdir(), 'road-trace-'));
+      try {
+        writeFileSync(
+          join(roots, 'fratelli.spec.ts'),
+          [
+            "describe('[R5] primo', () => {",
+            "  it('uno', () => {});",
+            "  describe('annidato', () => { it('due', () => {}); });",
+            '});',
+            "describe('[R8] secondo', () => { it('tre', () => {}); });",
+          ].join('\n'),
+          'utf8',
+        );
+        writeFileSync(
+          join(roots, 'each.spec.ts'),
+          [
+            "describe('[R10] solo it.each', () => {",
+            "  it.each([1, 2])('caso %s', () => {});",
+            '});',
+          ].join('\n'),
+          'utf8',
+        );
+
+        const { output } = runTrace(roots);
+
+        // R5 possiede due test (il proprio e quello del describe annidato); R8 uno solo. Se il
+        // describe di R5 non venisse tolto dalla pila, i suoi tag finirebbero anche su R8.
+        expect(testsFor(output, 'R5')).toBe(2);
+        expect(testsFor(output, 'R8')).toBe(1);
+        // I test scritti con `it.each` sono test: contarli zero renderebbe "scoperto" un
+        // requisito coperto.
+        expect(testsFor(output, 'R10')).toBeGreaterThan(0);
+      } finally {
+        rmSync(roots, { recursive: true, force: true });
+      }
     });
 
     it('la CI esegue esattamente `pnpm verify` (HARNESS.md §8)', () => {
@@ -164,8 +250,13 @@ describe('[M0] Cancello: walking skeleton', () => {
       expect(existsSync(workflow)).toBe(true);
 
       const content = readFileSync(workflow, 'utf8');
-      expect(content).toContain('pnpm install --frozen-lockfile');
-      expect(content).toContain('pnpm verify');
+      const verifyJob = content.slice(content.indexOf('jobs:'), content.indexOf('  e2e:'));
+      const commands = [...verifyJob.matchAll(/^ {6}- run: (.+)$/gm)].map((match) => match[1]);
+
+      // "Esattamente" è la parola che conta (HARNESS.md §1, regola d'oro): non `pnpm verify`
+      // *più* una lista parallela di comandi, che è proprio la divergenza fra locale e CI contro
+      // cui la regola è scritta.
+      expect(commands).toEqual(['pnpm install --frozen-lockfile', 'pnpm verify']);
     });
 
     it('docker-compose alza Postgres 16 con btree_gist disponibile', () => {

@@ -25,15 +25,19 @@ function collectModuleFiles(dir: string, found: string[] = []): string[] {
   return found;
 }
 
-/** Estrae il contenuto testuale dell'array `exports: [...]` di un decoratore @Module. */
+/**
+ * Estrae i simboli di *tutti* gli array `exports: [...]` di un file.
+ *
+ * Al plurale di proposito: con la regex non globale veniva controllato solo il primo, e un file
+ * con due `@Module` avrebbe avuto il secondo esente dal controllo.
+ */
 function exportedSymbols(source: string): string[] {
-  const match = /exports\s*:\s*\[([^\]]*)\]/.exec(source);
-  const body = match?.[1];
-  if (body === undefined) return [];
-  return body
-    .split(',')
-    .map((entry) => entry.replace(/\/\/.*$/gm, '').trim())
-    .filter((entry) => entry.length > 0);
+  return [...source.matchAll(/exports\s*:\s*\[([^\]]*)\]/g)].flatMap((match) =>
+    (match[1] ?? '')
+      .split(',')
+      .map((entry) => entry.replace(/\/\/.*$/gm, '').trim())
+      .filter((entry) => entry.length > 0),
+  );
 }
 
 describe('Confini fra moduli: gli @Module esportano solo porte', () => {
