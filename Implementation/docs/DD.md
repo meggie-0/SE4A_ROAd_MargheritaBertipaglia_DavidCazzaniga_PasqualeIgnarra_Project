@@ -1,0 +1,1371 @@
+# DD — Design Document
+
+**ROAd — Autonomous Mobility Application**
+
+| | |
+|---|---|
+| Authors | Margherita Bertipaglia, David Cazzaniga, Pasquale Ludovico Ignarra |
+| University | Politecnico di Milano |
+| Course | Software Engineering for Automation |
+| Academic year | 2025-2026 |
+| Date | July 2026 |
+
+> **Nota sull'estrazione.** Questo file nasce come trascrizione integrale del testo di
+> `../DD/ROAd__DD.pdf` (19 pagine), estratta con `pdftotext` e riformattata in Markdown senza
+> riassumere. La numerazione dei capitoli e i riferimenti a requisiti `[Rn]`/`[NFRn]`, goal `[Gn]` e
+> vincoli `[Cn]` sono quelli originali. Le figure, che nel PDF sono immagini, sono rese come sorgenti
+> PlantUML presi da `../DD/diagrams/` (fedeli all'originale) e — per la FSM di design, disegnata in
+> draw.io — come tabella di transizione trascritta dal PDF.
+>
+> **Da v1.1 questo Markdown è la fonte autorevole**, non il PDF: il PDF v1.0 verrà rigenerato a fine
+> progetto a partire da qui. Tutte le modifiche rispetto al PDF v1.0 sono raccolte nell'
+> [Appendice A — Registro delle decisioni](#appendice-a--registro-delle-decisioni-v11), e nel corpo
+> del documento sono marcate come **[v1.1]**.
+
+---
+
+## Contents
+
+1. [Introduction](#1-introduction) — 2
+   - 1.1 [Purpose](#11-purpose) — 2
+   - 1.2 [Definitions, Acronyms, Abbreviations](#12-definitions-acronyms-abbreviations) — 2
+   - 1.3 [Revision history](#13-revision-history) — 3
+   - 1.4 [Document Structure](#14-document-structure) — 3
+2. [Architectural Design](#2-architectural-design) — 4
+   - 2.1 [Overview and architectural style](#21-overview-and-architectural-style) — 4
+   - 2.2 [Component view](#22-component-view) — 4
+   - 2.3 [Class view](#23-class-view) — 6
+     - 2.3.1 [AllocationManager (Strategy)](#231-allocationmanager-strategy) — 6
+     - 2.3.2 [Robotaxi (State)](#232-robotaxi-state) — 7
+     - 2.3.3 [NotificationManager (Observer)](#233-notificationmanager-observer) — 7
+   - 2.4 [Runtime view](#24-runtime-view) — 8
+   - 2.5 [Deployment view](#25-deployment-view) — 10
+   - 2.6 [Selected architectural styles and patterns](#26-selected-architectural-styles-and-patterns) — 11
+     - 2.6.1 [Strategy — allocation algorithms](#261-strategy--allocation-algorithms) — 11
+     - 2.6.2 [Observer — state-change notifications](#262-observer--state-change-notifications) — 11
+     - 2.6.3 [State — robotaxi lifecycle](#263-state--robotaxi-lifecycle) — 11
+     - 2.6.4 [Other patterns and styles](#264-other-patterns-and-styles) — 12
+3. [User Interface Design](#3-user-interface-design) — 13
+   - 3.1 [Passenger mobile app](#31-passenger-mobile-app) — 13
+   - 3.2 [Operator web dashboard](#32-operator-web-dashboard) — 13
+4. [Requirements Traceability](#4-requirements-traceability) — 15
+   - 4.1 [Functional requirements](#41-functional-requirements) — 15
+   - 4.2 [Non-functional requirements](#42-non-functional-requirements) — 16
+5. [Implementation, Integration and Test Plan](#5-implementation-integration-and-test-plan) — 17
+   - 5.1 [Feature prioritisation](#51-feature-prioritisation) — 17
+   - 5.2 [Implementation and integration order](#52-implementation-and-integration-order) — 17
+   - 5.3 [Testing strategy](#53-testing-strategy) — 18
+6. [References](#6-references) — 19
+- [Appendice A — Registro delle decisioni (v1.1)](#appendice-a--registro-delle-decisioni-v11)
+
+---
+
+# 1 Introduction
+
+## 1.1 Purpose
+
+This is the Design Document (DD) of ROAd (Robotaxi Optimized Allocation). The document describes how
+the system is built: the software architecture, the components and their interfaces, the way they
+interact at runtime, the design patterns we adopt, the user interface, the mapping from requirements
+to design, and the plan to implement, integrate and test the system.
+
+### Main Goals
+
+ROAd supports the management of an autonomous taxi fleet in a city. Passengers can request immediate
+rides or book rides in advance from a mobile app; the system assigns a suitable robotaxi according
+to a vehicle-allocation strategy that the fleet operator can choose at runtime. The system tracks
+the lifecycle of each robotaxi, notifies passengers about relevant events, lets the operator monitor
+the fleet from a web dashboard, and proactively rebalances available robotaxis toward areas of
+expected high demand. Autonomous driving, mapping and payment are treated as external dependencies
+and are not implemented as part of the system.
+
+The design explicitly addresses these goals in terms of design patterns:
+
+- **Strategy** pattern for switching between allocation algorithms.
+- **Observer** pattern for notifying users when the state of a vehicle changes.
+- **State** pattern for managing the lifecycle of a robotaxi.
+
+## 1.2 Definitions, Acronyms, Abbreviations
+
+### Definitions
+
+- **Component**: A modular, replaceable unit of the system that provides and requires services
+  through well-defined interfaces.
+- **Tier**: A physical (deployment) layer of the architecture. ROAd is organised in three tiers:
+  presentation, application, data.
+- **S2B — Software To Be**: The ROAd backend together with the two clients.
+- **Manager**: An internal backend component responsible for one coherent area of the application
+  logic (e.g. `AllocationManager`).
+- **Gateway**: A component that mediates access to an external system, hiding its specific protocol
+  from the rest of the system.
+- **Context**: In the State/Strategy patterns, the object that delegates part of its behaviour to a
+  separate state/strategy object.
+
+### Acronyms
+
+- **DD** (Design Document)
+- **RASD** (Requirements Analysis and Specification Document)
+- **API** (Application Programming Interface)
+- **REST** (Representational State Transfer)
+- **MVC** (Model-View-Controller)
+- **ETA** (Estimated Time of Arrival)
+- **FSM** (Finite State Machine)
+- **UML** (Unified Modeling Language)
+
+### Abbreviations
+
+- **[Rn]** n-th functional requirement
+- **[NFRn]** n-th non-functional requirement
+- **[Cn]** n-th component
+- **[UCn]** n-th use case
+
+## 1.3 Revision history
+
+| Version | Date | Description |
+|---|---|---|
+| 1.0 | July 11, 2026 | Initial release of the Design Document |
+| 1.1 | August 10, 2026 | **[v1.1]** Realisation decisions taken before implementation: port signatures aligned with the code contract, Observer realisation, `IllegalTransitionError` naming, reservation timeline for immediate rides, advance-booking activation, zone membership rule, `enableAuto()` re-evaluation, demand ranking, operational definitions for NFR3/NFR6/NFR8, R14. See [Appendice A](#appendice-a--registro-delle-decisioni-v11). |
+
+## 1.4 Document Structure
+
+- **Chapter 1 — Introduction**: Purpose, terminology, revision history, structure.
+- **Chapter 2 — Architectural Design**: The architectural style, the component view, the class view
+  of the most relevant components, the runtime view, the deployment view, and the selected styles
+  and design patterns.
+- **Chapter 3 — User Interface Design**: An overview of the passenger app and of the operator
+  dashboard through wireframes.
+- **Chapter 4 — Requirements Traceability**: How the requirements of the RASD are satisfied by the
+  components and patterns of this document.
+- **Chapter 5 — Implementation, Integration and Test Plan**: The order in which we plan to
+  implement, integrate and test the subcomponents.
+- **Chapter 6 — References**
+
+---
+
+# 2 Architectural Design
+
+## 2.1 Overview and architectural style
+
+ROAd adopts a **three-tier client-server architecture**:
+
+- A **presentation tier** with two thin clients:
+  1. The Passenger Mobile App
+  2. The Operator Web Dashboard
+- An **application tier** for the ROAd backend (the S2B core), which contains all the management
+  logic, organised as a set of cooperating components behind an API Gateway.
+- A **data tier** for a single relational database that stores accounts, requests, rides, vehicles
+  and reservations.
+
+This style is useful for three main reasons.
+
+First, the two kinds of user need different clients (a mobile app for passengers, a data-rich web
+console for operators), but they must work on the same, consistent state: a centralized server is
+the natural place to realize this constraint, which is also what lets us prevent conflicting
+assignments (NFR4, C1).
+
+Second, the application tier is internally layered: the business logic never talks to an external
+system directly but always through the `ExternalServicesGateway`, so the volatile parts (mapping
+provider, demand source, vehicle protocol) are isolated from the stable core (NFR8, separation of
+concerns).
+
+Third, the authoritative shared state is stored in the data tier, while the application tier keeps
+only disposable local caches. The backend can therefore be replicated horizontally, which supports
+scalability (NFR3) and concurrency (NFR1).
+
+Inside the backend we also use, locally, two well-known styles: **MVC** on the client side (the
+views are a function of an observable model) and an **event-driven** mechanism for notifications,
+realised with the Observer pattern (Section 2.6).
+
+## 2.2 Component view
+
+Figure 2.1 shows the high-level component diagram. The backend is decomposed into
+single-responsibility managers; each one exposes a small interface and depends on the others only
+through those interfaces.
+
+#### Figure 2.1: High-level component diagram of ROAd
+
+with the two clients, the backend managers, the database, and the external systems.
+Source: `../DD/diagrams/component_diagrams/main_components.puml`
+
+```plantuml
+component "Passenger Client" as PassengerClient
+component "Fleet Operator" as FleetOperator
+
+package "Backend" {
+    component "API Gateway" as APIGateway
+    () "IClientAPI"
+    () "IOperatorAPI"
+
+    component "Authentication Manager" as AuthenticationManager
+    () "IAuthenticationService"
+
+    component "Ride Request Manager" as RideRequestManager
+    () "IRideRequestService"
+
+    component "Fleet Monitor" as FleetMonitor
+    () "IFleetMonitorService"
+
+    component "Mode Controller" as ModeController
+    () "IModeControlService"
+
+    component "Maintenance Manager" as MaintenanceManager
+    () "IMaintenanceService"
+
+    component "Allocation Manager" as AllocationManager
+    () "IAllocationService"
+
+    component "Persistence Manager" as PersistenceManager
+    () "IPersistenceService"
+
+    component "External Services Gateway" as ExternalServicesGateway
+    () "IExternalServices"
+
+    component "Notification Manager" as NotificationManager
+    () "INotificationService"
+
+    component "Rebalancing Manager" as RebalancingManager
+}
+
+database "Database" as DB
+node "External Systems\n\nmaps, traffic,\ndemand,\nrobotaxi fleet" as ExternalSystems
+
+PassengerClient --( IClientAPI
+FleetOperator --( IOperatorAPI
+
+APIGateway -up- IClientAPI
+APIGateway -up- IOperatorAPI
+
+APIGateway --( IAuthenticationService
+APIGateway --( IRideRequestService
+APIGateway --( IFleetMonitorService
+APIGateway --( IModeControlService
+APIGateway --( IMaintenanceService
+
+AuthenticationManager -up- IAuthenticationService
+RideRequestManager   -up- IRideRequestService
+FleetMonitor         -up- IFleetMonitorService
+ModeController       -up- IModeControlService
+MaintenanceManager   -up- IMaintenanceService
+AllocationManager    -up- IAllocationService
+PersistenceManager   -up- IPersistenceService
+ExternalServicesGateway -up- IExternalServices
+NotificationManager  -up- INotificationService
+
+RideRequestManager --( IPersistenceService
+RideRequestManager --( IAllocationService
+RideRequestManager --( INotificationService
+
+AllocationManager --( IExternalServices
+
+FleetMonitor --( IPersistenceService
+FleetMonitor --( IExternalServices
+
+ModeController --( IAllocationService
+ModeController --( INotificationService
+
+MaintenanceManager --( IFleetMonitorService
+MaintenanceManager --( IPersistenceService
+MaintenanceManager --( INotificationService
+
+RebalancingManager --( IFleetMonitorService
+RebalancingManager --( IExternalServices
+RebalancingManager --( IPersistenceService
+RebalancingManager --( INotificationService
+
+PersistenceManager --> DB : stores and retrieves data
+ExternalServicesGateway --> ExternalSystems : adapts external APIs
+```
+
+The main components and the operations they export are:
+
+- **API Gateway**: Single entry point for the clients. Exposes the REST endpoints and the WebSocket
+  channel used to push notifications. Routes each call to the right manager and enforces
+  authentication.
+- **AuthenticationManager**: `authenticate()`, `register()`, `updateProfile()`. Manages accounts and
+  sessions (R1, R2).
+- **RideRequestManager**: `submitImmediate()`, `submitAdvance()`, `cancel()`. Validates requests,
+  coordinates advance reservations and drives the request lifecycle (R3, R4).
+- **AllocationManager**: `allocate(request, candidates)`, `setActiveStrategy()`. Selects the
+  robotaxi to assign by delegating to the active allocation strategy (R5, R8). This is the context
+  of the Strategy pattern.
+- **ModeController**: `onTrafficLevel()`, `setManual()`, `enableAuto()`. Implements Auto/Manual mode,
+  the automatic strategy switching with hysteresis and the priority of human intervention (R12, R13,
+  NFR9, NFR10).
+- **FleetMonitor**: `getCandidates()`, `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
+  `requestRebalancing()`. Keeps the real-time picture of every robotaxi (position, state) and
+  coordinates vehicle lifecycle updates (R7, G6, G8). Each Robotaxi manages its own lifecycle
+  through the State pattern.
+- **RebalancingManager**: `analyzeDemand()`, `rebalance()`. Identifies high-demand zones and
+  repositions available robotaxis (R10, R11, G9).
+- **MaintenanceManager**: `requestMaintenance()`, `completeMaintenance()`. Marks robotaxis in/out of
+  maintenance and prevents their assignment (R9).
+- **NotificationManager**: `update(event)`. Receives domain events and dispatches notifications to
+  the interested clients (R6, G7). Concrete observer of the Observer pattern.
+- **PersistenceManager**: `create()`, `update()`, `filterAvailable()`, `reserve()`. The only
+  component that talks to the database; it filters candidates according to their availability
+  timelines and atomically stores each advance booking together with the corresponding robotaxi
+  reservation. It is where the uniqueness/consistency constraints live (NFR4, C1).
+- **ExternalServicesGateway**: `getETA()`, `getTraffic()`, `getDemandData()`, `commandRoute()`,
+  `readTelemetry()`. A facade over the external systems (mapping service, demand data source,
+  robotaxi fleet), with one adapter per provider (NFR8).
+
+### 2.2.1 Realisation notes **[v1.1]**
+
+This subsection fixes the details that Section 2.2 left open and that the implementation needs in
+order to be deterministic and testable. It does not change the decomposition of Figure 2.1.
+
+**Exported operations, exact signatures.** Every component is reachable only through its interface,
+realised in code as an abstract class (the *port*) that doubles as the injection token. Three
+signatures are more precise than in v1.0:
+
+- `AllocationManager.allocate(request, candidates): Robotaxi | null` — v1.0 declared a `Robotaxi`
+  return type, but the RASD requires the request to be rejected when no feasible vehicle exists
+  (RASD Figure 3.1, `[request rejected]` branch), so the absence of a selection must be
+  representable.
+- `AllocationManager.setActiveStrategy(name: StrategyName, source: 'auto' | 'manual'): void` — v1.0
+  passed a strategy object. Passing the *name* keeps the caller free of concrete strategy classes,
+  and passing the *origin* of the change lets a manual selection flip the strategy and the mode in a
+  single atomic write, which is what NFR10 demands ("immediate and atomic transition to Manual
+  Mode"). A companion reader `getActiveStrategy(): StrategyName` is added, needed by the dashboard
+  and by R8.
+- `ModeController.getMode(): Mode` — added, because NFR10 requires the current control mode to be
+  always visible on the dashboard (Section 3.2), which needs a read path.
+
+`RebalancingManager.analyzeDemand()` is exported **without arguments**: the
+`analyzeDemand(demandData, trafficData, fleetStatus)` message in Figure 2.7 is a self-call, and the
+manager gathers its own inputs from `ExternalServicesGateway` and `FleetMonitor` before computing.
+
+**Ownership of the `system_mode` record.** The active strategy and the Auto/Manual mode are one
+persistent record, so that every replica of the application tier reads the same authoritative value
+(NFR3). `AllocationManager.setActiveStrategy()` is the only writer of the active strategy, and it
+also sets the mode to Manual in the same transaction when `source` is `'manual'`.
+`ModeController.enableAuto()` is the only writer that sets the mode back to Auto. Both read paths
+(`getActiveStrategy()`, `getMode()`) go through `PersistenceManager`; this is the
+`AllocationManager → PersistenceManager` edge already shown in the deployment view (Figure 2.9).
+
+**`AllocationManager` does not depend on `FleetMonitor`.** As in Figure 2.1, the candidate set is
+produced by `FleetMonitor.getCandidates()` and passed *into* `allocate()` by `RideRequestManager`.
+The allocation component therefore depends only on `ExternalServicesGateway` and
+`PersistenceManager`, which keeps each strategy testable with a plain list of vehicles.
+
+**Zone membership.** A `Zone` is a partition of the urban area (RASD §2.2.1), realised as a
+**Voronoi partition over the zone centroids**: a point belongs to the zone whose centroid is nearest
+by haversine distance, ties broken by ascending `zoneID`. There is no zone radius: a radius would
+leave both uncovered points and overlaps, and "partition" excludes either.
+
+**Expected demand and ranking.** `analyzeDemand()` estimates, for each zone `z` at instant `t`:
+
+```
+expectedDemand(z, t) = base(z, weekdayHourSlot(t)) * Π multiplier(e)
+                                                     for each event e active in z at t
+```
+
+where `base` is the historical baseline per zone and weekly hour slot, and an event is active when
+`t ∈ [e.start, e.end)`. Zones are returned by **descending expected demand, ties broken by ascending
+`zoneID`**. `rebalance()` then ranks zones by
+`deficit(z) = expectedDemand(z, t) − availableRobotaxisIn(z)` and, for each zone with a positive
+deficit taken in that order, sends the nearest idle robotaxi drawn from a zone in surplus, ties
+broken by ascending `robotaxiID`. Every ordering is total and deterministic, so the tests are stable.
+
+**Periodic work.** The design contains no timer inside the business logic. Each periodic activity is
+a component with a public `runOnce()` driven by a scheduler in production and called directly by the
+tests:
+
+| Driver | Component | Drives |
+|---|---|---|
+| `RebalancingScheduler.runOnce()` | RebalancingManager | the cycle of Figure 2.7 |
+| `TrafficMonitor.runOnce()` | ModeController | reads `getTraffic()` and calls `onTrafficLevel()` (Figure 2.6) |
+| `AdvanceBookingActivator.runOnce()` | RideRequestManager | activates due bookings (see §2.4) |
+
+**Validation and the published contract.** Request and response shapes are declared once as schemas
+shared by backend and clients, and the REST contract published by the API Gateway is generated from
+the same source, so a change to a payload cannot reach the clients unnoticed.
+
+## 2.3 Class view
+
+This section zooms into the three components that carry the patterns required for the project. The
+remaining components are mostly procedural and do not need a class-level view.
+
+### 2.3.1 AllocationManager (Strategy)
+
+Figure 2.2 shows the classes of the allocation logic. The `AllocationManager` holds a reference to an
+abstract `AllocationStrategy` and calls `selectRobotaxi()` on it; the two concrete strategies
+(`NearestAvailableStrategy`, `MinimumETAStrategy`) implement the actual policy. The `ModeController`
+is the object that swaps the active strategy at runtime.
+
+**[v1.1]** The signatures below carry the refinements of §2.2.1: `allocate()` may return no vehicle,
+and `setActiveStrategy()` takes the strategy *name* plus the *origin* of the change.
+
+#### Figure 2.2: Class diagram of the AllocationManager
+
+The Strategy pattern applied to vehicle allocation.
+Source: `../DD/diagrams/class_diagrams/allocation_manager.puml`
+
+```plantuml
+class AllocationStrategy <<interface>> {
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+}
+
+class NearestAvailableStrategy {
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+}
+
+class MinimumETAStrategy {
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+}
+
+class AllocationManager {
+    - strategy: AllocationStrategy
+    --
+    + allocate(request: RideRequest, candidates: List<Robotaxi>): Robotaxi [0..1]
+    + setActiveStrategy(name: StrategyName, source: ChangeSource): void
+    + getActiveStrategy(): StrategyName
+}
+
+class ModeController {
+    - autoMode: boolean
+    - currentTrafficLevel: TrafficLevel
+    --
+    + onTrafficLevel(level: TrafficLevel): void
+    + setManual(name: StrategyName): void
+    + enableAuto(): void
+    + getMode(): Mode
+}
+
+enum StrategyName {
+    NEAREST_AVAILABLE
+    MINIMUM_ETA
+}
+
+enum ChangeSource {
+    AUTO
+    MANUAL
+}
+
+enum Mode {
+    AUTO
+    MANUAL
+}
+
+AllocationStrategy <|.. NearestAvailableStrategy
+AllocationStrategy <|.. MinimumETAStrategy
+
+AllocationManager "1" o--> "1" AllocationStrategy : current strategy
+ModeController "1" --> "1" AllocationManager : selects active strategy
+```
+
+### 2.3.2 Robotaxi (State)
+
+Figure 2.3 shows the lifecycle classes. The `Robotaxi` keeps a reference to the `RobotaxiState`
+interface. The concrete states are `AvailableState`, `AssignedState`, `ArrivingState`,
+`ArrivedState`, `InRideState`, `RebalancingState` and `MaintenanceState`. Each concrete state
+defines the behaviour of the transitions that are legal from it, while calls for any other
+transition are rejected. This makes illegal transitions impossible by construction (NFR5).
+
+#### Figure 2.3: Class diagram of the Robotaxi
+
+The State pattern applied to the vehicle lifecycle.
+Source: `../DD/diagrams/class_diagrams/robotaxi_state.puml`
+
+```plantuml
+class Robotaxi {
+    - state: RobotaxiState
+    --
+    + assignRide(request: RideRequest): void
+    + startPickupNavigation(): void
+    + pickupReached(): void
+    + startRide(): void
+    + completeRide(): void
+    + requestRebalancing(): void
+    + completeRebalancing(): void
+    + requestMaintenance(): void
+    + completeMaintenance(): void
+    + setState(state: RobotaxiState): void
+}
+
+class RobotaxiState <<interface>> {
+    + assignRide(r: Robotaxi, request: RideRequest): void
+    + startPickupNavigation(r: Robotaxi): void
+    + pickupReached(r: Robotaxi): void
+    + startRide(r: Robotaxi): void
+    + completeRide(r: Robotaxi): void
+    + requestRebalancing(r: Robotaxi): void
+    + completeRebalancing(r: Robotaxi): void
+    + requestMaintenance(r: Robotaxi): void
+    + completeMaintenance(r: Robotaxi): void
+}
+
+class AvailableState {
+    + assignRide(r: Robotaxi, request: RideRequest): void
+    + requestRebalancing(r: Robotaxi): void
+    + requestMaintenance(r: Robotaxi): void
+}
+
+class AssignedState {
+    + startPickupNavigation(r: Robotaxi): void
+}
+
+class ArrivingState {
+    + pickupReached(r: Robotaxi): void
+}
+
+class ArrivedState {
+    + startRide(r: Robotaxi): void
+}
+
+class InRideState {
+    + completeRide(r: Robotaxi): void
+}
+
+class RebalancingState {
+    + assignRide(r: Robotaxi, request: RideRequest): void
+    + completeRebalancing(r: Robotaxi): void
+}
+
+class MaintenanceState {
+    + completeMaintenance(r: Robotaxi): void
+}
+
+Robotaxi "1" o-- "1" RobotaxiState : current state
+
+RobotaxiState <|.. AvailableState
+RobotaxiState <|.. AssignedState
+RobotaxiState <|.. ArrivingState
+RobotaxiState <|.. ArrivedState
+RobotaxiState <|.. InRideState
+RobotaxiState <|.. RebalancingState
+RobotaxiState <|.. MaintenanceState
+```
+
+### 2.3.3 NotificationManager (Observer)
+
+Figure 2.4 shows the notification classes. `Robotaxi` and `Ride` are subjects, while the
+`NotificationManager` is the observer that is notified whenever a subject changes state. It then
+dispatches the received events to the `PassengerAppSession` and the `OperatorDashboardSession`.
+
+#### Figure 2.4: Class diagram of the notification mechanism
+
+The Observer pattern used to propagate domain events from subjects to observers.
+Source: `../DD/diagrams/class_diagrams/class_notification.puml`
+
+```plantuml
+class Subject <<interface>> {
+    + registerObserver(o: Observer): void
+    + removeObserver(o: Observer): void
+    + notifyObservers(event: DomainEvent): void
+}
+
+class Observer <<interface>> {
+    + update(event: DomainEvent): void
+}
+
+class Robotaxi {
+    - observers: List<Observer>
+    - state: RobotaxiState
+    --
+    + notifyObservers(event: DomainEvent): void
+}
+
+class Ride {
+    - observers: List<Observer>
+    - status: RideStatus
+    --
+    + updateStatus(status: RideStatus): void
+    + notifyObservers(event: DomainEvent): void
+}
+
+class NotificationManager {
+    + update(event: DomainEvent): void
+    + dispatch(event: DomainEvent): void
+}
+
+class PassengerAppSession {
+    + pushToPassenger(event: DomainEvent): void
+}
+
+class OperatorDashboardSession {
+    + pushToOperator(event: DomainEvent): void
+}
+
+class DomainEvent <<event>>
+
+Subject "1" o--> "0..*" Observer : observed_by
+
+Subject <|.. Robotaxi
+Subject <|.. Ride
+Observer <|.. NotificationManager
+
+NotificationManager "1" --> "0..*" PassengerAppSession : pushes events
+NotificationManager "1" --> "0..*" OperatorDashboardSession : pushes events
+```
+
+**Realisation of the two subscription levels [v1.1].** The diagram has two distinct one-to-many
+relations, and they have very different lifetimes; conflating them is the easiest way to get this
+pattern wrong.
+
+- **Subject → Observer** is *process-wide and static*. `Robotaxi` and `Ride` are domain objects that
+  are reconstructed from the database on each operation (see `RobotaxiStateFactory`, §2.6.3), so
+  they cannot carry a durable subscriber list. The list they hold lives for the duration of the
+  operation, and the single observer registered into it is the `NotificationManager`, a singleton
+  registered by the owning module at construction time. `notifyObservers(event)` is therefore always
+  called on a subject that has exactly one observer.
+- **NotificationManager → session** is *per-connection and dynamic*. `PassengerAppSession` and
+  `OperatorDashboardSession` are explicit objects created when a client opens its WebSocket and
+  destroyed when it closes; the `NotificationManager` registers and deregisters them at those two
+  moments, and holds no reference to a session afterwards. A `PassengerAppSession` receives only the
+  events of its own passenger's rides; an `OperatorDashboardSession` receives fleet-wide events.
+
+The consequence is that "who is listening" changes at the session level, where it genuinely varies,
+while the domain objects stay free of any knowledge of transport or connections. Whatever event bus
+the runtime provides may carry the messages, but it does not replace the observer classes: `Subject`,
+`Observer`, `NotificationManager` and the two session classes exist as named classes in the code.
+
+## 2.4 Runtime view
+
+The sequence diagrams below refine, at component level, the requirement-level scenarios of the RASD.
+They show the order of messages exchanged among components to accomplish the most relevant tasks.
+
+#### Figure 2.5: Sequence diagram of the immediate ride request and allocation flow
+
+including request persistence, robotaxi selection, assignment, and passenger notification (R3, R5, R6).
+Source: `../DD/diagrams/sequence_diagrams/immediate_ride_request.puml`
+
+```plantuml
+participant "p:PassengerClient" as P
+participant "api:APIGateway" as API
+participant "rrm:RideRequestManager" as RRM
+participant "pm:PersistenceManager" as PM
+database "db:Database" as DB
+participant "fm:FleetMonitor" as FM
+participant "am:AllocationManager" as AM
+participant "esg:ExternalServicesGateway" as ESG
+participant "nm:NotificationManager" as NM
+
+P -> API : submitImmediateRide(pickup, destination)
+API -> RRM : submitImmediate(passengerId, pickup, destination)
+
+RRM -> PM : create(request)
+PM -> DB : insertRideRequest(request)
+DB --> PM : requestId
+PM --> RRM : rideRequest
+
+RRM -> FM : getCandidates(pickup)
+FM --> RRM : candidates
+
+RRM -> AM : allocate(request, candidates)
+AM -> ESG : getETA(candidates, pickup)
+ESG --> AM : etaList
+AM --> RRM : selectedRobotaxi
+
+RRM -> FM : assign(selectedRobotaxi, request)
+FM --> RRM : assignmentConfirmed
+
+RRM -> PM : reserve(request, selectedRobotaxi)
+PM -> DB : updateAssignment(request, selectedRobotaxi)
+DB --> PM : ok
+PM --> RRM : reservationConfirmed
+
+RRM --> API : rideConfirmed(rideId, robotaxi, ETA)
+API --> P : ride confirmation
+
+RRM ->> NM : update(RideAssignedEvent)
+NM ->> API : push(RideAssignedEvent)
+API ->> P : push(RideAssignedEvent)
+```
+
+#### Figure 2.6: Sequence diagram of the automatic strategy switching flow
+
+showing hysteresis-based strategy selection in Auto Mode and the priority of human manual override
+(R12, R13, NFR9, NFR10).
+Source: `../DD/diagrams/sequence_diagrams/seq_auto_strategy_switch.puml`
+
+```plantuml
+participant "esg:ExternalServicesGateway" as ESG
+participant "mc:ModeController" as MC
+participant "am:AllocationManager" as AM
+participant "pm:PersistenceManager" as PM
+participant "nm:NotificationManager" as NM
+participant "api:APIGateway" as API
+participant "operatorClient:FleetOperatorClient" as Operator
+
+== Automatic strategy switching in Auto Mode ==
+
+ESG ->> MC : onTrafficLevel(level)
+MC -> MC : checkAutoMode()
+MC -> MC : checkHysteresis(level)
+
+alt autoMode enabled and hysteresis satisfied
+    MC -> AM : setActiveStrategy(strategy)
+    AM --> MC : strategyUpdated
+    MC -> PM : update(modeConfig)
+    PM --> MC : ok
+    MC ->> NM : update(StrategyChangedEvent)
+    NM ->> API : push(StrategyChangedEvent)
+    API ->> Operator : push(StrategyChangedEvent)
+else hysteresis not satisfied
+    MC -> MC : keepCurrentStrategy()
+else manualMode enabled
+    MC -> MC : ignoreAutomaticSwitch()
+end
+
+== Human manual override ==
+
+Operator -> API : setManualStrategy(strategy)
+API -> MC : setManual(strategy)
+MC -> AM : setActiveStrategy(strategy)
+AM --> MC : strategyUpdated
+MC -> PM : update(modeConfig)
+PM --> MC : ok
+MC ->> NM : update(ManualOverrideEvent)
+NM ->> API : push(ManualOverrideEvent)
+API ->> Operator : push(ManualOverrideEvent)
+MC --> API : manualModeEnabled
+API --> Operator : manual override confirmation
+```
+
+**The hysteresis rule, stated completely [v1.1].** `checkHysteresis(level)` in Figure 2.6 decides on
+the *last observed* traffic level, which `ModeController` keeps in `currentTrafficLevel`:
+
+| Observed level | Effect in Auto Mode |
+|---|---|
+| `LOW` | switch to `NEAREST_AVAILABLE` if not already active |
+| `MEDIUM` | alert the operator, **never** switch (either direction) |
+| `HIGH` | switch to `MINIMUM_ETA` if not already active |
+
+`enableAuto()` sets the mode back to Auto and then **immediately re-evaluates `currentTrafficLevel`
+through the same table**, switching at once if the outcome differs from the strategy the operator
+had selected manually. Without this, R12 ("in Auto Mode the system dynamically manages the active
+strategy") would be violated for an unbounded time after the mode is restored — the system would sit
+on a manual choice while claiming to be automatic. Because `MEDIUM` never triggers a switch, an
+`enableAuto()` observed at `MEDIUM` deliberately keeps the strategy that was active at that instant.
+NFR9 is unaffected: hysteresis exists to damp *oscillation* of the traffic level, not to defer a
+level that is already known.
+
+Note that `MEDIUM` is asymmetric on purpose. Reverting only at `LOW` is what R12 and NFR9 ask for,
+so the pair of thresholds `HIGH` (switch up) and `LOW` (switch down) leaves `MEDIUM` as the dead
+band between them.
+
+#### Figure 2.7: Sequence diagram of the dynamic fleet rebalancing flow
+
+including demand analysis, available vehicle selection, and route command dispatch (R10, R11).
+Source: `../DD/diagrams/sequence_diagrams/seq_rebalancing.puml`
+
+```plantuml
+participant "scheduler:RebalancingScheduler" as S
+participant "rbm:RebalancingManager" as RBM
+participant "esg:ExternalServicesGateway" as ESG
+participant "fm:FleetMonitor" as FM
+participant "pm:PersistenceManager" as PM
+database "db:Database" as DB
+participant "nm:NotificationManager" as NM
+participant "api:APIGateway" as API
+participant "operatorClient:FleetOperatorClient" as OP
+
+S ->> RBM : triggerRebalancingCycle()
+
+RBM -> ESG : getDemandData()
+ESG --> RBM : demandData
+RBM -> ESG : getTraffic()
+ESG --> RBM : trafficData
+RBM -> FM : getFleetStatus()
+FM --> RBM : fleetStatus
+
+RBM -> RBM : analyzeDemand(demandData, trafficData, fleetStatus)
+RBM -> RBM : identifyHighDemandZones()
+
+alt rebalancing needed
+    RBM -> FM : getAvailableRobotaxis()
+    FM --> RBM : availableRobotaxis
+    RBM -> RBM : selectVehiclesAndTargetZones()
+
+    loop for each selected robotaxi
+        RBM -> FM : requestRebalancing(robotaxi)
+        FM --> RBM : rebalancingStarted
+        RBM -> ESG : commandRoute(robotaxi, targetZone)
+        ESG --> RBM : commandAccepted
+    end
+
+    RBM -> PM : saveRebalancingPlan(rebalancingPlan, stateUpdates)
+    PM -> DB : saveRebalancingPlan(rebalancingPlan)
+    DB --> PM : ok
+    PM -> DB : updateRobotaxiStates(stateUpdates)
+    DB --> PM : ok
+    PM --> RBM : updateConfirmed
+
+    RBM ->> NM : update(RebalancingStartedEvent)
+    NM ->> API : push(RebalancingStartedEvent)
+    API ->> OP : push(RebalancingStartedEvent)
+else no rebalancing needed
+    RBM -> RBM : keepCurrentFleetDistribution()
+end
+```
+
+#### Figure 2.8: Sequence diagram of the advance booking flow
+
+including request validation, future vehicle allocation, conflict prevention, atomic booking and
+robotaxi reservation, and passenger notification (R4, NFR4, C1).
+Source: `../DD/diagrams/sequence_diagrams/seq_advance_booking.puml`
+
+```plantuml
+participant "p:PassengerClient" as P
+participant "api:APIGateway" as API
+participant "rrm:RideRequestManager" as RRM
+participant "pm:PersistenceManager" as PM
+database "db:Database" as DB
+participant "fm:FleetMonitor" as FM
+participant "am:AllocationManager" as AM
+participant "esg:ExternalServicesGateway" as ESG
+participant "nm:NotificationManager" as NM
+
+P -> API : submitAdvanceBooking(pickup, destination, timeWindow)
+API -> RRM : submitAdvance(passengerId, pickup, destination, timeWindow)
+
+RRM -> RRM : validateAdvanceRequest()
+
+RRM -> FM : getCandidates(pickup)
+FM --> RRM : candidates
+
+RRM -> PM : filterAvailable(candidates, timeWindow)
+PM -> DB : findOverlappingAssignments(candidateIds, timeWindow)
+DB --> PM : conflicts
+PM --> RRM : availableCandidates
+
+RRM -> AM : allocate(advanceRequest, availableCandidates)
+AM -> ESG : getETA(availableCandidates, pickup)
+ESG --> AM : etaList
+AM --> RRM : selectedRobotaxi
+
+alt feasible robotaxi found
+    RRM -> PM : reserve(advanceRequest, selectedRobotaxi, timeWindow)
+    PM -> DB : insertBookingAndReservation(advanceRequest, selectedRobotaxi, timeWindow)
+    DB --> PM : reservationResult
+    PM --> RRM : reservationResult
+
+    alt reservation committed
+        RRM --> API : advanceBookingConfirmed(bookingId)
+        API --> P : booking confirmation
+        RRM ->> NM : update(BookingConfirmedEvent)
+        NM ->> API : push(BookingConfirmedEvent)
+        API ->> P : push(BookingConfirmedEvent)
+    else concurrent reservation conflict
+        RRM --> API : bookingRejected(conflictReason)
+        API --> P : conflict error
+    end
+else no feasible robotaxi
+    RRM --> API : bookingRejected(noAvailabilityReason)
+    API --> P : no availability error
+end
+```
+
+#### The reservation timeline **[v1.1]**
+
+Figures 2.5 and 2.8 both end in `reserve()`, so an immediate ride and an advance booking compete on
+the same timeline; this is what makes C1 enforceable by a single database constraint rather than by
+application code. For that to work, **every assignment writes a reservation covering a bounded time
+interval** — an unbounded interval would make each running ride block every future booking on that
+vehicle.
+
+| Case | Interval reserved |
+|---|---|
+| Immediate ride | `[assignedAt, assignedAt + etaToPickup + estimatedRideDuration + buffer)` |
+| Advance booking | `[scheduledPickup − activationLead, scheduledPickup + etaToPickup + estimatedRideDuration + buffer)` |
+
+`buffer` and `activationLead` are configuration constants (defaults: 10 and 15 minutes). The upper
+bound is **closed to the actual instant** when the ride completes or is cancelled, which returns the
+released time to the pool. If a ride overruns its reserved interval the interval is extended; should
+the extension collide with a later reservation, the colliding booking is re-allocated at activation
+time, which re-validates availability anyway (see below).
+
+#### Advance booking activation **[v1.1]**
+
+RASD Scenario 2 requires that "shortly before the scheduled time, the system activates the
+reservation": a booking is not an assignment, and something must turn it into one. The activation is
+owned by `RideRequestManager` and driven by `AdvanceBookingActivator.runOnce()`, a public method
+called by the scheduler in production and directly by the tests.
+
+For each booking whose `scheduledPickup − activationLead` has been reached, `runOnce()` re-validates
+that the reserved robotaxi is still eligible (it is `AVAILABLE`, and not in maintenance). If it is,
+the vehicle transitions `AVAILABLE → ASSIGNED` and the passenger is notified, joining the ordinary
+lifecycle of Figure 2.5. If it is not, the manager re-allocates among the vehicles free in that
+window through `AllocationManager.allocate()`; if none is feasible, the request is rejected and the
+passenger notified, which is the branch already described by RASD Figure 3.2.
+
+```plantuml
+participant "sched:AdvanceBookingActivator" as S
+participant "rrm:RideRequestManager" as RRM
+participant "pm:PersistenceManager" as PM
+participant "fm:FleetMonitor" as FM
+participant "am:AllocationManager" as AM
+participant "nm:NotificationManager" as NM
+
+S ->> RRM : activateDueBookings(now)
+RRM -> PM : findBookingsDueAt(now + activationLead)
+PM --> RRM : dueBookings
+
+loop for each due booking
+    RRM -> FM : getCandidates(pickup)
+    FM --> RRM : candidates
+
+    alt reserved robotaxi still eligible
+        RRM -> FM : assign(reservedRobotaxi, request)
+        FM --> RRM : assignmentConfirmed
+    else reserved robotaxi no longer eligible
+        RRM -> PM : filterAvailable(candidates, timeWindow)
+        PM --> RRM : availableCandidates
+        RRM -> AM : allocate(request, availableCandidates)
+        AM --> RRM : selectedRobotaxi
+
+        alt feasible robotaxi found
+            RRM -> PM : reserve(request, selectedRobotaxi, timeWindow)
+            PM --> RRM : reservationConfirmed
+            RRM -> FM : assign(selectedRobotaxi, request)
+            FM --> RRM : assignmentConfirmed
+        else no feasible robotaxi
+            RRM -> PM : update(request, REJECTED)
+            RRM ->> NM : update(BookingRejectedEvent)
+        end
+    end
+
+    RRM ->> NM : update(RideAssignedEvent)
+end
+```
+
+#### Cancellation **[v1.1]**
+
+`RideRequestManager.cancel()` realises **R14**: it sets the request to `CANCELLED`, releases the
+reservation, and returns the robotaxi to `AVAILABLE` if it had already been assigned. Releasing the
+reservation makes the window bookable again, which is the observable effect the tests assert.
+
+## 2.5 Deployment view
+
+Figure 2.9 shows how the components are deployed onto physical nodes. The clients run on the users'
+devices, the backend on an application server (replicable), the database on its own node, and the
+robotaxis expose an on-board control API reached over the network. The `PersistenceManager` is the
+only component that accesses the database, while communication with the robotaxis and the other
+external systems is handled by the `ExternalServicesGateway`.
+
+#### Figure 2.9: Deployment view of the three-tier architecture
+
+Source: `../DD/diagrams/component_diagrams/deployment_view.puml`
+
+```plantuml
+node "Passenger Device" <<device>> as PassengerDevice {
+    artifact "Passenger Client" as PassengerClient
+}
+
+node "Fleet Operator Device" <<device>> as OperatorDevice {
+    artifact "Fleet Operator Client" as OperatorClient
+}
+
+cloud "Internet / Network" as Network
+
+node "Application Server\n(replicable)" <<server>> as AppServer {
+    component "API Gateway" as APIGateway
+    component "Authentication\nManager" as AuthManager
+    component "Ride Request\nManager" as RideRequestManager
+    component "Allocation\nManager" as AllocationManager
+    component "Notification\nManager" as NotificationManager
+    component "Maintenance\nManager" as MaintenanceManager
+    component "Rebalancing\nManager" as RebalancingManager
+    component "Fleet Monitor" as FleetMonitor
+    component "Mode Controller" as ModeController
+    component "Persistence\nManager" as PersistenceManager
+    component "External Services\nGateway" as ExternalServicesGateway
+}
+
+database "Database Node" as DB {
+    artifact "ROAd Database" as RoadDB
+}
+
+node "Robotaxi" <<device>> as Robotaxi {
+    component "On-board\nControl API" as RobotaxiAPI
+}
+
+cloud "External Systems\nMaps / Traffic / Demand" as ExternalSystems
+
+PassengerClient --> Network : HTTPS / WebSocket
+OperatorClient --> Network : HTTPS / WebSocket
+Network --> APIGateway : REST API requests
+
+APIGateway --> AuthManager
+APIGateway --> RideRequestManager
+APIGateway --> NotificationManager
+APIGateway --> MaintenanceManager
+APIGateway --> RebalancingManager
+APIGateway --> ModeController
+
+RideRequestManager --> AllocationManager
+RideRequestManager --> FleetMonitor
+ModeController --> AllocationManager
+MaintenanceManager --> FleetMonitor
+RebalancingManager --> FleetMonitor
+
+AllocationManager --> ExternalServicesGateway
+MaintenanceManager --> ExternalServicesGateway
+RebalancingManager --> ExternalServicesGateway
+FleetMonitor --> ExternalServicesGateway
+
+AuthManager --> PersistenceManager
+RideRequestManager --> PersistenceManager
+AllocationManager --> PersistenceManager
+NotificationManager --> PersistenceManager
+MaintenanceManager --> PersistenceManager
+RebalancingManager --> PersistenceManager
+FleetMonitor --> PersistenceManager
+ModeController --> PersistenceManager
+PersistenceManager --> RoadDB
+
+ExternalServicesGateway --> Network : external API calls
+Network <--> RobotaxiAPI : commands / telemetry
+Network <--> ExternalSystems : maps / traffic / demand
+```
+
+## 2.6 Selected architectural styles and patterns
+
+We document here the design patterns we adopt. For each one we follow the same scheme used in the
+course: the problem, the solution in our system, and the reason why the pattern is the right answer.
+The first three are the patterns explicitly requested for this project.
+
+### 2.6.1 Strategy — allocation algorithms
+
+**Problem.** The system must assign a robotaxi to a request, but there is no single "best" rule:
+depending on traffic, the operator may want the nearest available vehicle (to save distance) or the
+vehicle with the minimum ETA (to cut waiting time during congestion). The rule must be
+interchangeable at runtime, and new rules should be addable later without touching the
+request-handling code (NFR7).
+
+**Solution.** We define an abstract `AllocationStrategy` with a single operation
+`selectRobotaxi(request, candidates)`, and two concrete subclasses (`NearestAvailableStrategy`,
+`MinimumETAStrategy`). The `AllocationManager` is the context: it owns a reference to the abstract
+strategy and never to a concrete one. The `ModeController` replaces the active strategy via
+`setActiveStrategy()` (see Figures 2.2 and 2.6).
+
+**Why.** Strategy turns "which algorithm" into a runtime choice instead of a hard-coded branch, which
+is exactly what R8/R12 ask for. It also makes each policy independently testable and keeps the
+allocation logic open for extension but closed for modification.
+
+### 2.6.2 Observer — state-change notifications
+
+**Problem.** Several parties are interested in the same events — when a robotaxi changes state or a
+ride progresses, the passenger app must update, the operator dashboard must refresh, and the
+notification logic must fire. The producers of the events should not need to know who is listening,
+and listeners may come and go (a passenger opens/closes the app).
+
+**Solution.** `Robotaxi` and `Ride` implement the `Subject` interface, keep a list of `Observer`s and
+call `notifyObservers(event)` on every state change. The `NotificationManager` implements
+`Observer.update(event)` and dispatches each received event to the `PassengerAppSession` and the
+`OperatorDashboardSession`. The `APIGateway` forwards the corresponding push messages to the
+connected clients through its WebSocket channel (Figure 2.4).
+
+**Why.** Observer realises the one-to-many dependency between a subject and its listeners with
+minimal coupling, and supports dynamic subscription. It is the natural way to satisfy R6/G7
+(real-time updates) and, over a WebSocket push channel, also helps NFR2 (near-real-time
+responsiveness) by avoiding polling.
+
+### 2.6.3 State — robotaxi lifecycle
+
+**Problem.** A robotaxi behaves differently depending on its state (available, assigned, arriving,
+arrived, in ride, maintenance, and, added in this design, rebalancing), and only some transitions are
+legal. Encoding this as a large conditional spread across the code is error-prone and risks reaching
+invalid states (NFR5).
+
+**Solution.** The `Robotaxi` (context) delegates its behaviour to a `RobotaxiState` object. Each
+concrete state defines the behaviour of the events that are legal from it; any other call raises an
+`IllegalTransitionError`. **[v1.1]** *(v1.0 called this error `InvalidTransition`; the name is fixed
+here so that document, code and tests use one spelling.)* The full state machine is shown in
+Figure 2.10; the classes in Figure 2.3.
+
+The state is persisted as an enum column and the state object is rebuilt by a
+`RobotaxiStateFactory` on each read **[v1.1]**: the behaviour lives in the classes, the database
+stores only which class to instantiate. This is what lets the lifecycle survive a restart and stay
+identical across replicas of the application tier (NFR3), and it is why the state objects hold no
+durable observer list (§2.3.3).
+
+#### Figure 2.10: Design-level state machine of the Robotaxi
+
+realised by the State pattern. **The `REBALANCING` state is added with respect to the RASD FSM.**
+Source: `../DD/diagrams/finite_state_machine/robotaxi_state.drawio` (and `.pdf`).
+The figure is a drawn image; the transitions are transcribed below.
+
+| # | From | Trigger `[guard] / action` | To |
+|---|---|---|---|
+| 1 | `AVAILABLE` | `requestMaintenance()` `[requiresMaintenance()]` / `disableAssignment()` | `MAINTENANCE` |
+| 2 | `MAINTENANCE` | `completeMaintenance()` `[isOperational()]` / `enableAssignment()` | `AVAILABLE` |
+| 3 | `AVAILABLE` | `assignRide(request)` `[isAvailable()]` / `storeRide()` | `ASSIGNED` |
+| 4 | `ASSIGNED` | `startPickupNavigation()` `[hasAssignedRide()]` / `updateStatus()` | `ARRIVING` |
+| 5 | `ARRIVING` | `pickupReached()` `[hasReachedPickup()]` / `notifyPassenger()` | `ARRIVED` |
+| 6 | `ARRIVED` | `startRide()` `[isPassengerOnBoard()]` / `beginTrip()` | `IN RIDE` |
+| 7 | `IN RIDE` | `completeRide()` `[hasReachedDestination()]` / `releaseRobotaxi()` | `AVAILABLE` |
+| 8 | `AVAILABLE` | `requestRebalancing()` `[hasNoActiveRide()]` / `computeTargetArea()` | `REBALANCING` |
+| 9 | `REBALANCING` | `completeRebalancing()` `[hasReachedTargetArea()]` / `setAvailable()` | `AVAILABLE` |
+| 10 | `REBALANCING` | `assignRide(request)` `[hasReceivedRideRequest()]` / `interruptRebalancing()` | `ASSIGNED` |
+
+States: `AVAILABLE`, `ASSIGNED`, `ARRIVING`, `ARRIVED`, `IN RIDE`, `REBALANCING`, `MAINTENANCE`.
+Every transition not listed above raises `IllegalTransitionError`.
+
+**[v1.1]** This seven-state machine — not the six-state one of RASD §3.2 — is the machine the system
+implements, and the one the tests enumerate exhaustively. The RASD machine remains correct as the
+requirements-level abstraction: `REBALANCING` is a vehicle that is not serving a passenger, which a
+requirements reader sees simply as unavailable for the moment. Two consequences worth stating,
+because they are the ones an implementation gets wrong:
+
+- A robotaxi in `REBALANCING` **is still allocatable**. Transition 10 interrupts the repositioning
+  and assigns the ride, which is the whole point of moving idle vehicles toward expected demand
+  (R11, G9); treating a rebalancing vehicle as unavailable would defeat the feature.
+- A robotaxi in `REBALANCING` **cannot enter maintenance directly** — `RebalancingState` exposes
+  only `assignRide()` and `completeRebalancing()`. Maintenance is requested once the vehicle is back
+  to `AVAILABLE`. Any other call from any other state is an `IllegalTransitionError`, with no
+  exceptions.
+
+**Why.** State localises each transition rule next to the state it belongs to, so illegal
+transitions become impossible by construction. It directly supports G6 (lifecycle tracking) and NFR5
+(robustness), and makes the (finite) set of transitions easy to test exhaustively.
+
+### 2.6.4 Other patterns and styles
+
+- **Adapter / Facade** — the `ExternalServicesGateway` exposes a uniform interface to the mapping
+  service, the demand source and the vehicle API, hiding their specific protocols (NFR8).
+- **MVC** — both clients separate the observable model (a local copy of the relevant server state)
+  from the view and the controller, so the view is a function of the model.
+- **Singleton** — the `FleetMonitor` is a single dependency-injected instance within each backend
+  process. Its in-memory fleet index is a disposable cache synchronised with persistent data and
+  external telemetry, and is not the authoritative shared state.
+
+---
+
+# 3 User Interface Design
+
+This chapter gives an overview of the two user interfaces through wireframes. They are low-fidelity
+on purpose: the goal is to show structure and the main interactions, not the final graphic design.
+Both interfaces are designed to be intuitive and require no training (NFR6).
+
+## 3.1 Passenger mobile app
+
+The passenger app is centered on a map. The main screen (Figure 3.1) lets the user set pickup and
+destination, choose between an immediate ride and a scheduled one, and request the ride with a
+single button. After the request, the same screen turns into a live status view that follows the
+ride through its states (searching, assigned, arriving, arrived, in ride), driven by the Observer
+notifications.
+
+**[v1.1] Delivery form.** The passenger app is delivered as a **responsive progressive web
+application** rather than a native mobile build. Nothing in the RASD or in this document depends on
+a native runtime — R3, R4, R6 and NFR6 constrain the interaction, not the packaging — and a web
+delivery keeps the client on the same public HTTP and WebSocket contract as the dashboard, which is
+what makes either client replaceable (NFR8). Wherever this document says "mobile app", read
+"passenger client".
+
+#### Figure 3.1: Wireframe of the passenger app: request a ride and follow its status
+
+> **Nota:** nel PDF v1.0 questa figura non è renderizzata; al suo posto compare il segnaposto
+> `Images/diagrams/ui_passenger — Render the PlantUML source to PDF or PNG`. Il sorgente del
+> wireframe non è presente in `../DD/diagrams/`.
+
+## 3.2 Operator web dashboard
+
+The dashboard (Figure 3.2) is a command-and-control console. It shows the live fleet on a map, a
+strategy panel where the operator sees the active allocation strategy and can switch it (moving the
+system to Manual mode), and an alerts panel that surfaces automatic strategy switches and
+rebalancing suggestions. A status bar summarises the fleet by state. The Auto/Manual toggle makes
+the current control mode always visible (NFR10).
+
+#### Figure 3.2: Wireframe of the operator dashboard: fleet monitoring and strategy control
+
+> **Nota:** nel PDF v1.0 questa figura non è renderizzata; al suo posto compare il segnaposto
+> `Images/diagrams/ui_operator — Render the PlantUML source to PDF or PNG`. Il sorgente del
+> wireframe non è presente in `../DD/diagrams/`.
+
+---
+
+# 4 Requirements Traceability
+
+This chapter shows how the requirements defined in the RASD are covered by the design elements of
+this document. Each functional requirement is mapped to the components (and, where relevant, the
+patterns) that realise it; each non-functional requirement is mapped to the design decision that
+supports it.
+
+## 4.1 Functional requirements
+
+| Req | Description (short) | Components / patterns |
+|---|---|---|
+| R1 | Registration and login | AuthenticationManager; clients |
+| R2 | Profile management | AuthenticationManager |
+| R3 | Immediate ride request | RideRequestManager; AllocationManager; Passenger App |
+| R4 | Advance booking (no conflicts) | RideRequestManager; FleetMonitor; AllocationManager + Strategy; PersistenceManager (filterAvailable/reserve) |
+| R5 | Automated vehicle allocation | AllocationManager + *Strategy*; FleetMonitor |
+| R6 | Ride status notifications | NotificationManager + *Observer*; API Gateway (push) |
+| R7 | Real-time fleet monitoring | FleetMonitor; Operator Dashboard |
+| R8 | Runtime strategy selection | ModeController; AllocationManager + Strategy |
+| R9 | Maintenance management | MaintenanceManager; FleetMonitor + *State* |
+| R10 | Demand analysis | RebalancingManager; ExternalServicesGateway |
+| R11 | Proactive fleet rebalancing | RebalancingManager; FleetMonitor |
+| R12 | Auto Mode (traffic-driven switching) | ModeController; ExternalServicesGateway |
+| R13 | Manual Mode (override) | ModeController; Operator Dashboard |
+| R14 **[v1.1]** | Ride cancellation | RideRequestManager (`cancel`); PersistenceManager (reservation release); FleetMonitor + *State* |
+
+## 4.2 Non-functional requirements
+
+| NFR | Quality | Design decision that supports it |
+|---|---|---|
+| NFR1 | Concurrency handling | Replicable application tier behind API Gateway; DB transactions in PersistenceManager |
+| NFR2 | Real-time responsiveness | Observer + WebSocket push instead of polling |
+| NFR3 | Scalability | Horizontally replicable backend; single data tier |
+| NFR4 | Data consistency | Uniqueness/timeline constraints in PersistenceManager; atomic `reserve()` |
+| NFR5 | Robustness (valid transitions) | State pattern in Robotaxi; FleetMonitor coordinates lifecycle updates |
+| NFR6 | Ease of use | Map-centric app and command-and-control dashboard (Ch. 3) |
+| NFR7 | Extensibility of allocation logic | Strategy pattern; AllocationManager closed for modification |
+| NFR8 | Separation of concerns | ExternalServicesGateway (Adapter/Facade); layered backend |
+| NFR9 | Stability of auto-switching | Hysteresis in ModeController (revert only at LOW) |
+| NFR10 | Priority of human intervention | Manual mode in ModeController suspends auto switches |
+
+## 4.3 Operational definitions of the quality requirements **[v1.1]**
+
+Section 4.2 maps each quality to the decision that supports it, which is the right level for a
+design document but is not falsifiable: "the architecture is scalable" cannot fail a test. Since
+every requirement in this project must be demonstrated by at least one test that names it, each NFR
+is restated below as a proposition that can actually be refuted. Three of them (NFR3, NFR6, NFR8)
+had no observable form at all in v1.0 and are the reason this section exists; the others are listed
+so that the whole set is verified the same way.
+
+| NFR | Proposition that must hold | How it is refuted |
+|---|---|---|
+| NFR1 | Two concurrent requests for the last available robotaxi produce exactly one assignment and one rejection | Both succeed, or both fail |
+| NFR2 | A state change reaches a connected client over the push channel without the client polling | The client only learns of the change by issuing a new request |
+| NFR3 | No server-side session state exists: a token issued by one application instance is accepted by a second instance that never handled the login, and authentication consults no in-memory store | The second instance rejects the token |
+| NFR4 | No two reservations of the same robotaxi ever overlap, whatever the interleaving of writers | An overlapping pair is committed |
+| NFR5 | Every transition absent from Figure 2.10 raises `IllegalTransitionError`, and the state survives persistence and reconstruction | Any illegal transition succeeds, or a reconstructed vehicle answers differently from the original |
+| NFR6 | A passenger completes a ride request from a cold start of the client in at most four interactions, and the operator sees mode and active strategy on the dashboard's first render, without navigating | An extra step is needed, or either indicator is not visible initially |
+| NFR7 | A new allocation policy is added by writing one class and registering it, with no edit to `AllocationManager` or to `RideRequestManager` | Adding the third strategy in the tests requires touching either manager |
+| NFR8 | No component outside `ExternalServicesGateway` references a provider protocol or SDK, and the domain tests run with only that gateway substituted | A provider import appears elsewhere, or a domain test needs a second substitute |
+| NFR9 | The sequence Low→Medium→High→Medium→Low switches strategy exactly twice, at High and at the final Low | A switch happens at either Medium |
+| NFR10 | After a manual selection, no traffic level whatsoever changes the active strategy until `enableAuto()` is called; the switch to Manual is atomic with the strategy change | An automatic switch is observed while in Manual, or an interleaving leaves Manual mode and the manual strategy out of step |
+
+---
+
+# 5 Implementation, Integration and Test Plan
+
+## 5.1 Feature prioritisation
+
+We rank the features by importance (value for the core service) and difficulty, to decide what to
+build first. The viable prototype must cover the high-importance features; the rest are
+nice-to-have.
+
+| Feature | Importance | Difficulty |
+|---|---|---|
+| Accounts and authentication (R1, R2) | High | Low |
+| Immediate ride + allocation (R3, R5) | High | Medium |
+| Robotaxi lifecycle / State (R9, G6) | High | Medium |
+| Conflict-free advance booking (R4) | High | High |
+| Notifications / Observer (R6) | High | Medium |
+| Fleet monitoring dashboard (R7) | High | Medium |
+| Runtime strategy selection (R8) | Medium | Low |
+| Auto mode + hysteresis (R12, NFR9) | Medium | High |
+| Demand analysis + rebalancing (R10, R11) | Medium | High |
+| Manual override (R13, NFR10) | Medium | Low |
+
+## 5.2 Implementation and integration order
+
+We integrate bottom-up, so that every component is integrated only after the components it depends
+on are already in place and tested. External systems are replaced by stubs/mocks at the beginning
+and connected through the `ExternalServicesGateway` later.
+
+1. **PersistenceManager + database schema**: foundation for everything; includes the
+   uniqueness/timeline constraints (NFR4).
+2. **FleetMonitor + Robotaxi (State)**: the vehicle model and its lifecycle, first against a vehicle
+   mock.
+3. **AllocationManager + strategies (Strategy)**: on top of FleetMonitor.
+4. **RideRequestManager**: immediate first, then advance booking with candidate filtering, vehicle
+   allocation and atomic reservation, then cancellation (R14) and the booking activation cycle
+   **[v1.1]**.
+5. **NotificationManager (Observer) + API Gateway push**: wire events to clients.
+6. **ModeController + RebalancingManager**: the higher-level control logic, including the traffic
+   monitor that feeds `onTrafficLevel()` **[v1.1]**.
+7. **ExternalServicesGateway adapters**: replace the mocks with the real mapping and demand
+   services.
+8. **Clients**: Passenger App and Operator Dashboard against the stable API.
+
+## 5.3 Testing strategy
+
+We follow the V-model: each artifact is verified against the specification it refines. Verification
+("are we building the software right?") is our focus; validation is addressed through the demos with
+the teacher.
+
+**Unit testing**
+: Each manager and each pure-logic class in isolation. Highest priority: (i) the two
+  `AllocationStrategy` subclasses, with equivalence partitioning over the candidate set (empty fleet
+  / no suitable vehicle / one suitable / several) and boundary values on ETA and distance; (ii) the
+  `RobotaxiState` transitions, tested exhaustively because the state machine is finite, including
+  the rejection of every illegal transition (NFR5); (iii) the conflict check of advance booking
+  (NFR4).
+
+**Integration testing**
+: The request→allocation→notification chain, and the booking→reserve→persistence chain, with
+  external systems mocked. We test the integration in the same bottom-up order used to build it.
+
+**System testing**
+: The four RASD scenarios end-to-end on a staging deployment: immediate ride, advance booking,
+  auto/manual strategy management, dynamic rebalancing. Includes a concurrency test that fires two
+  requests for the last available robotaxi and checks that exactly one is assigned (NFR1, NFR4).
+
+**Acceptance testing**
+: Walkthrough of the goals (G1-G10) with the teacher at the milestone demo.
+
+**Tools [v1.1].** The backend is implemented in TypeScript, so the toolchain is: a unit-test
+framework for TypeScript for the unit and integration levels, an HTTP assertion library driving the
+application for API tests, disposable database containers so that every integration run starts from
+a clean schema with fixed seed data, and a browser automation framework for the system level. The
+concurrency tests do not need a load generator: they fire the competing operations directly and
+assert the outcome, which is both faster and deterministic. The repository runs the whole suite in
+continuous integration on every push, as required by the project rules.
+
+**Determinism [v1.1].** No test may depend on the wall clock or on an unseeded random source: time
+is read through a clock abstraction and randomness through a seeded one, both substitutable in
+tests, and every periodic activity is invoked through the `runOnce()` methods listed in §2.2.1. This
+is a precondition for testing advance booking, hysteresis and rebalancing at all — each of them is
+defined in terms of time — and it is what keeps the suite from producing failures that do not
+correspond to defects.
+
+---
+
+# 6 References
+
+- *ROAd: Robotaxi Optimized Allocation — Requirements Analysis and Specification Document*, v1.0.
+- M. Camilli, *Software Engineering for Automation — Course Slides*, Politecnico di Milano, A.Y.
+  2025-2026 (in particular: modular design, OO design, design patterns, V&V).
+- E. Gamma, R. Helm, R. Johnson, J. Vlissides, *Design Patterns: Elements of Reusable
+  Object-Oriented Software*, Addison-Wesley, 1994.
+- M. Jackson and P. Zave, *The World and the Machine*, ICSE, 1995.
+- Object Management Group, *Unified Modeling Language Specification*, https://www.omg.org/spec/UML/.
+- PlantUML, https://plantuml.com (diagram sources in `./Images/diagrams/`).
+
+---
+
+# Appendice A — Registro delle decisioni (v1.1)
+
+Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento. Serve a due cose:
+rigenerare il PDF a fine progetto senza rileggere il diff, e permettere a chi rivede il codice di
+capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove, e per quale ragione.
+
+| # | Decisione | Sezione | Motivo |
+|---|---|---|---|
+| D1 | La FSM implementata è quella a **sette stati** del design (Fig. 2.10), non quella a sei del RASD §3.2. `REBALANCING` è uno stato a tutti gli effetti, con le sue tre transizioni | §2.6.3 | Senza `REBALANCING` R11/G9 non sono realizzabili: `rebalance()` deve poter muovere un veicolo inattivo e poterlo dirottare su una corsa. Il v1.0 lo dichiarava già ("added with respect to the RASD FSM") ma non ne traeva le conseguenze |
+| D2 | L'eccezione si chiama `IllegalTransitionError` | §2.6.3, Fig. 2.10 | Il v1.0 la chiamava `InvalidTransition`; un solo nome fra documento, codice e test |
+| D3 | `allocate()` può non restituire alcun veicolo | §2.2.1, Fig. 2.2 | Il RASD (Fig. 3.1) prevede il rifiuto quando nessun veicolo è idoneo: l'assenza di scelta dev'essere rappresentabile |
+| D4 | `setActiveStrategy(name, source)` invece di `setActiveStrategy(strategy)`; aggiunti `getActiveStrategy()` e `getMode()` | §2.2.1, Fig. 2.2 | Il nome tiene il chiamante libero dalle classi concrete; l'origine rende atomico il passaggio a Manual richiesto da NFR10; i due lettori servono a R8 e alla visibilità del modo (NFR10) |
+| D5 | `AllocationManager` **non** dipende da `FleetMonitor`: i candidati glieli passa `RideRequestManager` | §2.2.1 | È già l'architettura di Fig. 2.1; renderlo esplicito evita un arco di troppo e tiene ogni strategia testabile con una semplice lista di veicoli |
+| D6 | Il record `system_mode` (strategia attiva + modo) è persistito; `setActiveStrategy` ne è l'unico scrittore per la strategia, `enableAuto()` per il ritorno ad Auto | §2.2.1 | Con più repliche del tier applicativo (NFR3) una strategia tenuta solo in memoria divergerebbe fra istanze |
+| D7 | I due livelli dell'Observer hanno vite diverse: `Subject → NotificationManager` è di processo, `NotificationManager → sessioni` è per connessione | §2.3.3 | Le entità sono ricostruite a ogni operazione e non possono portarsi dietro una lista di subscriber durevole; senza questa distinzione il pattern non è implementabile come disegnato |
+| D8 | Ogni assegnazione scrive una riserva su un intervallo **limitato**; il limite superiore si chiude al completamento | §2.4 | Un intervallo illimitato renderebbe impossibile qualunque prenotazione futura sullo stesso veicolo. È la condizione perché C1 sia garantito da un vincolo di database e non dal codice applicativo |
+| D9 | Le prenotazioni anticipate sono attivate da `AdvanceBookingActivator.runOnce()`, con anticipo configurabile e ri-allocazione se il veicolo non è più idoneo | §2.4 | Lo scenario 2 del RASD lo richiede ("the system activates the reservation") e nessun componente lo copriva |
+| D10 | L'appartenenza di un punto a una zona è per **centroide più vicino** (Voronoi), pareggi su `zoneID` crescente | §2.2.1 | Il RASD dice "partition": un raggio lascerebbe punti scoperti e sovrapposizioni, che una partizione esclude |
+| D11 | `enableAuto()` rivaluta subito l'ultimo livello di traffico noto | §2.4 | Altrimenti R12 resterebbe violato per un tempo arbitrario dopo il ritorno ad Auto. NFR9 non ne risente: l'isteresi smorza le oscillazioni, non rinvia un livello già noto |
+| D12 | `analyzeDemand()` è `base × moltiplicatori degli eventi attivi`, zone in ordine decrescente con pareggi su `zoneID`; `rebalance()` ordina per deficit | §2.2.1 | Ogni ordinamento dev'essere totale e deterministico, o i test diventano instabili — stesso criterio già adottato per i pareggi fra strategie |
+| D13 | Aggiunto **R14 — Ride Cancellation** | §4.1, §2.4 | L'annullamento era un fenomeno condiviso del RASD §1.2.2 e uno stato `CANCELLED` del dominio, ma nessun requisito lo copriva: restava fuori dalla tracciabilità |
+| D14 | NFR1–NFR10 hanno una formulazione operativa falsificabile | §4.3 | NFR3, NFR6 e NFR8 non avevano forma osservabile: senza questa sezione la loro copertura sarebbe stata soddisfatta da test che non asseriscono nulla |
+| D15 | Il client passeggero è una PWA responsive | §3.1 | Nulla nei requisiti dipende dal packaging nativo, e una consegna web tiene entrambi i client sullo stesso contratto pubblico (NFR8) |
+| D16 | Ogni attività periodica è un `runOnce()` pubblico; niente timer nella logica di dominio | §2.2.1, §5.3 | Prenotazioni, isteresi e rebalancing sono definiti sul tempo: senza controllo del tempo i loro test sono instabili |
+| D17 | Strumenti di test aggiornati allo stack effettivo | §5.3 | Il v1.0 citava strumenti di altri linguaggi |
+
+**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13 e D16
+hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
+`HARNESS.md`, `docs/requirements.json`), che sono stati allineati nella stessa occasione. Il DD
+resta la fonte: se in futuro divergono, è il file operativo a doversi adeguare.

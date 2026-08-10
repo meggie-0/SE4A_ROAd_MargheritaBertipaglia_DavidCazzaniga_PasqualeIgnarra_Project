@@ -46,8 +46,10 @@ Da fare:
   dalle linee guida del corso §5.3): prerequisiti, `pnpm install`, `docker compose up -d`,
   `pnpm db:migrate`, `pnpm db:seed`, `pnpm dev`.
 
-**Cancello M0:** `pnpm verify` esiste e passa; la CI è verde; i tre servizi rispondono su `/health`;
-`pnpm trace` gira senza errori (con zero requisiti attesi a questo punto).
+**Cancello M0:** `pnpm verify` esiste e passa; la CI è verde; `pnpm trace` gira senza errori (con
+zero requisiti attesi a questo punto). Sui tre servizi: l'API risponde `200` su `GET /health`, e
+`apps/web` e `apps/passenger` rispondono `200` su `/` mostrando lo stato letto da quell'endpoint —
+i client non espongono un `/health` proprio, sono client.
 
 ---
 
@@ -73,10 +75,21 @@ ALTER TABLE robotaxi_reservation
 veicoli con una riserva sovrapposta alla finestra richiesta. L'assegnazione immediata usa
 `SELECT ... FOR UPDATE SKIP LOCKED` sui candidati.
 
+**Ogni assegnazione scrive una riserva su un intervallo limitato** (DD §2.4, decisione D8):
+corsa immediata `[assegnazione, ETA + durata stimata + buffer)`, prenotazione
+`[orario − anticipo, orario + ETA + durata stimata + buffer)`. `buffer` e `anticipo` sono costanti
+di configurazione, di default 10 e 15 minuti. Il limite superiore si chiude all'istante effettivo
+quando la corsa termina o viene annullata. Un intervallo illimitato è vietato: bloccherebbe ogni
+prenotazione futura su quel veicolo.
+
 ### Zone di Milano
 
-Seed con le zone reali sotto. Le coordinate sono centroidi indicativi, da rifinire; il raggio serve
-solo a decidere l'appartenenza di un punto.
+Seed con le zone reali sotto. Le coordinate sono centroidi indicativi, da rifinire.
+
+**Appartenenza di un punto a una zona** (DD §2.2.1, decisione D10): un punto appartiene alla zona
+il cui centroide è più vicino in distanza haversine, pareggi risolti sull'`id` lessicograficamente
+minore. Nessuna colonna raggio: le zone formano una partizione di Voronoi, senza punti scoperti né
+sovrapposizioni. Il RASD §2.2.1 dice "partition", e un raggio produrrebbe entrambi i difetti.
 
 | Zona | Lat | Lon | Profilo di domanda |
 |---|---|---|---|
@@ -128,17 +141,23 @@ riceve 403 sugli endpoint operatore e viceversa; una password non viene mai rest
 
 **Copre:** R7, R9, G6, G8, NFR5
 
-Classi di stato come da `CLAUDE.md` Regola 2. Transizioni ammesse secondo la FSM del RASD §3.2; ogni
-altra solleva `IllegalTransitionError`. Persistenza come colonna enum, ricostruzione tramite
-`RobotaxiStateFactory`.
+Classi di stato come da `CLAUDE.md` Regola 2: **sette**, incluso `RebalancingState`. Transizioni
+ammesse secondo la FSM del **DD §2.6.3, Figura 2.10** — non quella a sei stati del RASD §3.2, che
+resta la vista a livello di requisiti. Ogni altra transizione solleva `IllegalTransitionError`.
+Persistenza come colonna enum, ricostruzione tramite `RobotaxiStateFactory`.
+
+Due punti facili da sbagliare: un veicolo in `rebalancing` **è allocabile** (la transizione
+`REBALANCING → ASSIGNED` interrompe il riposizionamento, ed è ciò che rende utile la funzione), e
+**non** può entrare in manutenzione direttamente — ci passa da `available`.
 
 `FleetMonitorPort`: `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`,
 `requestRebalancing`. `MaintenancePort`: `requestMaintenance`, `completeMaintenance`; un veicolo in
 manutenzione non compare mai fra i candidati.
 
-**Cancello M2:** copertura esaustiva della FSM — tutte le transizioni legali riescono, **tutte** le
-illegali sollevano l'eccezione tipizzata; lo stato sopravvive a persistenza e ricostruzione; un
-veicolo in manutenzione è escluso dai candidati.
+**Cancello M2:** copertura esaustiva della FSM a sette stati — tutte le transizioni legali della
+Figura 2.10 riescono, **tutte** le altre (7 stati × 9 metodi meno le 10 legali) sollevano
+l'eccezione tipizzata; lo stato sopravvive a persistenza e ricostruzione; un veicolo in manutenzione
+è escluso dai candidati, uno in rebalancing no.
 
 ---
 
@@ -163,18 +182,27 @@ una terza strategia fittizia nel test richiede solo una classe e una registrazio
 
 ## M4 — RideRequestManager
 
-**Copre:** R3, R4, G2, G3
+**Copre:** R3, R4, R14, G2, G3
 
 `RideRequestPort`: `submitImmediate`, `submitAdvance`, `cancel`.
 
 `submitImmediate`: validazione → candidati da `FleetMonitorPort` → `AllocationPort.allocate` →
 assegnazione atomica. `submitAdvance`: filtro candidati sulla timeline → booking e reservation
-scritti nella **stessa transazione**. `cancel`: rilascia la riserva e riporta il veicolo ad
+scritti nella **stessa transazione**. `cancel` (R14): rilascia la riserva e riporta il veicolo ad
 `available`.
+
+**Attivazione delle prenotazioni** (DD §2.4, decisione D9). Una prenotazione non è un'assegnazione:
+qualcosa deve trasformarla in tale poco prima dell'orario, come richiede lo scenario 2 del RASD.
+`AdvanceBookingActivator.runOnce(now)` — pubblico, chiamato da `@Cron` in produzione e direttamente
+dai test — prende le prenotazioni la cui finestra di anticipo è scaduta, verifica che il veicolo
+riservato sia ancora idoneo e lo porta `available → assigned`; se non lo è più, ri-alloca fra i
+veicoli liberi in quella finestra, e se nessuno è idoneo rifiuta e notifica.
 
 **Cancello M4:** catena richiesta → allocazione → assegnazione completa; una prenotazione anticipata
 o scrive entrambe le righe o nessuna (verificato forzando un errore a metà transazione);
-l'annullamento libera la riserva e la finestra torna prenotabile.
+l'annullamento libera la riserva e la finestra torna prenotabile; `runOnce()` su un orologio finto
+attiva una prenotazione dovuta, e ne ri-alloca una il cui veicolo è finito in manutenzione nel
+frattempo.
 
 ---
 
@@ -182,9 +210,10 @@ l'annullamento libera la riserva e la finestra torna prenotabile.
 
 **Copre:** R6, G7, NFR2
 
-Eventi di dominio emessi da `fleet` e `rides`. `NotificationPort.update(event)`. Subscriber
-espliciti `PassengerSession` e `OperatorDashboardSession`, registrati alla connessione e
-deregistrati alla disconnessione. Socket.IO con autenticazione JWT sull'handshake, una room per
+Eventi di dominio emessi da `fleet` e `rides`: `Robotaxi` e `Ride` implementano `Subject` e hanno
+`NotificationManager` come unico observer registrato. `NotificationPort.update(event)`. Subscriber
+di secondo livello espliciti `PassengerAppSession` e `OperatorDashboardSession`, registrati alla
+connessione e deregistrati alla disconnessione (DD §2.3.3). Socket.IO con autenticazione JWT sull'handshake, una room per
 passeggero e una per operatore. Il modulo `gateway` inoltra i push.
 
 **Cancello M5:** un passeggero connesso riceve `assigned → arriving → arrived → in_ride` per la
@@ -205,11 +234,34 @@ alla disconnessione il subscriber viene rimosso e non restano riferimenti.
 - traffico **High** → passaggio automatico a `MinimumETA`;
 - ritorno a `NearestAvailable` **solo** quando il traffico rientra su **Low** (isteresi, NFR9);
 - una scelta manuale porta in Manual mode e sospende ogni switch automatico finché l'operatore non
-  riabilita Auto esplicitamente (NFR10).
+  riabilita Auto esplicitamente (NFR10);
+- `enableAuto()` rivaluta **subito** l'ultimo livello di traffico noto e applica la strategia che
+  gli compete; su Medium tiene quella attiva in quell'istante (RASD R13, DD §2.4, decisione D11).
+
+`ModePort.setActiveStrategy` non esiste: il cambio passa da `AllocationPort.setActiveStrategy(name,
+source)`, che con `source: 'manual'` scrive strategia e modo nella stessa transazione (NFR10). Il
+record `system_mode` è l'unica sede autorevole di strategia attiva e modo, così le repliche non
+divergono (NFR3).
+
+`TrafficMonitor.runOnce()` legge `ExternalServicesPort.getTraffic()` e chiama `onTrafficLevel()`:
+`@Cron` in produzione, chiamata diretta nei test. Nessun timer nel dominio.
 
 `RebalancingPort`: `analyzeDemand` combina base storica e eventi attivi per stimare la domanda per
 zona; `rebalance` invia i veicoli inattivi verso le zone scoperte e produce alert in dashboard.
 `RebalancingScheduler` espone `runOnce()` chiamato da `@Cron` in produzione e dai test direttamente.
+
+**Metrica e ordinamento** (DD §2.2.1, decisione D12), obbligatori perché i test siano stabili:
+
+```
+domandaAttesa(z, t) = base(z, fasciaOrariaSettimanale(t)) × Π moltiplicatore(e)
+                                                            per ogni evento e attivo in z a t
+```
+
+Un evento è attivo se `t ∈ [inizio, fine)`. `analyzeDemand` restituisce le zone per domanda attesa
+**decrescente**, pareggi sull'`id` crescente. `rebalance` ordina per
+`deficit(z) = domandaAttesa(z, t) − veicoli disponibili in z` e, per ogni zona in deficit presa in
+quell'ordine, manda il veicolo inattivo più vicino preso da una zona in surplus, pareggi sull'`id`
+del robotaxi crescente.
 
 **Cancello M6:** sequenza Low→Medium→High→Medium→Low con alert su Medium senza cambio, switch su
 High, ritorno alla strategia di default solo all'ultimo Low; in Manual mode nessuno switch

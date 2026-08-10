@@ -49,8 +49,10 @@ export abstract class AllocationPort {
 
 ```ts
 // src/allocation/allocation.module.ts
+// Nota: allocation NON importa FleetModule. I candidati glieli passa `rides`,
+// come da DD §2.2.1. Aggiungere quell'arco è una divergenza dal DD.
 @Module({
-  imports: [FleetModule, ExternalModule, PlatformModule],
+  imports: [ExternalModule, PersistenceModule, PlatformModule],
   providers: [
     NearestAvailableStrategy,
     MinimumEtaStrategy,
@@ -65,8 +67,9 @@ Chi usa l'allocazione inietta `AllocationPort`, mai `AllocationManager`.
 
 **Vincoli meccanici (verificati da `pnpm arch`):**
 
-- Nessun file fuori da `src/<modulo>/` può importare da `src/<modulo>/` tranne
-  `src/<modulo>/<modulo>.port.ts` e i tipi da esso esposti.
+- Nessun file fuori da `src/<modulo>/` può importare da `src/<modulo>/` tranne i file
+  `src/<modulo>/*.port.ts` (e i tipi da essi esposti) e `src/<modulo>/<modulo>.module.ts`. Il
+  plurale è voluto: `platform` espone `clock.port.ts` e `random.port.ts`.
 - L'array `exports` di un `@Module` può contenere solo classi il cui nome finisce in `Port`.
 - Nessuna dipendenza circolare fra moduli.
 - `apps/*` può importare da `packages/shared`. Mai il contrario.
@@ -108,14 +111,17 @@ delega. Aggiungere una terza strategia deve richiedere solo una nuova classe pi�
 registrazione (NFR7).
 
 **State** — una classe per stato: `AvailableState`, `AssignedState`, `ArrivingState`,
-`ArrivedState`, `InRideState`, `MaintenanceState`. Ogni classe espone i propri metodi di transizione
-e solleva `IllegalTransitionError` per quelle non ammesse (NFR5). Lo stato si persiste come colonna
-enum e l'oggetto si ricostruisce via `RobotaxiStateFactory`. **Vietato** implementare la macchina a
-stati con `switch` sparsi nei service.
+`ArrivedState`, `InRideState`, `RebalancingState`, `MaintenanceState`. Sono **sette**: la macchina
+autorevole è quella del **DD §2.6.3, Figura 2.10**, non quella a sei stati del RASD §3.2. Ogni
+classe espone i propri metodi di transizione e solleva `IllegalTransitionError` per quelle non
+ammesse (NFR5). Lo stato si persiste come colonna enum e l'oggetto si ricostruisce via
+`RobotaxiStateFactory`. **Vietato** implementare la macchina a stati con `switch` sparsi nei service.
 
-**Observer** — `NotificationManager` implementa `update(event)`. I subscriber sono oggetti espliciti
-(`PassengerSession`, `OperatorDashboardSession`) registrati e deregistrati esplicitamente.
-L'`EventEmitter` di Nest può fare da trasporto, ma non sostituisce le classi observer.
+**Observer** — `Robotaxi` e `Ride` implementano `Subject`; `NotificationManager` è l'unico observer
+registrato su di loro e implementa `update(event)`. I subscriber di secondo livello sono oggetti
+espliciti (`PassengerAppSession`, `OperatorDashboardSession`), registrati alla connessione e
+deregistrati alla disconnessione. L'`EventEmitter` di Nest può fare da trasporto, ma non sostituisce
+le classi observer. Le due relazioni hanno vite diverse: vedi DD §2.3.3.
 
 ---
 

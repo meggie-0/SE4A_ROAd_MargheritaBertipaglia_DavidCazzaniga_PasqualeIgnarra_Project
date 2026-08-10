@@ -1,5 +1,5 @@
 {
-  "$comment": "Sorgente unica per pnpm trace. I titoli vengono dal RASD. La colonna milestone dice quando il requisito deve risultare coperto da almeno un test.",
+  "$comment": "Sorgente unica per pnpm trace. I titoli vengono dal RASD. La colonna milestone dice quando il requisito deve risultare coperto da almeno un test. Le tre liste sono tutte tracciate: 14 + 10 + 10 = 34 voci. La formulazione operativa e falsificabile degli NFR sta in docs/DD.md sezione 4.3: senza quella, NFR3, NFR6 e NFR8 non sono verificabili.",
   "functional": [
     { "id": "R1", "title": "Registration and Login", "milestone": "M1b" },
     { "id": "R2", "title": "Profile Management", "milestone": "M1b" },
@@ -13,7 +13,8 @@
     { "id": "R10", "title": "Demand Analysis", "milestone": "M6" },
     { "id": "R11", "title": "Proactive Fleet Rebalancing", "milestone": "M6" },
     { "id": "R12", "title": "Auto Mode (Default)", "milestone": "M6" },
-    { "id": "R13", "title": "Manual Mode (Override)", "milestone": "M6" }
+    { "id": "R13", "title": "Manual Mode (Override)", "milestone": "M6" },
+    { "id": "R14", "title": "Ride Cancellation", "milestone": "M4" }
   ],
   "nonFunctional": [
     { "id": "NFR1", "title": "Concurrency Handling", "milestone": "M1" },

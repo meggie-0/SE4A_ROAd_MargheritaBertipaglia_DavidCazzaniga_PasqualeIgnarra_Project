@@ -62,20 +62,26 @@ applicate e seed a valori fissi. Nessun test dipende dall'ordine di esecuzione d
 
 `.dependency-cruiser.cjs` codifica le regole di CLAUDE.md §Regola 1:
 
+Attenzione a due dettagli, perché la regola è facile da scrivere in modo che *sembri* funzionare:
+dependency-cruiser interpola i gruppi con `$<nome>`, e solo quelli catturati in `from` sono
+utilizzabili dentro `to`. Le eccezioni ammesse sono **tutti** i `*.port.ts` alla radice del modulo —
+al plurale, perché `platform` espone `clock.port.ts` e `random.port.ts` — più il `*.module.ts`, che
+serve agli `imports` di Nest.
+
 ```js
 forbidden: [
   {
     name: 'no-cross-module-internals',
-    comment: 'Un modulo è raggiungibile solo dalla sua porta.',
+    comment: 'Un modulo è raggiungibile solo dalle sue porte.',
     severity: 'error',
     from: { path: '^apps/api/src/(?<mod>[^/]+)/' },
     to: {
-      path: '^apps/api/src/(?<other>[^/]+)/',
+      path: '^apps/api/src/[^/]+/',
       pathNot: [
-        '^apps/api/src/$(other)/$(other)\\.port\\.ts$',
-        '^apps/api/src/$(other)/$(other)\\.module\\.ts$',
+        '^apps/api/src/$<mod>/',                    // dentro lo stesso modulo: libero
+        '^apps/api/src/[^/]+/[^/]+\\.port\\.ts$',   // le porte
+        '^apps/api/src/[^/]+/[^/]+\\.module\\.ts$', // i moduli Nest
       ],
-      moreThanOneDependencyType: false,
     },
   },
   { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
@@ -116,7 +122,13 @@ test end-to-end che usa **solo** l'HTTP pubblico, senza importare nulla dal back
 
 ## 5. Tracciabilità eseguibile
 
-`docs/requirements.json` elenca R1–R13, NFR1–NFR10, G1–G10 con titolo e milestone di competenza.
+`docs/requirements.json` elenca R1–R14, NFR1–NFR10, G1–G10 con titolo e milestone di competenza —
+**34 voci**, goal compresi. I goal si coprono attraverso i test dei requisiti che li realizzano: un
+test può portare più tag, `describe('[G2][R3] ...')`.
+
+Gli NFR hanno una formulazione operativa falsificabile in DD §4.3. Vale la pena rileggerla prima di
+scrivere il test: senza, requisiti come NFR3 o NFR8 finiscono coperti da test che non asseriscono
+nulla, che è esattamente ciò contro cui mette in guardia il §9 qui sotto.
 
 I titoli dei `describe` portano i tag: `describe('[R4][NFR4] Advance booking', ...)`.
 
@@ -126,9 +138,11 @@ I titoli dei `describe` portano i tag: `describe('[R4][NFR4] Advance booking', .
 REQUISITO  TITOLO                              MILESTONE  TEST
 R1         Registration and Login              M1b        4
 R4         Advance Booking                     M4         11
+R14        Ride Cancellation                   M4         3
 NFR9       Stability of Auto-Switching         M6         3
+G2         Request an immediate robotaxi ride  M4         6
 ...
-Copertura milestone completate: 23/23 ✓
+Copertura milestone completate: 34/34 ✓
 ```
 
 Fallisce se un requisito assegnato a una milestone già completata ha zero test. L'output serve
@@ -146,14 +160,14 @@ e i cancelli già passati non tornano mai rossi (girano tutti dentro `pnpm verif
 
 | Cancello | Cosa deve dimostrare |
 |---|---|
-| M0 | `pnpm verify` esiste e passa; CI verde; i tre servizi rispondono su `/health` |
+| M0 | `pnpm verify` esiste e passa; CI verde; l'API risponde su `/health` e i due client rispondono su `/` mostrandone lo stato |
 | M1 | Due transazioni concorrenti che prenotano lo stesso veicolo su intervalli sovrapposti: esattamente una riesce, l'altra fallisce per violazione del vincolo di esclusione |
-| M1b | Registrazione e login funzionano; un token `PASSENGER` riceve 403 sugli endpoint operatore e viceversa |
-| M2 | Tutte le transizioni legali della FSM del RASD §3.2 riescono; **tutte** quelle illegali sollevano `IllegalTransitionError`; lo stato sopravvive a un giro di persistenza e ricostruzione |
+| M1b | Registrazione e login funzionano; un token `PASSENGER` riceve 403 sugli endpoint operatore e viceversa; un token emesso da un'istanza è accettato da una seconda che non ha visto il login (NFR3) |
+| M2 | Tutte le transizioni legali della FSM a sette stati del **DD §2.6.3, Figura 2.10** riescono; **tutte** quelle illegali sollevano `IllegalTransitionError`; lo stato sopravvive a un giro di persistenza e ricostruzione |
 | M3 | Per ciascuna strategia: flotta vuota → nessuna assegnazione; un solo candidato idoneo → quello; più candidati → il corretto secondo la metrica; valori di frontiera su distanza ed ETA a parità di punteggio risolti in modo deterministico |
-| M4 | Catena richiesta → allocazione → assegnazione completa; prenotazione anticipata scrive booking e reservation nella stessa transazione; l'annullamento rilascia la riserva e riporta il veicolo ad `available` |
+| M4 | Catena richiesta → allocazione → assegnazione completa; prenotazione anticipata scrive booking e reservation nella stessa transazione; l'annullamento (R14) rilascia la riserva e riporta il veicolo ad `available`; `AdvanceBookingActivator.runOnce()` attiva una prenotazione dovuta e ne ri-alloca una il cui veicolo non è più idoneo |
 | M5 | Un passeggero connesso riceve `assigned → arriving → arrived → in_ride` per la propria corsa e **nessun** evento di corse altrui; un operatore riceve gli eventi di flotta |
-| M6 | Sequenza traffico Low→Medium→High→Medium→Low: alert su Medium senza cambio, switch a MinimumETA su High, ritorno a NearestAvailable **solo** all'ultimo Low. In Manual mode nessuno switch automatico avviene fino a `enableAuto()` esplicito. `analyzeDemand()` su un dataset noto restituisce le zone attese |
+| M6 | Sequenza traffico Low→Medium→High→Medium→Low: alert su Medium senza cambio, switch a MinimumETA su High, ritorno a NearestAvailable **solo** all'ultimo Low. In Manual mode nessuno switch automatico avviene fino a `enableAuto()` esplicito, che rivaluta subito l'ultimo livello noto. `analyzeDemand()` su un dataset noto restituisce le zone attese nell'ordine atteso |
 | M7 | Con adapter reali configurati, il sistema funziona senza mock; se OSRM è irraggiungibile il fallback lineare produce comunque un ETA e il sistema non si blocca |
 | M8 | Playwright: un passeggero richiede una corsa e vede lo stato aggiornarsi fino a `in_ride`; un operatore cambia strategia e vede la dashboard passare a Manual |
 | M9 | I quattro scenari del RASD end-to-end; test di concorrenza sull'ultimo veicolo disponibile; `pnpm trace` senza requisiti scoperti |
