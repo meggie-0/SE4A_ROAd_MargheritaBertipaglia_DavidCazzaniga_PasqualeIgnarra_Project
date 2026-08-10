@@ -98,11 +98,30 @@ async function waitForHttp(url: string, processLog: readonly string[] = []): Pro
   );
 }
 
-/** Su Windows il figlio nasce sotto una shell: senza taskkill resterebbe orfano e la porta occupata. */
+/**
+ * Ferma un dev server e tutto ciò che ha generato.
+ *
+ * Il figlio nasce sotto una shell, quindi `child.kill()` ucciderebbe solo la shell e lascerebbe
+ * vivo il processo Vite: Jest, che ne tiene ancora aperte le pipe, non uscirebbe mai. È successo
+ * davvero — i 27 test del cancello passavano in 5 secondi e il job di CI restava appeso finché
+ * non scadeva. Su Windows si usa `taskkill /T`, su Unix il figlio è capogruppo (`detached`) e si
+ * uccide l'intero gruppo con il pid negativo.
+ */
 function killTree(child: ChildProcess): void {
   if (child.exitCode !== null || child.pid === undefined) return;
-  if (isWindows) spawnSync(`taskkill /pid ${child.pid} /T /F`, { shell: true });
-  else child.kill('SIGTERM');
+
+  if (isWindows) {
+    spawnSync(`taskkill /pid ${child.pid} /T /F`, { shell: true });
+  } else {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      child.kill('SIGTERM');
+    }
+  }
+
+  child.stdout?.destroy();
+  child.stderr?.destroy();
 }
 
 describe('[M0] Cancello: walking skeleton', () => {
@@ -241,6 +260,8 @@ describe('[M0] Cancello: walking skeleton', () => {
           cwd: client.dir,
           shell: true,
           stdio: ['ignore', 'pipe', 'pipe'],
+          // Su Unix rende il figlio capogruppo, così `killTree` può spegnere anche i nipoti.
+          detached: !isWindows,
         });
 
         // L'output del dev server si conserva: se non parte, il messaggio utile è il suo, non
