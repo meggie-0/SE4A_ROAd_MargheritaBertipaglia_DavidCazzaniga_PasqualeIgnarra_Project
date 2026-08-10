@@ -32,6 +32,16 @@ if (!available.includes(milestone)) {
   process.exit(1);
 }
 
+// `--testPathPatterns` e non il pattern posizionale: con Jest 30 e una configurazione a
+// `projects`, l'argomento posizionale viene ignorato e `pnpm gate M0` eseguiva *tutti* i
+// cancelli. Passava lo stesso, quindi il difetto era invisibile — un comando che dice di fare una
+// cosa e ne fa un'altra è peggio di un comando che fallisce.
 process.exit(
-  run('npx', ['jest', '--selectProjects', 'gate', `gates/${milestone}\\.gate\\.spec\\.ts$`]),
+  run('npx', [
+    'jest',
+    '--selectProjects',
+    'gate',
+    '--testPathPatterns',
+    `gates/${milestone}\\.gate\\.spec\\.ts$`,
+  ]),
 );

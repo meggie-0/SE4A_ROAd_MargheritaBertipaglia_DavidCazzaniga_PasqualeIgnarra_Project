@@ -10,9 +10,12 @@ pattern, determinismo, tracciabilità — stanno in `CLAUDE.md`.
 
 ## Stato
 
-Milestone corrente: **M0 — walking skeleton**. Esiste la catena di verifica end-to-end e i tre
-servizi si parlano; la logica di dominio arriva da M1 in poi, nell'ordine di integrazione bottom-up
-del DD §5.2.
+Milestone corrente: **M1 — PersistenceManager e schema**. Sopra il walking skeleton di M0 ci sono
+ora lo schema del database, il modulo `persistence` con la sua porta e i dati di partenza (le 16
+zone di Milano, 20 robotaxi, una settimana di domanda simulata). L'invariante centrale — due
+riserve dello stesso veicolo non si sovrappongono mai — è garantita da un vincolo di esclusione di
+PostgreSQL, non dal codice applicativo. I manager di dominio arrivano da M1b in poi, nell'ordine di
+integrazione bottom-up del DD §5.2.
 
 ## Struttura
 
@@ -69,13 +72,13 @@ Dopo `pnpm dev`:
 | Dashboard operatore | <http://localhost:5173> |
 | App passeggero | <http://localhost:5174> |
 
-In M0 i due client mostrano una sola cosa: lo stato letto da `GET /health`. È poco per uno
+I due client mostrano per ora una sola cosa: lo stato letto da `GET /health`. È poco per uno
 schermo, ma è la prova che la catena client → contratto HTTP → API funziona prima che venga scritta
-una riga di logica di dominio.
+una riga di logica di dominio; le schermate vere arrivano con M8.
 
-> `pnpm db:migrate` e `pnpm db:seed` in M0 non hanno ancora nulla da fare e lo dicono
-> esplicitamente: schema e seed sono il contenuto di M1. I comandi esistono già perché sono i passi
-> di installazione documentati, e un comando mancante è peggio di un comando che spiega cosa manca.
+> `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
+> il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica
+> zone, flotta e domanda, così eseguirlo due volte non è un errore.
 
 ## Verifica
 
@@ -85,6 +88,11 @@ pnpm verify        # il controllo completo: tipi, lint, architettura, contratto,
 
 `pnpm verify` è ciò che esegue anche la CI, senza varianti. Se è verde in locale dev'essere verde
 in CI: una divergenza fra i due è un bug dell'harness.
+
+**Docker dev'essere in esecuzione.** Da M1 il cancello di milestone e i test di integrazione
+avviano un container Postgres usa e getta (Testcontainers): il vincolo di esclusione sulle riserve
+è una funzione del database, e verificarlo su un doppio in memoria significherebbe verificare il
+doppio. Senza Docker, `pnpm verify` fallisce ai passi `gate` e `integration`.
 
 | Comando | Cosa fa |
 |---|---|
@@ -96,7 +104,7 @@ in CI: una divergenza fra i due è un bug dell'harness.
 | `pnpm contract:update` | aggiorna `contracts/openapi.json` dopo una modifica voluta dell'API |
 | `pnpm test:unit` | test unitari |
 | `pnpm test:int` | test di integrazione su Postgres reale (Testcontainers), da M1 |
-| `pnpm gate <M>` | il cancello di una milestone, es. `pnpm gate M0` |
+| `pnpm gate <M>` | il cancello di una milestone, es. `pnpm gate M1` |
 | `pnpm trace` | matrice requisito → test |
 | `pnpm verify:e2e` | stack completo con Playwright; lento, a fine milestone |
 

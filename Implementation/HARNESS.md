@@ -56,6 +56,12 @@ produzione lo chiama `@Cron`; nei test lo chiamano i test. Nessun `setInterval` 
 **Database.** Ogni test di integrazione parte da un container Postgres pulito con migrazioni
 applicate e seed a valori fissi. Nessun test dipende dall'ordine di esecuzione degli altri.
 
+Da M1 vale anche per i **cancelli**: quello di M1 deve dimostrare che due transazioni concorrenti
+non possono sovrapporre due riserve, e il vincolo che lo impedisce è una funzione di PostgreSQL —
+su un doppio in memoria non esiste, quindi un cancello che lo verificasse su un finto verificherebbe
+il finto. Conseguenza pratica: **`pnpm verify` richiede Docker in esecuzione**, ai passi `gate` e
+`integration`. Vale in locale come in CI, dove il runner ha già il demone.
+
 **Regola di lint.** `no-restricted-syntax` blocca `new Date()`, `Date.now()`, `Math.random()`,
 `setTimeout`, `setInterval` — anche nelle forme `globalThis.setTimeout(...)` — ovunque tranne
 `src/platform/**` e i file di configurazione. `no-restricted-imports` blocca `node:timers` e
