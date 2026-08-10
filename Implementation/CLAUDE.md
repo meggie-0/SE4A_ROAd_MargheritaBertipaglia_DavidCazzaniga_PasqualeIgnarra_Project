@@ -200,6 +200,20 @@ la verifica rossa, non disabilitare test per farla passare, non aggiungere `.ski
 
 ---
 
+## Ambiente del team
+
+Il team lavora su **Windows con Windows PowerShell 5.1**. Quando proponi comandi da eseguire a mano:
+
+- **Non usare `&&`**: non è un separatore valido in PowerShell 5.1. Scrivi un comando per riga.
+- Non usare sintassi da shell Unix (`export`, `$(...)`, `rm -rf`, heredoc). Gli equivalenti
+  PowerShell sono `$env:VAR="..."`, `Remove-Item`, e così via.
+- I percorsi di Windows usano `\` e vanno fra virgolette se contengono spazi.
+- Docker Desktop deve essere in esecuzione perché i test di integrazione funzionino: se un comando
+  lo richiede, dillo esplicitamente.
+
+Questo vale solo per i comandi che chiedi all'utente di eseguire. Dentro il codice, negli script
+`package.json` e nella CI si usa sintassi portabile, perché la CI gira su Linux.
+
 ## Cose da non fare
 
 - Non cambiare l'architettura decisa nel DD senza chiedere.
