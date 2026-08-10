@@ -56,3 +56,9 @@ htmlcov/
 
 # Windsurf / Cascade
 .windsurf/
+
+# Playwright (Implementation/)
+playwright-report/
+test-results/
+**/e2e/screenshots/
+.tsbuild/

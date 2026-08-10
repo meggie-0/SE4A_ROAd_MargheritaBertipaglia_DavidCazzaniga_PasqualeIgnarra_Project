@@ -63,10 +63,13 @@ applicate e seed a valori fissi. Nessun test dipende dall'ordine di esecuzione d
 `.dependency-cruiser.cjs` codifica le regole di CLAUDE.md §Regola 1:
 
 Attenzione a due dettagli, perché la regola è facile da scrivere in modo che *sembri* funzionare:
-dependency-cruiser interpola i gruppi con `$<nome>`, e solo quelli catturati in `from` sono
-utilizzabili dentro `to`. Le eccezioni ammesse sono **tutti** i `*.port.ts` alla radice del modulo —
-al plurale, perché `platform` espone `clock.port.ts` e `random.port.ts` — più il `*.module.ts`, che
-serve agli `imports` di Nest.
+dependency-cruiser interpola dentro `to` solo i gruppi catturati in `from`, e li interpola con il
+**numero** del gruppo (`$1`), non con il nome. La forma nominata `$<mod>` non viene sostituita —
+verificato su dependency-cruiser 17.4.3, e sbaglia nel modo peggiore: la regola non riconosce più
+gli import interni a un modulo e segnala come violazione ogni file che importa un proprio vicino,
+sembrando severissima mentre è soltanto rotta. Le eccezioni ammesse sono **tutti** i `*.port.ts`
+alla radice del modulo — al plurale, perché `platform` espone `clock.port.ts` e `random.port.ts` —
+più il `*.module.ts`, che serve agli `imports` di Nest.
 
 ```js
 forbidden: [
@@ -74,11 +77,11 @@ forbidden: [
     name: 'no-cross-module-internals',
     comment: 'Un modulo è raggiungibile solo dalle sue porte.',
     severity: 'error',
-    from: { path: '^apps/api/src/(?<mod>[^/]+)/' },
+    from: { path: '^apps/api/src/([^/]+)/' },
     to: {
       path: '^apps/api/src/[^/]+/',
       pathNot: [
-        '^apps/api/src/$<mod>/',                    // dentro lo stesso modulo: libero
+        '^apps/api/src/$1/',                        // dentro lo stesso modulo: libero
         '^apps/api/src/[^/]+/[^/]+\\.port\\.ts$',   // le porte
         '^apps/api/src/[^/]+/[^/]+\\.module\\.ts$', // i moduli Nest
       ],

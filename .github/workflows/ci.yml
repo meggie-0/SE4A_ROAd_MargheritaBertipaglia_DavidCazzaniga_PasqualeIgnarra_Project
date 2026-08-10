@@ -1,0 +1,67 @@
+name: CI
+
+# Regola d'oro (HARNESS.md §1): la CI esegue esattamente `pnpm verify`, non una lista parallela di
+# comandi. Se è verde in locale dev'essere verde qui; ogni divergenza fra i due è un bug
+# dell'harness, non del codice.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # Il monorepo vive in Implementation/; la radice del repository ospita RASD, DD e diagrammi.
+    working-directory: Implementation
+
+jobs:
+  verify:
+    name: pnpm verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Implementation/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify
+
+  e2e:
+    name: pnpm verify:e2e
+    # Lento per costruzione: gira solo su main, come previsto da HARNESS.md §8.
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Implementation/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm verify:e2e

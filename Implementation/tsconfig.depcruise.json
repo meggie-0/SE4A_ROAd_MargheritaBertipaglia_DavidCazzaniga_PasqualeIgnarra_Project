@@ -1,0 +1,14 @@
+{
+  "$comment": "Usato solo da dependency-cruiser per risolvere gli import TypeScript dell'intero monorepo.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "noEmit": true,
+    "incremental": false,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts"],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

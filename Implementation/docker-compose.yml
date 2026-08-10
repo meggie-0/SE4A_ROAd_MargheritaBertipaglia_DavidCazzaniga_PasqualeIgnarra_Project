@@ -1,0 +1,28 @@
+# Nome esplicito del progetto Compose: senza, prenderebbe quello della cartella
+# ("implementation"), che non dice niente a chi guarda `docker ps`.
+name: road
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: road-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-road}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-road}
+      POSTGRES_DB: ${POSTGRES_DB:-road}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - road-postgres-data:/var/lib/postgresql/data
+      # Eseguito una sola volta, alla creazione del volume: abilita btree_gist, che serve al
+      # vincolo di esclusione sulle riserve dei robotaxi (MILESTONES.md §M1).
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-road} -d ${POSTGRES_DB:-road}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  road-postgres-data:

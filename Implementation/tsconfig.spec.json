@@ -1,0 +1,16 @@
+{
+  "$comment": "Usato da ts-jest per compilare i test di tutti i workspace. ts-jest legge solo compilerOptions, quindi un file solo basta per tutti i progetti Jest.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2022", "DOM"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["jest", "node"],
+    "noEmit": true,
+    "declaration": false,
+    "incremental": false,
+    "isolatedModules": false
+  }
+}

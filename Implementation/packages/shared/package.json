@@ -1,0 +1,22 @@
+{
+  "name": "@road/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tipi, schemi e costanti condivisi fra backend e client. È una foglia: non dipende da apps/.",
+  "main": "dist/cjs/index.js",
+  "types": "dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/cjs/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "clean": "tsc -b tsconfig.cjs.json tsconfig.esm.json --clean"
+  },
+  "dependencies": {
+    "zod": "^4.1.13"
+  }
+}

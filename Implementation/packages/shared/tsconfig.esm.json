@@ -1,0 +1,16 @@
+{
+  "$comment": "Build ES module: è quella che consuma Vite, e quindi i due client nel browser.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "rootDir": "src",
+    "outDir": "dist/esm",
+    // I .d.ts autorevoli sono quelli della build CommonJS (è lì che punta `types`), ma `tsc -b`
+    // non ammette un progetto composite senza declaration: qui restano come sottoprodotto.
+    "declaration": true,
+    "tsBuildInfoFile": "dist/esm/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"]
+}

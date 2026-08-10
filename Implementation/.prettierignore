@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+coverage
+.tsbuild
+pnpm-lock.yaml
+# Artefatti di Playwright: generati a ogni `pnpm verify:e2e`, non versionati.
+playwright-report
+test-results
+e2e/screenshots
+# I documenti di progetto non vanno riformattati: il diff sarebbe rumore puro.
+**/*.md
+# RASD, DD e requirements.json sono documenti autorevoli: si modificano di proposito, non
+# perché un formattatore ha un'opinione sull'indentazione.
+docs/
+# Generato da `pnpm contract`: la sua forma la decide il generatore, non Prettier.
+contracts/openapi.json

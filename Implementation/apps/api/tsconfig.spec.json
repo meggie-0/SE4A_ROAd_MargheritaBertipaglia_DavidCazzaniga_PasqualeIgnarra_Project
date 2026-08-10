@@ -1,0 +1,13 @@
+{
+  "$comment": "Usato da ts-jest e dal typecheck dei test: include src/ e test/, non emette nulla.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["jest", "node"],
+    "noEmit": true,
+    "declaration": false,
+    "incremental": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
