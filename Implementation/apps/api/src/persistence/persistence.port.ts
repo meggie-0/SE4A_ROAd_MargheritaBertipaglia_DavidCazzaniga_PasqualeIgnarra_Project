@@ -276,6 +276,18 @@ export interface SystemModeRecord {
   readonly updatedAt: Date;
 }
 
+/**
+ * L'unico identificatore che la riga di `system_mode` può avere, garantito da un `CHECK` nella
+ * migrazione iniziale.
+ *
+ * Sta nella porta e non fra le entità perché è l'indirizzo con cui **gli altri moduli** scrivono e
+ * leggono quel record: `AllocationManager` è l'unico scrittore della strategia attiva e
+ * `ModeController` (M6) l'unico scrittore del modo, e nessuno dei due può vedere le entità
+ * TypeORM (CLAUDE.md Regola 1). L'alternativa — cercare «l'unica riga» e riusarne l'`id` — sarebbe
+ * una lettura in più per sapere una costante dello schema.
+ */
+export const SYSTEM_MODE_ID = 'singleton';
+
 /** Una notifica destinata a un utente (RASD §2.2.3). Il trasporto push arriva con M5. */
 export interface NotificationRecord {
   readonly id: string;

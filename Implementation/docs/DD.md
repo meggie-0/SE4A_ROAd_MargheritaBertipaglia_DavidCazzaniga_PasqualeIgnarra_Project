@@ -431,6 +431,13 @@ is the object that swaps the active strategy at runtime.
 **[v1.1]** The signatures below carry the refinements of §2.2.1: `allocate()` may return no vehicle,
 and `setActiveStrategy()` takes the strategy *name* plus the *origin* of the change.
 
+**[v1.1]** `selectRobotaxi()` carries the same multiplicity `[0..1]` as `allocate()`. The manager is
+a context that delegates and returns what the strategy returned, so a manager that can decline while
+its strategies cannot is not implementable: the absence of a selection has to be representable on
+both sides of the delegation (decision D24). Ties are broken deterministically — the smallest
+`robotaxiID` at equal score — and a candidate whose score cannot be computed is not eligible
+(decision D25).
+
 #### Figure 2.2: Class diagram of the AllocationManager
 
 The Strategy pattern applied to vehicle allocation.
@@ -438,15 +445,15 @@ Source: `../DD/diagrams/class_diagrams/allocation_manager.puml`
 
 ```plantuml
 class AllocationStrategy <<interface>> {
-    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi [0..1]
 }
 
 class NearestAvailableStrategy {
-    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi [0..1]
 }
 
 class MinimumETAStrategy {
-    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi
+    + selectRobotaxi(request: RideRequest, candidates: List<Robotaxi>): Robotaxi [0..1]
 }
 
 class AllocationManager {
@@ -1405,6 +1412,9 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D21 | L'`AuthenticationManager` non gestisce sessioni e **non verifica i token**: espone tre sole operazioni, e la verifica per richiesta è realizzata da guard pubblicati da una **seconda porta** del componente, che l'API Gateway applica alle proprie rotte | §2.2, §2.2.1 | Il §2.2 diceva «accounts and sessions», ma NFR3 esclude ogni stato di sessione lato server: non c'è sessione da gestire. La verifica è invece un'attività del cammino di richiesta, che la Fig. 2.1 attribuisce già al gateway («enforces authentication») e che nessuna delle tre operazioni copriva: senza un punto dichiarato, ogni controller reinventerebbe l'estrazione del token. La divisione fra porta di servizio e porta di meccanismo è la stessa già adottata per `fleet` |
 | D22 | La registrazione pubblica crea sempre un `PASSENGER`; il ruolo è parametro della **porta**, non del contratto HTTP, e gli account operatore nascono dal seed | §2.2.1 | Il RASD §1.4 elenca «Passenger registration», «Passenger login» e «Fleet operator login», ma non la registrazione di un operatore. Senza un account seminato nessuno potrebbe mai entrare come operatore, e metà di R1 resterebbe irrealizzabile; farlo passare dalla porta invece che da una riga scritta a mano tiene un solo codice a produrre gli hash |
 | D23 | `PersistenceManager` traduce la violazione di un vincolo di unicità in `UniqueConstraintError` | §2.2 | Stessa ragione di D19 per le riserve: un indirizzo già registrato è un esito previsto del dominio (R1), non un guasto, e il codice SQLSTATE del driver non deve uscire dal modulo. Il rifiuto arriva dal database e non da una lettura precedente, perché fra la lettura e la scrittura ci sta un'altra registrazione — su due repliche del tier applicativo (NFR3) quella finestra è reale |
+
+| D24 | `AllocationStrategy.selectRobotaxi()` restituisce `Robotaxi [0..1]` ed è **asincrona** | §2.3.1, Fig. 2.2 | D3 ha allargato `allocate()`, ma il manager è un contesto che delega e restituisce ciò che la strategia gli dà: una firma che può rifiutare sopra e non sotto non è implementabile. L'asincronia viene da `MinimumETAStrategy`, che secondo la Fig. 2.5 chiede gli ETA a `ExternalServicesGateway`: una sola firma per tutte le politiche, al prezzo di una promessa già risolta in quelle che non fanno I/O |
+| D25 | A parità di metrica vince il `robotaxiID` lessicograficamente minore; un candidato il cui punteggio non è un numero finito non è idoneo | §2.3.1 | D12 dava già per esistente «lo stesso criterio adottato per i pareggi fra strategie», ma il documento non lo enunciava da nessuna parte. Senza una regola totale l'esito di un'allocazione dipenderebbe dall'ordine con cui il database ha restituito i candidati, e i test sarebbero instabili. Il secondo punto è la stessa esigenza vista da vicino: `NaN` non è confrontabile, quindi un veicolo di cui non si conosce la posizione — o, per `MinimumETA`, un veicolo per cui il fornitore non sa dare un ETA — resta fuori dalla scelta invece di renderla arbitraria |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13 e D16
 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

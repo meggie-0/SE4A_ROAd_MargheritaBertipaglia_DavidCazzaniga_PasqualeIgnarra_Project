@@ -142,6 +142,82 @@
           "auth"
         ]
       }
+    },
+    "/allocation/strategy": {
+      "get": {
+        "description": "R8: la dashboard operatore mostra sempre quale politica sta assegnando i veicoli (DD §3.2). Il valore viene dal record `system_mode`, l'unica sede autorevole.",
+        "operationId": "AllocationController_getActiveStrategy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveStrategyResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Legge la strategia di allocazione attiva",
+        "tags": [
+          "allocation"
+        ]
+      },
+      "put": {
+        "description": "R8: il cambio ha effetto sulla prima allocazione successiva, senza interruzione del servizio. Essendo una scelta umana porta il sistema in modo Manual nella stessa transazione, e da quel momento nessun cambio automatico avviene finché un operatore non riabilita il modo Auto (NFR10, M6).",
+        "operationId": "AllocationController_setActiveStrategy",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveStrategyRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveStrategyResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cambia la strategia di allocazione",
+        "tags": [
+          "allocation"
+        ]
+      }
     }
   },
   "info": {
@@ -354,6 +430,40 @@
             "description": "Ometterlo lo lascia invariato; `null` lo cancella."
           }
         }
+      },
+      "ActiveStrategyResponseDto": {
+        "type": "object",
+        "properties": {
+          "activeStrategy": {
+            "type": "string",
+            "enum": [
+              "NEAREST_AVAILABLE",
+              "MINIMUM_ETA"
+            ],
+            "example": "NEAREST_AVAILABLE",
+            "description": "La politica con cui il sistema sta assegnando i veicoli in questo momento."
+          }
+        },
+        "required": [
+          "activeStrategy"
+        ]
+      },
+      "SetActiveStrategyRequestDto": {
+        "type": "object",
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "NEAREST_AVAILABLE",
+              "MINIMUM_ETA"
+            ],
+            "example": "MINIMUM_ETA",
+            "description": "La politica da rendere attiva. La scelta di un operatore è per definizione un intervento manuale: porta il sistema in modo Manual e sospende i cambi automatici (NFR10)."
+          }
+        },
+        "required": [
+          "strategy"
+        ]
       }
     }
   }

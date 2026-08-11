@@ -13,6 +13,11 @@ export const API_ROUTES = {
   authRegister: '/auth/register',
   authLogin: '/auth/login',
   authProfile: '/auth/me',
+
+  // Strategia di allocazione (M3, RASD R8 e G5). Una risorsa sola, letta e scritta: `GET` la
+  // mostra sulla dashboard, `PUT` la cambia a sistema acceso. È riservata all'operatore, e il
+  // vincolo di ruolo lo fanno valere i guard di M1b.
+  allocationStrategy: '/allocation/strategy',
 } as const;
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];
