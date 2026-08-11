@@ -6,7 +6,7 @@ import {
   type PersistencePort,
   type TimeWindow,
 } from '../../../src/persistence/persistence.port';
-import { startPersistence, type PersistenceHarness } from '../../support/postgres';
+import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
 /**
  * Il `PersistenceManager` su un Postgres vero (HARNESS.md §1, passo 9).
@@ -22,14 +22,14 @@ const DESTINATION = { lat: 45.4781, lon: 9.227 };
 /** L'orario a cui è fermo l'orologio finto dell'harness. */
 const NOW = new Date('2026-05-04T09:00:00.000Z');
 
-let harness: PersistenceHarness;
+let harness: ApiHarness;
 let persistence: PersistencePort;
 
 /** Avviare un container Postgres a freddo non sta nei 5 secondi di default dei hook di Jest. */
 const HOOK_TIMEOUT_MS = 180_000;
 
 beforeAll(async () => {
-  harness = await startPersistence(NOW.toISOString());
+  harness = await startApiHarness(NOW.toISOString());
   persistence = harness.persistence;
 }, HOOK_TIMEOUT_MS);
 
