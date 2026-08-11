@@ -51,6 +51,8 @@ pnpm install
 
 # 2. configurazione: copiare il file di esempio e adattarlo se serve
 cp .env.example .env          # su Windows: copy .env.example .env
+#    I valori di default bastano in locale. In qualunque altro posto vanno cambiati almeno
+#    JWT_SECRET e le due password SEED_*: sono credenziali di sviluppo, scritte in chiaro.
 
 # 3. database di sviluppo (Postgres 16 con l'estensione btree_gist)
 docker compose up -d
@@ -78,7 +80,12 @@ una riga di logica di dominio; le schermate vere arrivano con M8.
 
 > `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
 > il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica
-> zone, flotta e domanda, così eseguirlo due volte non è un errore.
+> zone, flotta, domanda e i due account di partenza, così eseguirlo due volte non è un errore.
+>
+> Gli account seminati sono quelli di `SEED_OPERATOR_*` e `SEED_PASSENGER_*`. Il passeggero si
+> potrebbe anche creare da `POST /auth/register`; l'operatore no, ed è voluto — il RASD prevede la
+> registrazione dei soli passeggeri, quindi senza il seed non esisterebbe alcun modo di entrare
+> come operatore.
 >
 > L'API applica le migrazioni da sé alla prima query, il che rende il comando manuale una comodità e
 > non un obbligo. È la scelta giusta per un prototipo, ma va detta: con il tier applicativo

@@ -9,8 +9,14 @@ packages:
 # cpu-features, protobufjs e ssh2 arrivano da `testcontainers` (che parla con Docker): i loro
 # script compilano acceleratori nativi opzionali. Senza, la libreria funziona lo stesso in pura
 # JavaScript — e una compilazione nativa in più è una cosa in più che può rompersi in CI.
+#
+# bcrypt (M1b) è l'eccezione: il suo binding nativo non è opzionale, non esiste un ripiego in pura
+# JavaScript, e senza lo script di installazione `require('bcrypt')` fallisce all'avvio. Lo script
+# scarica il binario già compilato per la piattaforma, quindi non serve un compilatore né in
+# locale né in CI.
 allowBuilds:
   '@scarf/scarf': false
+  bcrypt: true
   cpu-features: false
   esbuild: true
   protobufjs: false

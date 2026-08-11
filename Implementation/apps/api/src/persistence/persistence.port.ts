@@ -435,7 +435,14 @@ export type ReservationOutcome =
 // ---------------------------------------------------------------------------------------------
 
 export abstract class PersistencePort {
-  /** Scrive un nuovo record e lo restituisce completo dei campi generati. */
+  /**
+   * Scrive un nuovo record e lo restituisce completo dei campi generati.
+   *
+   * Solleva `UniqueConstraintError` se la riga collide con una già presente su un vincolo di
+   * unicità — oggi l'indirizzo di posta di `user` (M1b). Il rifiuto arriva dal database e non da
+   * una lettura precedente: fra una `SELECT` che non trova nulla e la `INSERT` che segue ci sta
+   * un'altra scrittura, e con più repliche del tier applicativo (NFR3) quella finestra è reale.
+   */
   abstract create<K extends EntityKind>(kind: K, data: NewRecord<K>): Promise<PersistedRecord<K>>;
 
   /**
@@ -445,6 +452,9 @@ export abstract class PersistencePort {
    * l'aggiornamento allarga una riserva fino a sovrapporsi a un'altra — il caso della corsa che
    * sfora il proprio intervallo (DD §2.4). Anche lì il rifiuto arriva dal vincolo di esclusione:
    * l'eccezione tipizzata serve solo a non far uscire un errore del driver dal modulo.
+   *
+   * Solleva `UniqueConstraintError` come `create`, per la stessa ragione: cambiare l'indirizzo di
+   * un utente in quello di un altro è un rifiuto previsto (R2), non un guasto.
    *
    * `expected` rende la scrittura **condizionata**: la riga viene aggiornata solo se soddisfa
    * ancora quei criteri, e altrimenti la chiamata solleva `StaleRecordError` senza toccare nulla.
@@ -524,6 +534,26 @@ export class StaleRecordError extends Error {
   ) {
     super(`Il record "${kind}" ${id} è cambiato dopo la lettura su cui si è deciso.`);
     this.name = 'StaleRecordError';
+  }
+}
+
+/**
+ * Sollevata da `create` e da `update` quando la riga viola un vincolo di unicità.
+ *
+ * Esiste per la stessa ragione delle altre tre: il codice dell'errore del driver non deve uscire
+ * dal modulo, o chi chiama la porta finirebbe per conoscere PostgreSQL. `constraint` porta il nome
+ * del vincolo violato, perché una tabella può averne più d'uno e il chiamante deve poter decidere
+ * quale messaggio ha senso per l'utente.
+ */
+export class UniqueConstraintError extends Error {
+  constructor(
+    readonly kind: EntityKind,
+    readonly constraint: string | null,
+  ) {
+    super(
+      `La riga di "${kind}" viola il vincolo di unicità${constraint === null ? '' : ` ${constraint}`}.`,
+    );
+    this.name = 'UniqueConstraintError';
   }
 }
 
