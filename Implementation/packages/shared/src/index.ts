@@ -7,4 +7,5 @@ export * from './auth.js';
 export * from './domain.js';
 export * from './geo.js';
 export * from './health.js';
+export * from './rides.js';
 export * from './zones.js';

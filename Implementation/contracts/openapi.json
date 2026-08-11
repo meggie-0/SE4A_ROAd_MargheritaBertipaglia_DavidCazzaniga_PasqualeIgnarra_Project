@@ -218,6 +218,147 @@
           "allocation"
         ]
       }
+    },
+    "/rides/immediate": {
+      "post": {
+        "description": "R3: il sistema persiste la richiesta, chiede i candidati alla flotta, li passa alla strategia attiva, riserva la finestra del veicolo scelto e lo porta ad `ASSIGNED`. Se nessun veicolo è idoneo la risposta è comunque 201, con `status: REJECTED`.",
+        "operationId": "RidesController_submitImmediate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitImmediateRideRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideRequestResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account passeggero."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Richiede una corsa immediata",
+        "tags": [
+          "rides"
+        ]
+      }
+    },
+    "/rides/advance": {
+      "post": {
+        "description": "R4: i candidati vengono filtrati sulla timeline prima della scelta, e la prenotazione accettata scrive prenotazione e riserva nella stessa transazione (NFR4). Il veicolo **non** viene assegnato adesso: lo sarà poco prima dell'orario, e se nel frattempo non fosse più idoneo il sistema ne sceglie un altro.",
+        "operationId": "RidesController_submitAdvance",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitAdvanceBookingRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideRequestResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "L'orario richiesto non è successivo ad adesso."
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account passeggero."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Prenota una corsa per un orario futuro",
+        "tags": [
+          "rides"
+        ]
+      }
+    },
+    "/rides/{rideRequestId}/cancel": {
+      "post": {
+        "description": "R14: la richiesta passa a `CANCELLED`, la riserva viene rilasciata e la finestra torna prenotabile; se un veicolo era già stato assegnato, torna disponibile. Non si può annullare una corsa già cominciata.",
+        "operationId": "RidesController_cancel",
+        "parameters": [
+          {
+            "name": "rideRequestId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideRequestResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account passeggero."
+          },
+          "404": {
+            "description": "Nessuna richiesta con quell identificatore, per te."
+          },
+          "409": {
+            "description": "La richiesta non è più attiva, oppure il veicolo è già in viaggio."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Annulla una richiesta di corsa",
+        "tags": [
+          "rides"
+        ]
+      }
     }
   },
   "info": {
@@ -463,6 +604,175 @@
         },
         "required": [
           "strategy"
+        ]
+      },
+      "GeoPointDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "example": 45.4642,
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitudine."
+          },
+          "lon": {
+            "type": "number",
+            "example": 9.19,
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitudine."
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ]
+      },
+      "SubmitImmediateRideRequestDto": {
+        "type": "object",
+        "properties": {
+          "pickup": {
+            "description": "Dove il passeggero vuole essere prelevato.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "pickupAddress": {
+            "type": "string",
+            "example": "Piazza del Duomo, Milano"
+          },
+          "destination": {
+            "description": "Dove la corsa deve terminare.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "destinationAddress": {
+            "type": "string",
+            "example": "Stazione Centrale, Milano"
+          }
+        },
+        "required": [
+          "pickup",
+          "destination"
+        ]
+      },
+      "RideRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "IMMEDIATE",
+              "ADVANCE"
+            ],
+            "example": "IMMEDIATE"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "REJECTED",
+              "CANCELLED",
+              "COMPLETED"
+            ],
+            "example": "ACCEPTED",
+            "description": "Lo stato della richiesta. `REJECTED` significa che nessun veicolo era idoneo; `ACCEPTED` che uno è stato riservato — e, per una corsa immediata, anche assegnato."
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/GeoPointDto"
+          },
+          "pickupAddress": {
+            "type": "string",
+            "nullable": true,
+            "example": "Piazza del Duomo, Milano"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/GeoPointDto"
+          },
+          "destinationAddress": {
+            "type": "string",
+            "nullable": true,
+            "example": "Stazione Centrale, Milano"
+          },
+          "assignedRobotaxiId": {
+            "type": "string",
+            "nullable": true,
+            "example": "RT-07",
+            "description": "Il veicolo **assegnato**. Per una prenotazione anticipata accettata resta `null` fino all'attivazione: fino a quel momento il veicolo è riservato, e se nel frattempo finisce in manutenzione ne arriva un altro."
+          },
+          "scheduledPickup": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "Presente solo per le prenotazioni anticipate."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "pickup",
+          "pickupAddress",
+          "destination",
+          "destinationAddress",
+          "assignedRobotaxiId",
+          "scheduledPickup",
+          "createdAt"
+        ]
+      },
+      "SubmitAdvanceBookingRequestDto": {
+        "type": "object",
+        "properties": {
+          "pickup": {
+            "description": "Dove il passeggero vuole essere prelevato.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "pickupAddress": {
+            "type": "string",
+            "example": "Piazza del Duomo, Milano"
+          },
+          "destination": {
+            "description": "Dove la corsa deve terminare.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "destinationAddress": {
+            "type": "string",
+            "example": "Stazione Centrale, Milano"
+          },
+          "scheduledPickup": {
+            "type": "string",
+            "example": "2026-05-04T18:30:00.000Z",
+            "format": "date-time",
+            "description": "L'orario concordato del prelievo, con fuso orario. Dev'essere successivo ad adesso: il sistema riserva il veicolo a partire da quell'orario meno l'anticipo di attivazione."
+          }
+        },
+        "required": [
+          "pickup",
+          "destination",
+          "scheduledPickup"
         ]
       }
     }

@@ -38,7 +38,7 @@ export interface RobotaxiContext {
 /**
  * La classe base delle sette classi di stato.
  *
- * Dichiara tutte e nove le transizioni e le rifiuta tutte. Ogni stato concreto **ridefinisce solo
+ * Dichiara tutte e dieci le transizioni e le rifiuta tutte. Ogni stato concreto **ridefinisce solo
  * quelle che gli sono legali** secondo la Figura 2.10, e questo è ciò che rende il pattern leggibile
  * aprendo il codice: la lista dei metodi di `AvailableState` *è* l'insieme delle sue uscite. Tutto
  * il resto solleva `IllegalTransitionError`, quindi una transizione illegale è impossibile per
@@ -92,6 +92,10 @@ export abstract class RobotaxiState {
 
   completeMaintenance(robotaxi: RobotaxiContext): void {
     this.reject(robotaxi, 'completeMaintenance');
+  }
+
+  cancelRide(robotaxi: RobotaxiContext): void {
+    this.reject(robotaxi, 'cancelRide');
   }
 
   protected reject(robotaxi: RobotaxiContext, transition: RobotaxiTransition): never {

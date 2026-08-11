@@ -702,6 +702,15 @@ functions are designed to satisfy the project goals.
   `RideStatus` (§2.2.3), ma nessun requisito lo enunciava, quindi restava fuori dalla tracciabilità.
   È numerato R14 per non rinumerare R1–R13, ampiamente citati altrove.
 
+  *Copertura attuale [v1.2]:* «before the ride begins» comprende, alla lettera, anche i momenti in
+  cui il veicolo si è già mosso verso il punto di ritiro — la corsa comincia con la partenza del
+  passeggero, non con quella del veicolo. Il sistema oggi **annulla fino al veicolo assegnato e
+  fermo**; da `ARRIVING` in poi l'annullamento viene rifiutato con un conflitto esplicito. La
+  ragione è nel DD §2.6.3 (transizione 11, decisione D27): riportare fra i disponibili un veicolo in
+  movimento richiede di revocarne la rotta, che è un comando alla flotta — `commandRoute()` — e non
+  una transizione del ciclo di vita. Il comando esiste da **M7**, ed è lì che R14 si completa; fino
+  ad allora la copertura del requisito è parziale, e la parte mancante è questa e solo questa.
+
 ### Fleet Supervision and Control
 
 - **[R7] Real-time Fleet Monitoring**: The system will provide Fleet Operators with a live overview

@@ -16,9 +16,9 @@ import { startApiHarness, type ApiHarness } from '../support/postgres';
  * Cancello di M2 (MILESTONES.md §M2, HARNESS.md §6).
  *
  * Criterio di completamento, tradotto in test:
- *   - copertura **esaustiva** della FSM a sette stati del DD §2.6.3, Figura 2.10: le dieci
+ *   - copertura **esaustiva** della FSM a sette stati del DD §2.6.3, Figura 2.10: le undici
  *     transizioni legali riescono e portano dove la figura dice, e **tutte** le altre
- *     (7 stati × 9 metodi − 10 = 53) sollevano `IllegalTransitionError`;
+ *     (7 stati × 10 metodi − 11 = 59) sollevano `IllegalTransitionError`;
  *   - lo stato sopravvive a un giro di persistenza e ricostruzione;
  *   - un veicolo in manutenzione è escluso dai candidati, uno in rebalancing no.
  *
@@ -31,7 +31,7 @@ import { startApiHarness, type ApiHarness } from '../support/postgres';
  * sopravvivrebbe da solo perché non andrebbe mai davvero via.
  */
 
-/** Le dieci transizioni della Figura 2.10: `[da, transizione, a]`, nell'ordine della tabella. */
+/** Le undici transizioni della Figura 2.10: `[da, transizione, a]`, nell'ordine della tabella. */
 const LEGAL_TRANSITIONS: ReadonlyArray<
   readonly [RobotaxiStateName, RobotaxiTransition, RobotaxiStateName]
 > = [
@@ -45,11 +45,14 @@ const LEGAL_TRANSITIONS: ReadonlyArray<
   ['AVAILABLE', 'requestRebalancing', 'REBALANCING'], // 8
   ['REBALANCING', 'completeRebalancing', 'AVAILABLE'], // 9
   ['REBALANCING', 'assignRide', 'ASSIGNED'], // 10
+  // La 11 nasce con M4 **[v1.2]**: senza un'uscita da `ASSIGNED` verso `AVAILABLE`, R14 non è
+  // realizzabile — l'annullamento deve poter restituire alla flotta un veicolo già assegnato.
+  ['ASSIGNED', 'cancelRide', 'AVAILABLE'], // 11
 ];
 
 const legalKeys = new Set(LEGAL_TRANSITIONS.map(([from, transition]) => `${from}/${transition}`));
 
-/** Le 53 combinazioni restanti: tutte quelle che la figura non elenca. */
+/** Le 59 combinazioni restanti: tutte quelle che la figura non elenca. */
 const ILLEGAL_TRANSITIONS: ReadonlyArray<readonly [RobotaxiStateName, RobotaxiTransition]> =
   ROBOTAXI_STATES.flatMap((from) =>
     ROBOTAXI_TRANSITIONS.filter((transition) => !legalKeys.has(`${from}/${transition}`)).map(
@@ -107,6 +110,8 @@ function invoke(robotaxi: Robotaxi, transition: RobotaxiTransition): void {
       return robotaxi.requestMaintenance();
     case 'completeMaintenance':
       return robotaxi.completeMaintenance();
+    case 'cancelRide':
+      return robotaxi.cancelRide();
   }
 }
 
@@ -142,14 +147,14 @@ beforeEach(async () => {
 
 describe('[M2] Cancello: FleetMonitor e Robotaxi (State)', () => {
   describe('[NFR5][G6] La macchina a stati del DD §2.6.3, Figura 2.10', () => {
-    it('ha esattamente sette stati e nove transizioni', () => {
+    it('ha esattamente sette stati e dieci transizioni', () => {
       // Sette e non sei: la macchina autorevole è quella del DD, non quella del RASD §3.2. Se
       // qualcuno togliesse `REBALANCING` dall'enum condiviso, i conti qui sotto cambierebbero
       // senza che nessun altro test se ne accorgesse.
       expect(ROBOTAXI_STATES).toHaveLength(7);
-      expect(ROBOTAXI_TRANSITIONS).toHaveLength(9);
-      expect(LEGAL_TRANSITIONS).toHaveLength(10);
-      expect(ILLEGAL_TRANSITIONS).toHaveLength(7 * 9 - 10);
+      expect(ROBOTAXI_TRANSITIONS).toHaveLength(10);
+      expect(LEGAL_TRANSITIONS).toHaveLength(11);
+      expect(ILLEGAL_TRANSITIONS).toHaveLength(7 * 10 - 11);
     });
 
     it.each(LEGAL_TRANSITIONS)('%s --%s--> %s riesce', (from, transition, to) => {

@@ -38,6 +38,17 @@ export class BookingEntity implements BookingRecord {
   @Column({ name: 'activated_at', type: 'timestamptz', nullable: true })
   activatedAt!: Date | null;
 
+  /**
+   * Quando l'attivatore ha finito con questa prenotazione, comunque sia andata.
+   *
+   * Distinta da `activated_at`, che dice **se** è diventata un'assegnazione: una prenotazione
+   * rifiutata all'attivazione, o annullata prima (R14), è chiusa senza essere mai stata attivata.
+   * La ricerca delle prenotazioni dovute filtra su questa, o le righe la cui sorte è già decisa
+   * ricadrebbero nella ricerca a ogni esecuzione, per sempre.
+   */
+  @Column({ name: 'closed_at', type: 'timestamptz', nullable: true })
+  closedAt!: Date | null;
+
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

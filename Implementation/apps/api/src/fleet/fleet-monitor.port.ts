@@ -6,8 +6,13 @@ import type { RobotaxiSnapshot } from './robotaxi';
 /**
  * La porta del `FleetMonitor` (DD §2.2, CLAUDE.md Regola 1).
  *
- * Le cinque operazioni sono quelle del DD §2.2 — `getCandidates`, `getAvailableRobotaxis`,
- * `getFleetStatus`, `assign`, `requestRebalancing` — e nient'altro.
+ * Le cinque operazioni del DD §2.2 — `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`,
+ * `assign`, `requestRebalancing` — più le due che M4 aggiunge: `releaseAssignment`, insieme alla
+ * transizione 11 della Figura 2.10 (decisione D28), e `getBookableRobotaxis`, perché «può prendere
+ * una corsa adesso» e «potrà servirne una fra due ore» non sono la stessa domanda (decisione D34). Il DD attribuisce a `RideRequestManager` il
+ * compito di riportare il veicolo ad `AVAILABLE` quando una corsa viene annullata (§2.4, R14) senza
+ * dire attraverso quale operazione: `rides` non può toccare la colonna di stato — la macchina la
+ * governa `fleet` — quindi l'operazione che mancava è questa.
  *
  * I tipi che compaiono nelle firme, `RobotaxiSnapshot` e `RideAssignment`, sono pubblicati
  * dall'altra porta del modulo, `robotaxi.port.ts`: chi sta fuori li importa da lì.
@@ -52,6 +57,22 @@ export abstract class FleetMonitorPort {
   abstract getCandidates(): Promise<RobotaxiSnapshot[]>;
 
   /**
+   * I veicoli che possono ricevere una **prenotazione** per una finestra futura, in ordine di `id`
+   * crescente: quelli in uno stato di `BOOKABLE_STATES`, cioè tutti tranne quelli in manutenzione
+   * (R4, decisione D34).
+   *
+   * Non è `getCandidates()` e non deve diventarlo. Quella risponde a «chi può prendere una corsa
+   * adesso», questa a «chi potrà servirne una fra due ore»: un veicolo oggi `IN_RIDE` sarà libero
+   * appena la corsa finisce, e la sua riserva — limitata, per la decisione D8 — dice esattamente
+   * quando. Se una prenotazione partisse dai soli candidati allocabili, con la flotta impegnata
+   * verrebbe rifiutata sempre, anche per un orario in cui la flotta sarà tutta libera.
+   *
+   * Come `getCandidates()`, guarda **solo lo stato**: a escludere chi è già impegnato nella finestra
+   * richiesta è `PersistencePort.filterAvailable()`, che `RideRequestManager` chiama subito dopo.
+   */
+  abstract getBookableRobotaxis(): Promise<RobotaxiSnapshot[]>;
+
+  /**
    * I veicoli **inattivi**, cioè in stato `AVAILABLE`, in ordine di `id` crescente.
    *
    * Non è un sinonimo di `getCandidates()`: un veicolo in `REBALANCING` è allocabile ma non
@@ -75,6 +96,21 @@ export abstract class FleetMonitorPort {
    * l'assegnazione e impegna la finestra in una sola transazione (M4).
    */
   abstract assign(robotaxiId: string, request: RideAssignment): Promise<RobotaxiSnapshot>;
+
+  /**
+   * Riporta ad `AVAILABLE` un veicolo che era stato assegnato e la cui corsa è stata annullata
+   * (transizione 11, R14).
+   *
+   * Sta a `assign()` come la transizione 11 sta alla 3, e ne condivide la disciplina: solleva
+   * `IllegalTransitionError` se il veicolo non è in `ASSIGNED` — in particolare se si è già mosso
+   * verso il punto di ritiro —, `ConcurrentTransitionError` se un altro scrittore lo ha cambiato
+   * fra la lettura e la scrittura, `UnknownRobotaxiError` se non esiste.
+   *
+   * **Non** rilascia la riserva né tocca la richiesta di corsa: quelle sono scritture di
+   * `PersistenceManager` che `RideRequestManager` ordina subito dopo, esattamente come
+   * nell'assegnazione (DD §2.4).
+   */
+  abstract releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot>;
 
   /**
    * Porta il veicolo a `REBALANCING` e ne persiste lo stato (transizione 8).

@@ -212,6 +212,21 @@ export class PersistenceManager extends PersistencePort {
                 reservationId: reservation.id,
               });
 
+        // Il legame fra corsa e veicolo entra **nella stessa transazione** della riserva, che è
+        // dove la Figura 2.5 lo mette (decisione D35). Scriverlo fuori lascerebbe una finestra in
+        // cui la riserva esiste e nessuna richiesta la rivendica: da lì il veicolo non sarebbe più
+        // recuperabile, perché l'annullamento lo cerca proprio su quella colonna.
+        if (input.rideRequest !== undefined) {
+          const affected = await manager
+            .getRepository(entityFor('ride_request'))
+            .update({ id: input.rideRequestId }, { ...input.rideRequest });
+          // Solleva **dentro** la transazione, quindi la riserva appena inserita viene annullata:
+          // una riserva per una richiesta che non esiste bloccherebbe un veicolo per nessuno.
+          if (affected.affected === 0) {
+            throw new RecordNotFoundError('ride_request', input.rideRequestId);
+          }
+        }
+
         return { reserved: true, reservation, booking };
       });
     } catch (error) {

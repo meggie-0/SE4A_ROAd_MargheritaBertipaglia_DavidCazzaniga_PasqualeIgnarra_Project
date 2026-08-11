@@ -7,7 +7,7 @@ import { ClockPort } from '../platform/clock.port';
 import { FleetMonitorPort, UnknownRobotaxiError, type FleetStatus } from './fleet-monitor.port';
 import type { RideAssignment } from './ride-assignment';
 import { Robotaxi, robotaxiSnapshotOf, type RobotaxiSnapshot } from './robotaxi';
-import { ALLOCATABLE_STATES } from './robotaxi.port';
+import { ALLOCATABLE_STATES, BOOKABLE_STATES } from './robotaxi.port';
 import { ConcurrentTransitionError, type RobotaxiTransition } from './robotaxi-transition';
 
 /**
@@ -38,6 +38,14 @@ export class FleetMonitor extends FleetMonitorPort {
       orderBy: [{ field: 'id' }],
     });
     return allocatable.map(robotaxiSnapshotOf);
+  }
+
+  async getBookableRobotaxis(): Promise<RobotaxiSnapshot[]> {
+    const bookable = await this.persistence.find('robotaxi', {
+      where: { state: { oneOf: BOOKABLE_STATES } },
+      orderBy: [{ field: 'id' }],
+    });
+    return bookable.map(robotaxiSnapshotOf);
   }
 
   async getAvailableRobotaxis(): Promise<RobotaxiSnapshot[]> {
@@ -71,6 +79,10 @@ export class FleetMonitor extends FleetMonitorPort {
     return this.applyTransition(robotaxiId, 'assignRide', (robotaxi) =>
       robotaxi.assignRide(request),
     );
+  }
+
+  async releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'cancelRide', (robotaxi) => robotaxi.cancelRide());
   }
 
   async requestRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot> {

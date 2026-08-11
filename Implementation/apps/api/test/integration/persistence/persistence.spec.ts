@@ -300,6 +300,7 @@ describe('[NFR4][G10] Riserve senza sovrapposizioni', () => {
         scheduledPickup,
         activationDueAt: new Date('2026-05-05T07:45:00.000Z'),
         activatedAt: null,
+        closedAt: null,
       },
     });
 
@@ -330,6 +331,7 @@ describe('[NFR4][G10] Riserve senza sovrapposizioni', () => {
         scheduledPickup,
         activationDueAt: new Date('2026-05-05T07:45:00.000Z'),
         activatedAt: null,
+        closedAt: null,
       },
     });
 
@@ -476,6 +478,7 @@ describe('Persistence: interrogazione', () => {
         scheduledPickup,
         activationDueAt: new Date('2026-05-05T07:45:00.000Z'),
         activatedAt: null,
+        closedAt: null,
       },
     });
 
@@ -486,6 +489,7 @@ describe('Persistence: interrogazione', () => {
       where: {
         activationDueAt: { atMost: new Date('2026-05-05T07:45:00.000Z') },
         activatedAt: null,
+        closedAt: null,
       },
     });
 
