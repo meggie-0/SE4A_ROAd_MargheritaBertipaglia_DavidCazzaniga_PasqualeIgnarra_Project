@@ -33,5 +33,11 @@ export class SystemModeEntity implements SystemModeRecord {
   updatedAt!: Date;
 }
 
-/** L'unico identificatore ammesso dalla riga singleton. */
-export const SYSTEM_MODE_ID = 'singleton';
+/**
+ * L'unico identificatore ammesso dalla riga singleton.
+ *
+ * La costante è definita in `persistence.port.ts` — da M3 la usa anche `AllocationManager`, che le
+ * entità non può vederle — e ri-esportata qui perché la migrazione e il seed la cercano dove
+ * l'hanno sempre trovata.
+ */
+export { SYSTEM_MODE_ID } from '../persistence.port';

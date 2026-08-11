@@ -2,6 +2,8 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { DataSource, type QueryRunner } from 'typeorm';
 
+import { AllocationModule } from '../../src/allocation/allocation.module';
+import { AllocationPort } from '../../src/allocation/allocation.port';
 import { AuthModule } from '../../src/auth/auth.module';
 import { AuthPort } from '../../src/auth/auth.port';
 import { FleetModule } from '../../src/fleet/fleet.module';
@@ -35,6 +37,7 @@ export interface ApiHarness {
   readonly auth: AuthPort;
   readonly fleet: FleetMonitorPort;
   readonly maintenance: MaintenancePort;
+  readonly allocation: AllocationPort;
   /** L'orologio del modulo, sotto il controllo del test (CLAUDE.md Regola 3). */
   readonly clock: FakeClock;
   readonly databaseUrl: string;
@@ -105,7 +108,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
 
   const clock = new FakeClock(now);
   const moduleRef: TestingModule = await Test.createTestingModule({
-    imports: [PersistenceModule, AuthModule, FleetModule, MaintenanceModule],
+    imports: [PersistenceModule, AuthModule, FleetModule, MaintenanceModule, AllocationModule],
   })
     .overrideProvider(ClockPort)
     .useValue(clock)
@@ -115,6 +118,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
   const auth = moduleRef.get(AuthPort);
   const fleet = moduleRef.get(FleetMonitorPort);
   const maintenance = moduleRef.get(MaintenancePort);
+  const allocation = moduleRef.get(AllocationPort);
 
   // La connessione del modulo è pigra e porta con sé le migrazioni: la prima operazione vera è
   // ciò che crea lo schema. Va fatta qui, o il `reset()` del primo test troverebbe un database
@@ -136,6 +140,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     auth,
     fleet,
     maintenance,
+    allocation,
     clock,
     databaseUrl,
 
@@ -166,6 +171,8 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
         `UPDATE "system_mode"
             SET "active_strategy" = 'NEAREST_AVAILABLE', "mode" = 'AUTO', "last_traffic_level" = NULL`,
       );
+      // Da M3 quella riga ha uno scrittore vero — `AllocationPort.setActiveStrategy()` — quindi
+      // riportarla al default fra un test e l'altro non è più una precauzione teorica.
     },
 
     async stop(): Promise<void> {
