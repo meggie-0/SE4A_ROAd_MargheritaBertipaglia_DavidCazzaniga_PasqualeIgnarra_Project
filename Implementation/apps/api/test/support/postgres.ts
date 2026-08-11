@@ -2,6 +2,8 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { DataSource, type QueryRunner } from 'typeorm';
 
+import { AuthModule } from '../../src/auth/auth.module';
+import { AuthPort } from '../../src/auth/auth.port';
 import { FleetModule } from '../../src/fleet/fleet.module';
 import { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
 import { MaintenanceModule } from '../../src/maintenance/maintenance.module';
@@ -30,6 +32,7 @@ import { FakeClock } from '../../src/platform/fake-clock';
 export interface ApiHarness {
   /** Le porte: l'unico modo in cui i test parlano con i moduli. */
   readonly persistence: PersistencePort;
+  readonly auth: AuthPort;
   readonly fleet: FleetMonitorPort;
   readonly maintenance: MaintenancePort;
   /** L'orologio del modulo, sotto il controllo del test (CLAUDE.md Regola 3). */
@@ -70,7 +73,24 @@ const WARMUP_WINDOW: TimeWindow = {
   end: new Date('2026-01-01T01:00:00.000Z'),
 };
 
+/**
+ * L'ambiente che `auth` si aspetta (M1b), fissato qui per tutta la suite.
+ *
+ * Il segreto è un valore di test qualunque, purché lungo abbastanza da superare il controllo di
+ * `jwt.config.ts`; i cicli di bcrypt scendono al minimo di 4, perché con i 12 di produzione una
+ * suite che registra decine di utenti passerebbe più tempo dentro bcrypt che nel codice che sta
+ * verificando. Sono i **soli** parametri abbassati: la lunghezza minima della password, la
+ * struttura del token e la verifica della firma restano quelle vere.
+ */
+function configureAuthEnvironment(): void {
+  process.env.JWT_SECRET ??= 'segreto-di-test-abbastanza-lungo-per-hs256-0123456789';
+  process.env.JWT_EXPIRES_IN_SECONDS ??= '3600';
+  process.env.BCRYPT_ROUNDS = '4';
+}
+
 export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise<ApiHarness> {
+  configureAuthEnvironment();
+
   const container: StartedTestContainer = await new GenericContainer('postgres:16-alpine')
     .withEnvironment({ POSTGRES_USER: 'road', POSTGRES_PASSWORD: 'road', POSTGRES_DB: 'road' })
     .withExposedPorts(5432)
@@ -85,13 +105,14 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
 
   const clock = new FakeClock(now);
   const moduleRef: TestingModule = await Test.createTestingModule({
-    imports: [PersistenceModule, FleetModule, MaintenanceModule],
+    imports: [PersistenceModule, AuthModule, FleetModule, MaintenanceModule],
   })
     .overrideProvider(ClockPort)
     .useValue(clock)
     .compile();
 
   const persistence = moduleRef.get(PersistencePort);
+  const auth = moduleRef.get(AuthPort);
   const fleet = moduleRef.get(FleetMonitorPort);
   const maintenance = moduleRef.get(MaintenancePort);
 
@@ -112,6 +133,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
 
   return {
     persistence,
+    auth,
     fleet,
     maintenance,
     clock,

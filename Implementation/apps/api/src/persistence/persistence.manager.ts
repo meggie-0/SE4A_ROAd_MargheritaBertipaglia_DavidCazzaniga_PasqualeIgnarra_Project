@@ -22,6 +22,7 @@ import {
   RecordNotFoundError,
   ReservationConflictError,
   StaleRecordError,
+  UniqueConstraintError,
   type EntityKind,
   type FindCriteria,
   type NewRecord,
@@ -35,6 +36,9 @@ import {
 
 /** SQLSTATE `exclusion_violation`: il vincolo `no_overlapping_reservations` ha rifiutato la riga. */
 const EXCLUSION_VIOLATION = '23P01';
+
+/** SQLSTATE `unique_violation`: una chiave unica è già presente — l'email di `user` (M1b). */
+const UNIQUE_VIOLATION = '23505';
 
 /**
  * L'implementazione TypeORM del `PersistenceManager` (DD §2.2).
@@ -64,7 +68,15 @@ export class PersistenceManager extends PersistencePort {
 
   async create<K extends EntityKind>(kind: K, data: NewRecord<K>): Promise<PersistedRecord<K>> {
     const source = await this.database.connection();
-    return this.insert(source.manager, kind, data);
+    try {
+      return await this.insert(source.manager, kind, data);
+    } catch (error) {
+      // Registrarsi con un indirizzo già preso è un esito previsto (M1b), non un guasto: qui
+      // l'errore del driver diventa un errore del dominio, e il codice SQLSTATE non esce dal
+      // modulo. `await` prima del `catch` non è ridondante — senza, la promessa rifiutata
+      // uscirebbe da `try` senza mai passare di qui.
+      throw translateWriteError(error, kind);
+    }
   }
 
   async update<K extends EntityKind>(
@@ -103,7 +115,7 @@ export class PersistenceManager extends PersistencePort {
         // (DD §2.4): il vincolo la rifiuta, e qui l'errore del driver diventa un errore del
         // dominio, che il chiamante può distinguere da un guasto.
         if (isExclusionViolation(error)) throw new ReservationConflictError(id);
-        throw error;
+        throw translateWriteError(error, kind);
       }
     }
 
@@ -318,9 +330,40 @@ function hasColumn(
  * suo aggiornamento trasforma un conflitto previsto in un errore 500.
  */
 function isExclusionViolation(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
+  return sqlStateOf(error) === EXCLUSION_VIOLATION;
+}
+
+/**
+ * Traduce in errore di dominio ciò che il database rifiuta su una scrittura, e lascia passare
+ * tutto il resto immutato.
+ *
+ * Serve a mantenere la promessa della porta: chi la usa non deve poter dedurre che dietro c'è
+ * PostgreSQL. Un guasto vero — connessione caduta, colonna mancante — non è un esito del dominio e
+ * deve arrivare intatto a chi lo saprà leggere.
+ */
+function translateWriteError(error: unknown, kind: EntityKind): unknown {
+  if (sqlStateOf(error) !== UNIQUE_VIOLATION) return error;
+  return new UniqueConstraintError(kind, constraintNameOf(error));
+}
+
+/**
+ * Il codice SQLSTATE dell'errore, se ce n'è uno.
+ *
+ * Guarda sia `code` sia `driverError.code`: TypeORM copia il codice del driver sull'errore che
+ * solleva, ma dipendere da un solo punto di una libreria di terze parti significherebbe che un suo
+ * aggiornamento trasforma un conflitto previsto in un errore 500.
+ */
+function sqlStateOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
   const candidate = error as { code?: unknown; driverError?: { code?: unknown } };
-  return (
-    candidate.code === EXCLUSION_VIOLATION || candidate.driverError?.code === EXCLUSION_VIOLATION
-  );
+  const code = candidate.code ?? candidate.driverError?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+/** Il nome del vincolo violato, quando il driver lo riporta. */
+function constraintNameOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const candidate = error as { constraint?: unknown; driverError?: { constraint?: unknown } };
+  const constraint = candidate.constraint ?? candidate.driverError?.constraint;
+  return typeof constraint === 'string' ? constraint : null;
 }

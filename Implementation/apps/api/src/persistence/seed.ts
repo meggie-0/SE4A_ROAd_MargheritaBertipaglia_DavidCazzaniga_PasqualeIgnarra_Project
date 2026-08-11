@@ -1,4 +1,7 @@
-import { DEFAULT_STRATEGY } from '@road/shared';
+import { ConfigService } from '@nestjs/config';
+import { DEFAULT_STRATEGY, type UserRole } from '@road/shared';
+
+import { AuthPort } from '../auth/auth.port';
 
 import { runCommand } from './cli-context';
 import { Database } from './database';
@@ -31,12 +34,65 @@ const TABLES_TO_CLEAR = [
   'zone',
 ];
 
+/**
+ * Gli account di partenza (M1b).
+ *
+ * Il RASD §1.4 elenca «Passenger registration» ma non quella di un operatore: senza un account
+ * seminato, nessuno potrebbe mai entrare come `OPERATOR` e metà di R1 resterebbe indimostrabile.
+ * Il passeggero c'è per simmetria, così una dimostrazione parte da un database seminato senza
+ * doversi prima iscrivere.
+ *
+ * Le credenziali vengono dall'ambiente e non dal codice (CLAUDE.md, «Cose da non fare»); i valori
+ * di `.env.example` sono di sviluppo e vanno cambiati ovunque non sia una macchina locale.
+ */
+const SEED_ACCOUNTS: ReadonlyArray<{
+  readonly role: UserRole;
+  readonly emailVariable: string;
+  readonly passwordVariable: string;
+  readonly name: string;
+  readonly surname: string;
+  readonly phoneNumber: string | null;
+}> = [
+  {
+    role: 'OPERATOR',
+    emailVariable: 'SEED_OPERATOR_EMAIL',
+    passwordVariable: 'SEED_OPERATOR_PASSWORD',
+    name: 'Ada',
+    surname: 'Operatrice',
+    phoneNumber: null,
+  },
+  {
+    role: 'PASSENGER',
+    emailVariable: 'SEED_PASSENGER_EMAIL',
+    passwordVariable: 'SEED_PASSENGER_PASSWORD',
+    name: 'Giulia',
+    surname: 'Rossi',
+    phoneNumber: '+39 333 1234567',
+  },
+];
+
 runCommand(async (context) => {
   const persistence = context.get(PersistencePort);
+  const auth = context.get(AuthPort);
+  const config = context.get(ConfigService);
   const source = await context.get(Database).connection();
 
   const quoted = TABLES_TO_CLEAR.map((table) => `"${table}"`).join(', ');
   await source.query(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+
+  for (const account of SEED_ACCOUNTS) {
+    // `getOrThrow` e non un default: una password di seed scritta nel codice sarebbe un segreto
+    // nel codice, e una vuota creerebbe un account che chiunque può usare senza che nessuno se ne
+    // accorga. Meglio un comando che si ferma dicendo quale variabile manca.
+    await auth.register({
+      email: config.getOrThrow<string>(account.emailVariable),
+      password: config.getOrThrow<string>(account.passwordVariable),
+      name: account.name,
+      surname: account.surname,
+      phoneNumber: account.phoneNumber,
+      role: account.role,
+    });
+  }
 
   for (const zone of ZONE_RECORDS) await persistence.create('zone', zone);
   for (const robotaxi of fleetRecords()) await persistence.create('robotaxi', robotaxi);
@@ -53,6 +109,7 @@ runCommand(async (context) => {
     lastTrafficLevel: null,
   });
 
+  console.log(`Account: ${SEED_ACCOUNTS.map((account) => account.role).join(', ')}`);
   console.log(`Zone: ${ZONE_RECORDS.length}`);
   console.log(`Robotaxi: ${fleetRecords().length}`);
   console.log(`Campioni di domanda: ${samples.length}`);

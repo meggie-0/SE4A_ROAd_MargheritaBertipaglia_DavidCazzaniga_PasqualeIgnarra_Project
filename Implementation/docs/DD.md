@@ -282,7 +282,9 @@ The main components and the operations they export are:
   channel used to push notifications. Routes each call to the right manager and enforces
   authentication.
 - **AuthenticationManager**: `authenticate()`, `register()`, `updateProfile()`. Manages accounts and
-  sessions (R1, R2).
+  issues the signed access tokens with which callers identify themselves (R1, R2). **[v1.1]** *(v1.0
+  said "accounts and sessions"; there are no sessions — NFR3 excludes any server-side session state,
+  and Section 2.2.1 states what the component does and does not own.)*
 - **RideRequestManager**: `submitImmediate()`, `submitAdvance()`, `cancel()`. Validates requests,
   coordinates advance reservations and drives the request lifecycle (R3, R4).
 - **AllocationManager**: `allocate(request, candidates)`, `setActiveStrategy()`. Selects the
@@ -349,6 +351,37 @@ also sets the mode to Manual in the same transaction when `source` is `'manual'`
 produced by `FleetMonitor.getCandidates()` and passed *into* `allocate()` by `RideRequestManager`.
 The allocation component therefore depends only on `ExternalServicesGateway` and
 `PersistenceManager`, which keeps each strategy testable with a plain list of vehicles.
+
+**Authentication has no sessions, and the `AuthenticationManager` does not verify tokens.** Section
+2.2 describes the component as managing "accounts and sessions", but NFR3 (Section 4.3) rules out
+any server-side session state: there is no session to manage. What the component owns is the
+account — `register()`, `authenticate()`, `updateProfile()` — and the issuing of a single signed
+access token, with no refresh token, because a refresh token would require a register of revoked
+tokens, which is exactly the state NFR3 excludes.
+
+*Verifying* a token on each request is a different responsibility, and it belongs to the request
+path that Figure 2.1 already assigns to the API Gateway ("enforces authentication"). It is realised
+as guards, published by a **second port** of the authentication component alongside the service
+port — the same split already used by `FleetMonitor` (service) and `Robotaxi` (vocabulary). The
+gateway *applies* the guards to its routes; it does not implement them. A guard reconstructs the
+caller from the token alone and reads no store, in memory or persistent, which is what makes the
+NFR3 proposition of Section 4.3 true and testable.
+
+Two consequences worth stating, because they are what the design buys and what it costs:
+
+- a token stays valid until it expires even if the account behind it changes or disappears. The
+  short lifetime is the mitigation; the alternative — checking the account on every request — would
+  reintroduce the shared read that NFR3 exists to avoid;
+- the exported operations stay **three**. Reading a profile back is not among them: registration,
+  login and update all return the profile, which covers R1 and R2. A read path will be added as a
+  declared fourth operation if and when a client needs it, rather than by calling `updateProfile()`
+  with an empty change.
+
+**Registration creates passengers only.** RASD Section 1.4 lists "Passenger registration",
+"Passenger login" and "Fleet operator login", but no operator registration: the public endpoint
+therefore always creates a `PASSENGER`. The role is a parameter of the port, not of the HTTP
+contract, so that operator accounts can be provisioned — in this prototype by the seed — through the
+same code path that hashes every other password.
 
 **Zone membership.** A `Zone` is a partition of the urban area (RASD §2.2.1), realised as a
 **Voronoi partition over the zone centroids**: a point belongs to the zone whose centroid is nearest
@@ -1369,6 +1402,9 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D18 | `PersistenceManager` espone anche `find(kind, criteri)` | §2.2 | Il documento presupponeva già la lettura in due punti (`findBookingsDueAt(now)` in §2.4, i lettori di strategia e modo in §2.2.1) senza elencarla fra le operazioni. Una sola operazione generica invece di una per caso d'uso: il registro dei tipi persistiti la rende sicura sui tipi e la porta non cresce a ogni milestone |
 | D19 | Una riserva si **rilascia** (`released_at`), oltre a potersi accorciare; il vincolo di esclusione è parziale su `released_at IS NULL` | §2.4 | D8 chiude il limite superiore quando la corsa *termina*, ma R14 annulla anche prima che la finestra cominci, e lì accorciare non basta: servirebbe un intervallo vuoto, che non escluderebbe nulla. Con il rilascio l'intera finestra torna prenotabile e la riga resta per lo storico |
 | D20 | `system_mode` porta anche l'ultimo livello di traffico noto | §2.2.1 | D11 richiede che `enableAuto()` rivaluti *subito* l'ultimo livello; con più repliche del tier applicativo (NFR3) un valore tenuto in memoria divergerebbe fra istanze, esattamente come la strategia attiva secondo D6 |
+| D21 | L'`AuthenticationManager` non gestisce sessioni e **non verifica i token**: espone tre sole operazioni, e la verifica per richiesta è realizzata da guard pubblicati da una **seconda porta** del componente, che l'API Gateway applica alle proprie rotte | §2.2, §2.2.1 | Il §2.2 diceva «accounts and sessions», ma NFR3 esclude ogni stato di sessione lato server: non c'è sessione da gestire. La verifica è invece un'attività del cammino di richiesta, che la Fig. 2.1 attribuisce già al gateway («enforces authentication») e che nessuna delle tre operazioni copriva: senza un punto dichiarato, ogni controller reinventerebbe l'estrazione del token. La divisione fra porta di servizio e porta di meccanismo è la stessa già adottata per `fleet` |
+| D22 | La registrazione pubblica crea sempre un `PASSENGER`; il ruolo è parametro della **porta**, non del contratto HTTP, e gli account operatore nascono dal seed | §2.2.1 | Il RASD §1.4 elenca «Passenger registration», «Passenger login» e «Fleet operator login», ma non la registrazione di un operatore. Senza un account seminato nessuno potrebbe mai entrare come operatore, e metà di R1 resterebbe irrealizzabile; farlo passare dalla porta invece che da una riga scritta a mano tiene un solo codice a produrre gli hash |
+| D23 | `PersistenceManager` traduce la violazione di un vincolo di unicità in `UniqueConstraintError` | §2.2 | Stessa ragione di D19 per le riserve: un indirizzo già registrato è un esito previsto del dominio (R1), non un guasto, e il codice SQLSTATE del driver non deve uscire dal modulo. Il rifiuto arriva dal database e non da una lettura precedente, perché fra la lettura e la scrittura ci sta un'altra registrazione — su due repliche del tier applicativo (NFR3) quella finestra è reale |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13 e D16
 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

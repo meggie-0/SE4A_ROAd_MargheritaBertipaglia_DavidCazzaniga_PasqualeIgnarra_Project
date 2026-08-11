@@ -2,6 +2,8 @@ import { Module, type INestApplicationContext } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { AuthModule } from '../auth/auth.module';
+
 import { PersistenceModule } from './persistence.module';
 
 /**
@@ -12,6 +14,13 @@ import { PersistenceModule } from './persistence.module';
  * attraversare il confine e importarne gli interni, cioè esattamente ciò che CLAUDE.md Regola 1
  * vieta. `tools/db/*.mjs` restano il punto d'ingresso, ma si limitano a lanciare questi entry
  * point compilati.
+ *
+ * `AuthModule` è qui perché il seed deve creare gli account di partenza (M1b) e l'hash della
+ * password lo produce `auth`, non `persistence`. Passare da `AuthPort` invece di scrivere una riga
+ * di `user` a mano è la stessa scelta già fatta per zone e robotaxi: se il seed avesse una via
+ * privata, il dato seminato potrebbe non essere quello che il resto del sistema sa leggere — qui
+ * significherebbe un hash che al login non corrisponde. Questo file è un punto di composizione,
+ * non logica di `persistence`, quindi l'arco non è una dipendenza fra i due moduli.
  */
 @Module({
   imports: [
@@ -19,6 +28,7 @@ import { PersistenceModule } from './persistence.module';
     // apps/api, come già fa `AppModule`.
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     PersistenceModule,
+    AuthModule,
   ],
 })
 class PersistenceCliModule {}

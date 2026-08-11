@@ -23,6 +23,125 @@
           "system"
         ]
       }
+    },
+    "/auth/register": {
+      "post": {
+        "description": "Crea un account `PASSENGER` e restituisce il primo access token. Il ruolo non è un parametro: il RASD prevede la registrazione dei soli passeggeri, mentre gli account operatore sono forniti dall'amministrazione del sistema.",
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "L'indirizzo è già registrato."
+          }
+        },
+        "summary": "Registra un passeggero",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Vale per entrambi i ruoli. Restituisce un solo access token, senza refresh.",
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credenziali non valide."
+          }
+        },
+        "summary": "Autentica un utente",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/me": {
+      "patch": {
+        "description": "R2: informazioni personali e credenziali. Si può aggiornare **solo** il proprio profilo — l'utente da modificare viene dal token, non dal corpo della richiesta. La password nuova non compare nella risposta, e il token in corso resta valido perché non porta nulla che questa operazione possa cambiare.",
+        "operationId": "AuthController_patchProfile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "404": {
+            "description": "L'account del token non esiste più."
+          },
+          "409": {
+            "description": "Il nuovo indirizzo è già di un altro account."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Aggiorna il proprio profilo",
+        "tags": [
+          "auth"
+        ]
+      }
     }
   },
   "info": {
@@ -75,6 +194,166 @@
           "version",
           "time"
         ]
+      },
+      "RegisterRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "example": "giulia.rossi@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200,
+            "format": "password",
+            "description": "Almeno 8 caratteri. Non viene mai restituita né registrata."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "example": "Giulia"
+          },
+          "surname": {
+            "type": "string",
+            "maxLength": 120,
+            "example": "Rossi"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "maxLength": 40,
+            "example": "+39 333 1234567"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "name",
+          "surname"
+        ]
+      },
+      "UserProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "PASSENGER",
+              "OPERATOR"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Istante di creazione, letto da ClockPort."
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "surname",
+          "phoneNumber",
+          "role",
+          "createdAt"
+        ]
+      },
+      "AuthResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Access token JWT da inviare come header `Authorization: Bearer`."
+          },
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ],
+            "example": "Bearer"
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "description": "Durata del token in secondi. Non esiste refresh token: scaduto il token si rifà il login."
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserProfileDto"
+          }
+        },
+        "required": [
+          "accessToken",
+          "tokenType",
+          "expiresInSeconds",
+          "user"
+        ]
+      },
+      "LoginRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "giulia.rossi@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "UpdateProfileRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200,
+            "format": "password"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "surname": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "phoneNumber": {
+            "type": "object",
+            "maxLength": 40,
+            "nullable": true,
+            "description": "Ometterlo lo lascia invariato; `null` lo cancella."
+          }
+        }
       }
     }
   }
