@@ -1,5 +1,7 @@
 import type { RobotaxiState as RobotaxiStateName } from '@road/shared';
 
+import type { PersistedRecord } from '../persistence/persistence.port';
+
 import type { RideAssignment } from './ride-assignment';
 import { RobotaxiStateFactory } from './robotaxi-state.factory';
 import type { RobotaxiContext, RobotaxiState } from './robotaxi-state';
@@ -126,4 +128,27 @@ export class Robotaxi implements RobotaxiContext {
   toSnapshot(): RobotaxiSnapshot {
     return { ...this.vehicle, state: this.state.name };
   }
+}
+
+/**
+ * Dal record persistito alla vista pubblica del veicolo.
+ *
+ * `RobotaxiRecord` e `RobotaxiSnapshot` hanno oggi gli stessi campi e restano due tipi: il primo è
+ * la forma della riga, il secondo il vocabolario del modulo `fleet`. Fonderli legherebbe la porta
+ * allo schema, e cambiare una colonna diventerebbe un cambiamento di contratto.
+ *
+ * La conversione elenca i campi uno per uno e non è uno spread. Uno spread compilerebbe lo stesso —
+ * un oggetto più largo è assegnabile a uno più stretto quando non è un letterale — e il giorno in
+ * cui la riga prendesse una colonna in più se la porterebbe fuori dalla porta senza che nulla
+ * protesti. Così invece la colonna nuova resta dentro il modulo, che è dove deve stare.
+ */
+export function robotaxiSnapshotOf(record: PersistedRecord<'robotaxi'>): RobotaxiSnapshot {
+  return {
+    id: record.id,
+    state: record.state,
+    lat: record.lat,
+    lon: record.lon,
+    zoneId: record.zoneId,
+    updatedAt: record.updatedAt,
+  };
 }

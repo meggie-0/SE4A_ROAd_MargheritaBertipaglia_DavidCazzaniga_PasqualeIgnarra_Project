@@ -1,4 +1,4 @@
-import type { RobotaxiSnapshot } from '../fleet/fleet-monitor.port';
+import type { RobotaxiSnapshot } from '../fleet/robotaxi.port';
 import type { MaintenanceRecord } from '../persistence/persistence.port';
 
 /**

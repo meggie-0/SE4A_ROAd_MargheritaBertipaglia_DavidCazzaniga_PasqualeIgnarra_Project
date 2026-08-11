@@ -1,12 +1,13 @@
 import { ROBOTAXI_STATES, type RobotaxiState as RobotaxiStateName } from '@road/shared';
 
+import type { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
 import {
+  ALLOCATABLE_STATES,
   IllegalTransitionError,
   ROBOTAXI_TRANSITIONS,
   Robotaxi,
-  type FleetMonitorPort,
   type RobotaxiTransition,
-} from '../../src/fleet/fleet-monitor.port';
+} from '../../src/fleet/robotaxi.port';
 import type { MaintenancePort } from '../../src/maintenance/maintenance.port';
 import type { PersistencePort } from '../../src/persistence/persistence.port';
 import { startApiHarness, type ApiHarness } from '../support/postgres';
@@ -171,7 +172,27 @@ describe('[M2] Cancello: FleetMonitor e Robotaxi (State)', () => {
     );
   });
 
-  describe('[G6] Lo stato sopravvive a persistenza e ricostruzione', () => {
+  describe('[R9][G6] Allocabile significa una cosa sola', () => {
+    it.each(ROBOTAXI_STATES)(
+      'da %s, «è in ALLOCATABLE_STATES» ed «esce da assignRide senza errore» coincidono',
+      (state) => {
+        // `ALLOCATABLE_STATES` è una seconda scrittura di un fatto che sta già nelle classi di
+        // stato, e due codifiche della stessa verità divergono se nessuno le lega. Senza questo
+        // test, aggiungere `ARRIVED` all'elenco passerebbe il cancello: `getCandidates`
+        // restituirebbe veicoli che poi rifiutano l'assegnazione.
+        let assignable = true;
+        try {
+          vehicleIn(state).assignRide(RIDE);
+        } catch {
+          assignable = false;
+        }
+
+        expect(ALLOCATABLE_STATES.includes(state)).toBe(assignable);
+      },
+    );
+  });
+
+  describe('[NFR5][G6] Lo stato sopravvive a persistenza e ricostruzione', () => {
     it('un giro completo su database porta il veicolo da available ad assigned', async () => {
       await givenRobotaxi('RT-01', 'AVAILABLE');
 
@@ -195,6 +216,17 @@ describe('[M2] Cancello: FleetMonitor e Robotaxi (State)', () => {
       // sullo stesso veicolo.
       await expect(fleet.assign('RT-01', RIDE)).rejects.toBeInstanceOf(IllegalTransitionError);
       expect(await persistedState('RT-01')).toBe('ASSIGNED');
+    });
+
+    it('una transizione rifiutata non lascia nulla in colonna', async () => {
+      // Lo stato di partenza è `ARRIVED` e non quello di arrivo della transizione richiesta:
+      // altrimenti un'implementazione che scrivesse *prima* di transire lascerebbe in colonna lo
+      // stesso valore, e l'asserzione non distinguerebbe le due implementazioni.
+      await givenRobotaxi('RT-01', 'ARRIVED');
+
+      await expect(fleet.assign('RT-01', RIDE)).rejects.toBeInstanceOf(IllegalTransitionError);
+
+      expect(await persistedState('RT-01')).toBe('ARRIVED');
     });
   });
 

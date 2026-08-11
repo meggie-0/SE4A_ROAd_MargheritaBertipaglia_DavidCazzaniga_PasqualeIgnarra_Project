@@ -1,10 +1,10 @@
 import type { RobotaxiState as RobotaxiStateName } from '@road/shared';
 
+import { UnknownRobotaxiError, type FleetMonitorPort } from '../../../src/fleet/fleet-monitor.port';
 import {
+  ConcurrentTransitionError,
   IllegalTransitionError,
-  UnknownRobotaxiError,
-  type FleetMonitorPort,
-} from '../../../src/fleet/fleet-monitor.port';
+} from '../../../src/fleet/robotaxi.port';
 import type { MaintenancePort } from '../../../src/maintenance/maintenance.port';
 import {
   immediateReservationWindow,
@@ -16,14 +16,15 @@ import { startApiHarness, type ApiHarness } from '../../support/postgres';
  * `FleetMonitor` e `MaintenanceManager` su un Postgres vero (HARNESS.md §1, passo 9).
  *
  * Tutto passa dalle porte. Il punto di questi test è ciò che i test unitari non possono mostrare:
- * che lo stato del veicolo **sopravvive al giro completo** — scrittura sulla colonna enum, rilettura,
- * ricostruzione dell'oggetto — e che il comportamento ricostruito è quello giusto. Su un doppio in
- * memoria lo stato sopravvivrebbe da solo, perché non andrebbe mai davvero via.
+ * che lo stato del veicolo **sopravvive al giro completo** — scrittura sulla colonna enum,
+ * rilettura, ricostruzione dell'oggetto — e che due scrittori concorrenti non possono percorrere la
+ * macchina a stati insieme. Su un doppio in memoria lo stato sopravvivrebbe da solo, perché non
+ * andrebbe mai davvero via, e la concorrenza non esisterebbe affatto.
  */
 
 const NOW = new Date('2026-05-04T09:00:00.000Z');
 const DUOMO = { lat: 45.4642, lon: 9.19 };
-const RIDE = { rideRequestId: 'sostituito-nel-beforeEach' };
+const RIDE = { rideRequestId: 'ride-1' };
 
 const HOOK_TIMEOUT_MS = 180_000;
 
@@ -55,7 +56,7 @@ async function givenRobotaxi(id: string, state: RobotaxiStateName): Promise<stri
   return id;
 }
 
-/** Una richiesta di corsa vera: serve a poter scrivere una riserva. */
+/** Una richiesta di corsa vera: serve solo dove si scrive una riserva, che ha la chiave esterna. */
 async function givenRideRequest(email: string): Promise<string> {
   const passenger = await persistence.create('user', {
     email,
@@ -166,38 +167,30 @@ describe('[G6] getCandidates: chi può accettare una corsa', () => {
     ]);
   });
 
-  it('con una finestra esclude anche chi ha già una riserva sovrapposta', async () => {
+  it('non guarda la timeline: il filtro sulle riserve non passa di qui', async () => {
     await givenRobotaxi('RT-01', 'AVAILABLE');
-    await givenRobotaxi('RT-02', 'AVAILABLE');
     const rideRequestId = await givenRideRequest('anna@example.com');
     const window = immediateReservationWindow(NOW, 5, 20);
 
-    expect((await fleet.getCandidates(window)).map((robotaxi) => robotaxi.id)).toEqual([
-      'RT-01',
-      'RT-02',
-    ]);
-
     await persistence.reserve({ robotaxiId: 'RT-01', rideRequestId, window });
 
-    // Il filtro sulla timeline è del PersistenceManager (DD §2.2): il FleetMonitor gli passa i
-    // candidati e ne riceve indietro quelli liberi, senza tenere una seconda copia della verità.
-    expect((await fleet.getCandidates(window)).map((robotaxi) => robotaxi.id)).toEqual(['RT-02']);
-
-    // Fuori dalla finestra riservata il veicolo torna candidabile: la riserva è limitata (D8).
-    const later = immediateReservationWindow(new Date('2026-05-04T14:00:00.000Z'), 5, 20);
-    expect((await fleet.getCandidates(later)).map((robotaxi) => robotaxi.id)).toEqual([
-      'RT-01',
-      'RT-02',
-    ]);
+    // Il veicolo ha una riserva in corso e resta un candidato: `getCandidates` guarda lo stato, e
+    // basta. Chi ha bisogno anche della timeline chiama `PersistencePort.filterAvailable()` sui
+    // candidati, ed è `RideRequestManager` a farlo (DD §2.4, Figure 2.5 e 2.8). Assorbire quel
+    // filtro qui sposterebbe una responsabilità fra componenti.
+    expect((await fleet.getCandidates()).map((robotaxi) => robotaxi.id)).toEqual(['RT-01']);
+    expect(await persistence.filterAvailable(['RT-01'], window)).toEqual([]);
   });
 });
 
 describe('[G6][NFR5] Il ciclo di vita attraverso la porta', () => {
   it('assign scrive lo stato in colonna e lo restituisce', async () => {
     await givenRobotaxi('RT-01', 'AVAILABLE');
-    const rideRequestId = await givenRideRequest('anna@example.com');
 
-    const assigned = await fleet.assign('RT-01', { ...RIDE, rideRequestId });
+    // L'identificatore della corsa non viene persistito da `assign`: il legame fra richiesta e
+    // veicolo lo scrive `PersistenceManager.reserve()` (DD §2.4, Figura 2.5), e in M2 nessuno lo
+    // chiama. Qui basta un identificatore qualsiasi.
+    const assigned = await fleet.assign('RT-01', RIDE);
 
     expect(assigned.state).toBe('ASSIGNED');
     expect(await persistedState('RT-01')).toBe('ASSIGNED');
@@ -213,20 +206,73 @@ describe('[G6][NFR5] Il ciclo di vita attraverso la porta', () => {
   });
 
   it('rifiuta una transizione illegale senza toccare il database', async () => {
+    // `ARRIVED` e non `ASSIGNED`: se il veicolo fosse già nello stato di arrivo della transizione
+    // richiesta, un'implementazione che scrivesse *prima* di transire lascerebbe in colonna lo
+    // stesso valore, e l'asserzione non distinguerebbe le due implementazioni.
     await givenRobotaxi('RT-01', 'ARRIVED');
-    const rideRequestId = await givenRideRequest('anna@example.com');
 
-    await expect(fleet.assign('RT-01', { ...RIDE, rideRequestId })).rejects.toBeInstanceOf(
-      IllegalTransitionError,
-    );
+    await expect(fleet.assign('RT-01', RIDE)).rejects.toBeInstanceOf(IllegalTransitionError);
 
-    // La transizione avviene prima della scrittura: se lo stato non l'ammette, il database non è
-    // stato toccato e non serve nessuna compensazione (NFR5).
     expect(await persistedState('RT-01')).toBe('ARRIVED');
   });
 
   it('rifiuta un identificatore che non appartiene alla flotta', async () => {
     await expect(fleet.requestRebalancing('RT-99')).rejects.toBeInstanceOf(UnknownRobotaxiError);
+  });
+});
+
+describe('[R9][NFR5] Due transizioni concorrenti sullo stesso veicolo', () => {
+  /**
+   * Quale delle due eccezioni esce dipende da come si intrecciano le due letture, ed entrambe sono
+   * corrette: o la seconda legge lo stato già cambiato e la transizione è illegale, o legge quello
+   * vecchio e la scrittura condizionata la ferma. Ciò che deve valere sempre — e che senza la
+   * condizione non varrebbe — è che a riuscire sia **esattamente una**. Che la condizione funzioni
+   * davvero lo dimostra il test deterministico su `update` in `integration/persistence`.
+   */
+  const refused = [IllegalTransitionError, ConcurrentTransitionError];
+
+  function loser(outcomes: PromiseSettledResult<unknown>[]): unknown {
+    const rejected = outcomes.find((outcome) => outcome.status === 'rejected');
+    return rejected?.status === 'rejected' ? rejected.reason : undefined;
+  }
+
+  it('di due assign() simultanee ne riesce esattamente una', async () => {
+    await givenRobotaxi('RT-01', 'AVAILABLE');
+
+    const outcomes = await Promise.allSettled([
+      fleet.assign('RT-01', { rideRequestId: 'ride-1' }),
+      fleet.assign('RT-01', { rideRequestId: 'ride-2' }),
+    ]);
+
+    // Senza la scrittura condizionata sullo stato letto riuscirebbero entrambe: leggono tutte e
+    // due `AVAILABLE`, decidono tutte e due che la transizione è legale, e scrivono tutte e due.
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect(refused.some((type) => loser(outcomes) instanceof type)).toBe(true);
+    expect(await persistedState('RT-01')).toBe('ASSIGNED');
+  });
+
+  it('un assign() e una richiesta di manutenzione simultanei non si sovrappongono', async () => {
+    await givenRobotaxi('RT-01', 'AVAILABLE');
+
+    const outcomes = await Promise.allSettled([
+      fleet.assign('RT-01', RIDE),
+      maintenance.requestMaintenance('RT-01', 'freni'),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect(refused.some((type) => loser(outcomes) instanceof type)).toBe(true);
+
+    // È il caso che viola R9 alla lettera: un veicolo `ASSIGNED` con un intervento aperto sarebbe
+    // un veicolo assegnato a un passeggero mentre è in officina. I due esiti ammessi sono entrambi
+    // coerenti; quello vietato è la combinazione.
+    const state = await persistedState('RT-01');
+    const records = await harness.countRows('maintenance_record');
+    if (state === 'ASSIGNED') {
+      expect(records).toBe(0);
+    } else {
+      expect(state).toBe('MAINTENANCE');
+      expect(records).toBe(1);
+    }
   });
 });
 
@@ -249,6 +295,7 @@ describe('[R9] Maintenance Management', () => {
     // R9 alla lettera: «prevent their assignment to rides during such periods».
     expect((await fleet.getCandidates()).map((robotaxi) => robotaxi.id)).toEqual(['RT-02']);
     expect((await fleet.getAvailableRobotaxis()).map((robotaxi) => robotaxi.id)).toEqual(['RT-02']);
+    await expect(fleet.assign('RT-01', RIDE)).rejects.toBeInstanceOf(IllegalTransitionError);
   });
 
   it('rimette in servizio il veicolo e chiude lo storico', async () => {

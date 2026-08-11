@@ -1,7 +1,19 @@
 import { Injectable } from '@nestjs/common';
 
-import { Robotaxi, UnknownRobotaxiError } from '../fleet/fleet-monitor.port';
-import { PersistencePort, type MaintenanceRecord } from '../persistence/persistence.port';
+import { UnknownRobotaxiError } from '../fleet/fleet-monitor.port';
+import {
+  ConcurrentTransitionError,
+  Robotaxi,
+  robotaxiSnapshotOf,
+  type RobotaxiSnapshot,
+  type RobotaxiTransition,
+} from '../fleet/robotaxi.port';
+import {
+  PersistencePort,
+  StaleRecordError,
+  type MaintenanceRecord,
+  type PersistedRecord,
+} from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
 
 import {
@@ -18,20 +30,20 @@ import {
  * `REBALANCING` non si entra in manutenzione» non compare come controllo qui dentro — lo dice
  * `RebalancingState`, che non espone `requestMaintenance()`.
  *
- * **L'ordine delle due scritture non è casuale.** `PersistencePort` non offre una transazione
- * generica — l'unica è `reserve()`, che esiste perché prenotazione e riserva devono nascere insieme
- * (M4) — quindi stato del veicolo e riga di storico si scrivono in due volte. Ciascuna sequenza
- * mette per prima la scrittura che, se l'altra non avvenisse, lascia il sistema dalla parte
- * prudente:
+ * **Le due scritture e il loro ordine.** `PersistencePort` non offre una transazione generica —
+ * l'unica è `reserve()`, che esiste perché prenotazione e riserva devono nascere insieme (M4) —
+ * quindi stato del veicolo e riga di storico si scrivono in due volte. Ciascuna sequenza mette per
+ * prima la scrittura che, se l'altra non avvenisse, lascia il sistema dalla parte prudente:
  *
  * - fermando il veicolo si scrive **prima** lo stato: un'interruzione lascia un veicolo escluso
  *   dalle assegnazioni senza la sua riga di storico, mai un veicolo assegnabile che nessuno sa
- *   essere in officina;
+ *   essere in officina. Il prezzo di questa scelta è che un guasto fra le due scritture lascia un
+ *   veicolo fermo senza intervento aperto, e la porta non permette di aprirlo dopo: bisogna passare
+ *   da `completeMaintenance()` e ricominciare;
  * - rimettendolo in servizio si chiude **prima** l'intervento: un'interruzione lascia un veicolo
  *   ancora fermo con lo storico già chiuso, mai il contrario.
  *
- * Lo stato del robotaxi resta in entrambi i casi l'unica sede autorevole di chi è assegnabile,
- * coerentemente con quanto la porta dichiara.
+ * Lo stato del robotaxi resta in entrambi i casi l'unica sede autorevole di chi è assegnabile.
  */
 @Injectable()
 export class MaintenanceManager extends MaintenancePort {
@@ -43,54 +55,85 @@ export class MaintenanceManager extends MaintenancePort {
   }
 
   async requestMaintenance(robotaxiId: string, reason: string): Promise<MaintenanceStarted> {
-    const robotaxi = await this.load(robotaxiId);
+    // Un solo istante per l'intera operazione: con `SystemClock` due letture dell'orologio
+    // darebbero due valori, e lo stato del veicolo e l'apertura dell'intervento sembrerebbero
+    // avvenuti in momenti diversi.
+    const now = this.clock.now();
+    const record = await this.load(robotaxiId);
+    const robotaxi = new Robotaxi(robotaxiSnapshotOf(record));
     robotaxi.requestMaintenance();
 
-    const stopped = await this.persistence.update('robotaxi', robotaxiId, {
-      state: robotaxi.currentState,
-      updatedAt: this.clock.now(),
-    });
+    const stopped = await this.write(robotaxi, record, 'requestMaintenance', now);
 
-    const record = await this.persistence.create('maintenance_record', {
+    const opened = await this.persistence.create('maintenance_record', {
       robotaxiId,
       reason,
       status: 'ONGOING',
-      startedAt: this.clock.now(),
+      startedAt: now,
       endedAt: null,
     });
 
-    return { robotaxi: { ...stopped }, record };
+    return { robotaxi: stopped, record: opened };
   }
 
   async completeMaintenance(robotaxiId: string): Promise<MaintenanceCompleted> {
-    const robotaxi = await this.load(robotaxiId);
+    const now = this.clock.now();
+    const record = await this.load(robotaxiId);
+    const robotaxi = new Robotaxi(robotaxiSnapshotOf(record));
     robotaxi.completeMaintenance();
 
     const open = await this.openRecord(robotaxiId);
-    const record =
+    const closed =
       open === undefined
         ? null
         : await this.persistence.update('maintenance_record', open.id, {
             status: 'COMPLETED',
-            endedAt: this.clock.now(),
+            endedAt: now,
           });
 
-    const resumed = await this.persistence.update('robotaxi', robotaxiId, {
-      state: robotaxi.currentState,
-      updatedAt: this.clock.now(),
-    });
+    const resumed = await this.write(robotaxi, record, 'completeMaintenance', now);
 
-    return { robotaxi: { ...resumed }, record };
+    return { robotaxi: resumed, record: closed };
   }
 
-  /** Il veicolo, ricostruito con il proprio stato: il `Robotaxi` nasce dalla colonna enum. */
-  private async load(robotaxiId: string): Promise<Robotaxi> {
+  /** Il record del veicolo. `Robotaxi` nasce dalla colonna enum, mai da un valore deciso qui. */
+  private async load(robotaxiId: string): Promise<PersistedRecord<'robotaxi'>> {
     const [record] = await this.persistence.find('robotaxi', {
       where: { id: robotaxiId },
       limit: 1,
     });
     if (record === undefined) throw new UnknownRobotaxiError(robotaxiId);
-    return new Robotaxi(record);
+    return record;
+  }
+
+  /**
+   * Persiste il nuovo stato **condizionando la scrittura su quello letto**.
+   *
+   * Senza la condizione, una richiesta di manutenzione e una `assign()` concorrenti leggerebbero
+   * entrambe `AVAILABLE` e scriverebbero entrambe: si otterrebbe un veicolo `ASSIGNED` con un
+   * intervento aperto, cioè un veicolo assegnato a un passeggero mentre è in officina — la
+   * violazione letterale di R9.
+   */
+  private async write(
+    robotaxi: Robotaxi,
+    read: PersistedRecord<'robotaxi'>,
+    transition: RobotaxiTransition,
+    now: Date,
+  ): Promise<RobotaxiSnapshot> {
+    try {
+      const updated = await this.persistence.update(
+        'robotaxi',
+        read.id,
+        { state: robotaxi.currentState, updatedAt: now },
+        { state: read.state },
+      );
+      return robotaxiSnapshotOf(updated);
+    } catch (error) {
+      if (error instanceof StaleRecordError) {
+        throw new ConcurrentTransitionError(read.id, read.state, transition);
+      }
+      throw error;
+    }
   }
 
   /**

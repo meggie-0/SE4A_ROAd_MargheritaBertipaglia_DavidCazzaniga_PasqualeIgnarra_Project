@@ -50,3 +50,30 @@ export class IllegalTransitionError extends Error {
     this.name = 'IllegalTransitionError';
   }
 }
+
+/**
+ * Sollevata quando la transizione era legale al momento della lettura, ma qualcun altro ha cambiato
+ * lo stato del veicolo prima che la si potesse scrivere.
+ *
+ * È distinta da `IllegalTransitionError` perché dice una cosa diversa e ammette una risposta
+ * diversa. Là la richiesta era sbagliata e ripeterla non serve; qui era giusta e si è persa una
+ * corsa: chi alloca può semplicemente passare al candidato successivo, che è la stessa risposta che
+ * `PersistencePort.reserve()` prevede per `ROBOTAXI_BUSY`. Confonderle farebbe apparire come un
+ * errore di programmazione ciò che è un esito ordinario di due passeggeri che chiedono insieme.
+ *
+ * Non è un'aggiunta alla Figura 2.10: la macchina a stati resta quella: questo è ciò che accade
+ * quando due repliche del tier applicativo (NFR3) la percorrono contemporaneamente sullo stesso
+ * veicolo.
+ */
+export class ConcurrentTransitionError extends Error {
+  constructor(
+    readonly robotaxiId: string,
+    readonly expected: RobotaxiStateName,
+    readonly transition: RobotaxiTransition,
+  ) {
+    super(
+      `Il robotaxi ${robotaxiId} non era più in ${expected} quando "${transition}" stava per essere scritta.`,
+    );
+    this.name = 'ConcurrentTransitionError';
+  }
+}

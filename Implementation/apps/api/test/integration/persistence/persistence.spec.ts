@@ -1,6 +1,7 @@
 import {
   RecordNotFoundError,
   ReservationConflictError,
+  StaleRecordError,
   advanceReservationWindow,
   immediateReservationWindow,
   type PersistencePort,
@@ -523,5 +524,43 @@ describe('Persistence: interrogazione', () => {
 
   it('su nessun risultato restituisce un elenco vuoto, non un errore', async () => {
     expect(await persistence.find('robotaxi', { where: { state: 'MAINTENANCE' } })).toEqual([]);
+  });
+});
+
+describe('[NFR4] Scrittura condizionata: update con `expected`', () => {
+  it('scrive se la riga soddisfa ancora la condizione', async () => {
+    await givenFleet(1);
+
+    const updated = await persistence.update(
+      'robotaxi',
+      'RT-01',
+      { state: 'ASSIGNED' },
+      { state: 'AVAILABLE' },
+    );
+
+    expect(updated.state).toBe('ASSIGNED');
+  });
+
+  it('non scrive nulla se la riga è cambiata dopo la lettura', async () => {
+    await givenFleet(1);
+
+    // Qualcun altro l'ha già portato altrove: è ciò che accade a chi legge, decide e poi scrive
+    // mentre una seconda replica del tier applicativo fa lo stesso (NFR3).
+    await persistence.update('robotaxi', 'RT-01', { state: 'MAINTENANCE' });
+
+    await expect(
+      persistence.update('robotaxi', 'RT-01', { state: 'ASSIGNED' }, { state: 'AVAILABLE' }),
+    ).rejects.toBeInstanceOf(StaleRecordError);
+
+    // Non «ha scritto e poi ha protestato»: la condizione sta nella stessa istruzione della
+    // scrittura, quindi la riga non è stata toccata affatto.
+    const [robotaxi] = await persistence.find('robotaxi', { where: { id: 'RT-01' } });
+    expect(robotaxi?.state).toBe('MAINTENANCE');
+  });
+
+  it('distingue una riga cambiata da una riga che non esiste', async () => {
+    await expect(
+      persistence.update('robotaxi', 'RT-99', { state: 'ASSIGNED' }, { state: 'AVAILABLE' }),
+    ).rejects.toBeInstanceOf(RecordNotFoundError);
   });
 });

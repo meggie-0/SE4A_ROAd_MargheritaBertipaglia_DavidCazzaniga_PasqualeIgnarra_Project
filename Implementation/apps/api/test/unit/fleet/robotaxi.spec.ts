@@ -3,7 +3,7 @@ import {
   Robotaxi,
   RobotaxiStateFactory,
   type RobotaxiSnapshot,
-} from '../../../src/fleet/fleet-monitor.port';
+} from '../../../src/fleet/robotaxi.port';
 
 /**
  * Il pattern State applicato al ciclo di vita del veicolo (DD §2.3.2 e §2.6.3, Figura 2.10).
@@ -13,8 +13,9 @@ import {
  * comportamento dal solo nome dello stato. L'enumerazione esaustiva delle 63 combinazioni sta nel
  * cancello di M2, che è dove il criterio di completamento della milestone va tradotto in test.
  *
- * Tutto passa da `fleet-monitor.port.ts`: un test che raggiungesse `states/available.state.ts`
- * smetterebbe di dimostrare che il modulo è sostituibile (HARNESS.md §9), e `pnpm arch` lo rifiuta.
+ * Tutto passa da `robotaxi.port.ts`, la porta con cui `fleet` pubblica il vocabolario del ciclo di
+ * vita: un test che raggiungesse `states/available.state.ts` smetterebbe di dimostrare che il
+ * modulo è sostituibile (HARNESS.md §9), e `pnpm arch` lo rifiuta.
  */
 
 const RIDE = { rideRequestId: 'ride-1' };
