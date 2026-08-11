@@ -301,10 +301,12 @@ The main components and the operations they export are:
   maintenance and prevents their assignment (R9).
 - **NotificationManager**: `update(event)`. Receives domain events and dispatches notifications to
   the interested clients (R6, G7). Concrete observer of the Observer pattern.
-- **PersistenceManager**: `create()`, `update()`, `filterAvailable()`, `reserve()`. The only
-  component that talks to the database; it filters candidates according to their availability
-  timelines and atomically stores each advance booking together with the corresponding robotaxi
-  reservation. It is where the uniqueness/consistency constraints live (NFR4, C1).
+- **PersistenceManager**: `create()`, `update()`, `find()` **[v1.1]**, `filterAvailable()`,
+  `reserve()`. The only component that talks to the database; it filters candidates according to
+  their availability timelines and atomically stores each advance booking together with the
+  corresponding robotaxi reservation. It is where the uniqueness/consistency constraints live
+  (NFR4, C1). `find()` is the read path that v1.0 used without listing — `findBookingsDueAt(now)`
+  in §2.4 and the strategy/mode readers of §2.2.1 both go through it (decision D18).
 - **ExternalServicesGateway**: `getETA()`, `getTraffic()`, `getDemandData()`, `commandRoute()`,
   `readTelemetry()`. A facade over the external systems (mapping service, demand data source,
   robotaxi fleet), with one adapter per provider (NFR8).
@@ -1364,6 +1366,9 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D15 | Il client passeggero è una PWA responsive | §3.1 | Nulla nei requisiti dipende dal packaging nativo, e una consegna web tiene entrambi i client sullo stesso contratto pubblico (NFR8) |
 | D16 | Ogni attività periodica è un `runOnce()` pubblico; niente timer nella logica di dominio | §2.2.1, §5.3 | Prenotazioni, isteresi e rebalancing sono definiti sul tempo: senza controllo del tempo i loro test sono instabili |
 | D17 | Strumenti di test aggiornati allo stack effettivo | §5.3 | Il v1.0 citava strumenti di altri linguaggi |
+| D18 | `PersistenceManager` espone anche `find(kind, criteri)` | §2.2 | Il documento presupponeva già la lettura in due punti (`findBookingsDueAt(now)` in §2.4, i lettori di strategia e modo in §2.2.1) senza elencarla fra le operazioni. Una sola operazione generica invece di una per caso d'uso: il registro dei tipi persistiti la rende sicura sui tipi e la porta non cresce a ogni milestone |
+| D19 | Una riserva si **rilascia** (`released_at`), oltre a potersi accorciare; il vincolo di esclusione è parziale su `released_at IS NULL` | §2.4 | D8 chiude il limite superiore quando la corsa *termina*, ma R14 annulla anche prima che la finestra cominci, e lì accorciare non basta: servirebbe un intervallo vuoto, che non escluderebbe nulla. Con il rilascio l'intera finestra torna prenotabile e la riga resta per lo storico |
+| D20 | `system_mode` porta anche l'ultimo livello di traffico noto | §2.2.1 | D11 richiede che `enableAuto()` rivaluti *subito* l'ultimo livello; con più repliche del tier applicativo (NFR3) un valore tenuto in memoria divergerebbe fra istanze, esattamente come la strategia attiva secondo D6 |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13 e D16
 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

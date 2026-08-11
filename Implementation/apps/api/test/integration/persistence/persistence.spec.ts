@@ -1,5 +1,6 @@
 import {
   RecordNotFoundError,
+  ReservationConflictError,
   advanceReservationWindow,
   immediateReservationWindow,
   type PersistencePort,
@@ -127,19 +128,14 @@ describe('Persistence: scrittura e rilettura dei record', () => {
 
   it('parte con un solo record di system_mode, in NearestAvailable e modo Auto', async () => {
     // La riga singleton nasce con lo schema: il sistema deve saper rispondere "qual è la
-    // strategia attiva?" anche su un database mai seminato (decisione D6).
-    const rows = await harness.query<{
-      active_strategy: string;
-      mode: string;
-      last_traffic_level: string | null;
-    }>(`SELECT "active_strategy", "mode", "last_traffic_level" FROM "system_mode"`);
+    // strategia attiva?" anche su un database mai seminato (decisione D6). La lettura passa dalla
+    // porta, come faranno `getActiveStrategy()` e `getMode()` in M6.
+    const modes = await persistence.find('system_mode');
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toEqual({
-      active_strategy: 'NEAREST_AVAILABLE',
-      mode: 'AUTO',
-      last_traffic_level: null,
-    });
+    expect(modes).toHaveLength(1);
+    expect(modes[0]?.activeStrategy).toBe('NEAREST_AVAILABLE');
+    expect(modes[0]?.mode).toBe('AUTO');
+    expect(modes[0]?.lastTrafficLevel).toBeNull();
   });
 
   it('aggiorna la strategia attiva passando dalla porta', async () => {
@@ -299,7 +295,6 @@ describe('[NFR4][G10] Riserve senza sovrapposizioni', () => {
       rideRequestId: requestId,
       window: advanceReservationWindow(scheduledPickup, 8, 25),
       booking: {
-        rideRequestId: requestId,
         robotaxiId: 'RT-01',
         scheduledPickup,
         activationDueAt: new Date('2026-05-05T07:45:00.000Z'),
@@ -309,7 +304,10 @@ describe('[NFR4][G10] Riserve senza sovrapposizioni', () => {
 
     expect(outcome.reserved).toBe(true);
     if (!outcome.reserved) return;
+    // La prenotazione non dichiara la richiesta né la riserva: le eredita, quindi non possono
+    // puntare altrove.
     expect(outcome.booking?.reservationId).toBe(outcome.reservation.id);
+    expect(outcome.booking?.rideRequestId).toBe(requestId);
     expect(await harness.countRows('booking')).toBe(1);
   });
 
@@ -327,7 +325,6 @@ describe('[NFR4][G10] Riserve senza sovrapposizioni', () => {
       rideRequestId: second,
       window: contested,
       booking: {
-        rideRequestId: second,
         robotaxiId: 'RT-01',
         scheduledPickup,
         activationDueAt: new Date('2026-05-05T07:45:00.000Z'),
@@ -355,7 +352,176 @@ describe('[NFR1][G10] Due richieste per lo stesso veicolo', () => {
       persistence.reserve({ robotaxiId: 'RT-01', rideRequestId: second, window }),
     ]);
 
+    const rejected = outcomes.filter((outcome) => !outcome.reserved);
     expect(outcomes.filter((outcome) => outcome.reserved)).toHaveLength(1);
     expect(await harness.countRows('robotaxi_reservation')).toBe(1);
+
+    // Il motivo del rifiuto dipende da quale delle due arriva prima al blocco di riga, e nessuna
+    // delle due possibilità è un difetto: o la perdente trova il veicolo occupato da una
+    // transazione in corso (`SKIP LOCKED`, e rinuncia subito invece di accodarsi), o lo trova
+    // libero e allora è il vincolo di esclusione a fermarla. Asserire l'insieme dei motivi
+    // ammessi è ciò che il test può davvero garantire; pretenderne uno solo lo renderebbe
+    // instabile.
+    expect(rejected).toHaveLength(1);
+    expect(['ROBOTAXI_BUSY', 'OVERLAPPING_RESERVATION']).toContain(
+      rejected[0]?.reserved === false ? rejected[0].reason : undefined,
+    );
+  });
+});
+
+describe('[NFR4][G10] Rilascio di una riserva (R14)', () => {
+  const scheduledPickup = new Date('2026-05-05T08:00:00.000Z');
+  const booked = advanceReservationWindow(scheduledPickup, 8, 25);
+
+  it('una prenotazione annullata restituisce al pool l’intera finestra', async () => {
+    await givenFleet(1);
+    const requestId = await givenRideRequest();
+
+    const outcome = await persistence.reserve({
+      robotaxiId: 'RT-01',
+      rideRequestId: requestId,
+      window: booked,
+    });
+    if (!outcome.reserved) throw new Error('la riserva doveva riuscire');
+    expect(await persistence.filterAvailable(['RT-01'], booked)).toEqual([]);
+
+    // L'annullamento arriva **prima** che la finestra cominci: restringere l'intervallo non
+    // servirebbe, perché un intervallo vuoto lo schema lo vieta e uno di un istante lascerebbe
+    // comunque il veicolo occupato. Si rilascia (DD §2.4, "Cancellation").
+    harness.clock.setNow('2026-05-04T12:00:00.000Z');
+    const released = await persistence.update('robotaxi_reservation', outcome.reservation.id, {
+      releasedAt: harness.clock.now(),
+    });
+
+    expect(released.releasedAt?.toISOString()).toBe('2026-05-04T12:00:00.000Z');
+    expect(await persistence.filterAvailable(['RT-01'], booked)).toEqual(['RT-01']);
+  });
+
+  it('la riserva rilasciata resta nello storico e non blocca più il vincolo', async () => {
+    await givenFleet(1);
+    const first = await givenRideRequest('anna@example.com');
+    const second = await givenRideRequest('bruno@example.com');
+
+    const outcome = await persistence.reserve({
+      robotaxiId: 'RT-01',
+      rideRequestId: first,
+      window: booked,
+    });
+    if (!outcome.reserved) throw new Error('la riserva doveva riuscire');
+    await persistence.update('robotaxi_reservation', outcome.reservation.id, {
+      releasedAt: NOW,
+    });
+
+    // Il vincolo è parziale su `released_at IS NULL`: la stessa identica finestra torna
+    // prenotabile, e la riga rilasciata resta per lo storico.
+    const again = await persistence.reserve({
+      robotaxiId: 'RT-01',
+      rideRequestId: second,
+      window: booked,
+    });
+
+    expect(again.reserved).toBe(true);
+    expect(await harness.countRows('robotaxi_reservation')).toBe(2);
+  });
+
+  it('segnala con un errore tipizzato l’estensione che collide con una riserva successiva', async () => {
+    await givenFleet(1);
+    const running = await givenRideRequest('anna@example.com');
+    const later = await givenRideRequest('bruno@example.com');
+
+    const current = immediateReservationWindow(NOW, 5, 20);
+    const outcome = await persistence.reserve({
+      robotaxiId: 'RT-01',
+      rideRequestId: running,
+      window: current,
+    });
+    if (!outcome.reserved) throw new Error('la riserva doveva riuscire');
+
+    const next = immediateReservationWindow(new Date('2026-05-04T10:00:00.000Z'), 5, 20);
+    await persistence.reserve({ robotaxiId: 'RT-01', rideRequestId: later, window: next });
+
+    // DD §2.4: "if a ride overruns its reserved interval the interval is extended; should the
+    // extension collide with a later reservation…". La collisione dev'essere un errore del
+    // dominio, non un errore del driver che esce dal modulo come guasto.
+    await expect(
+      persistence.update('robotaxi_reservation', outcome.reservation.id, {
+        period: { start: current.start, end: new Date('2026-05-04T10:30:00.000Z') },
+      }),
+    ).rejects.toThrow(ReservationConflictError);
+  });
+});
+
+describe('Persistence: interrogazione', () => {
+  it('trova per uguaglianza', async () => {
+    await givenRideRequest('anna@example.com');
+
+    const found = await persistence.find('user', { where: { email: 'anna@example.com' } });
+
+    expect(found).toHaveLength(1);
+    expect(found[0]?.role).toBe('PASSENGER');
+  });
+
+  it('trova per confronto: è come si troveranno le prenotazioni dovute (D9)', async () => {
+    await givenFleet(1);
+    const requestId = await givenRideRequest();
+
+    const scheduledPickup = new Date('2026-05-05T08:00:00.000Z');
+    await persistence.reserve({
+      robotaxiId: 'RT-01',
+      rideRequestId: requestId,
+      window: advanceReservationWindow(scheduledPickup, 8, 25),
+      booking: {
+        robotaxiId: 'RT-01',
+        scheduledPickup,
+        activationDueAt: new Date('2026-05-05T07:45:00.000Z'),
+        activatedAt: null,
+      },
+    });
+
+    const notYet = await persistence.find('booking', {
+      where: { activationDueAt: { atMost: new Date('2026-05-05T07:00:00.000Z') } },
+    });
+    const due = await persistence.find('booking', {
+      where: {
+        activationDueAt: { atMost: new Date('2026-05-05T07:45:00.000Z') },
+        activatedAt: null,
+      },
+    });
+
+    expect(notYet).toEqual([]);
+    expect(due).toHaveLength(1);
+  });
+
+  it('ordina per id crescente quando non le si dice altro', async () => {
+    await givenFleet(3);
+
+    const fleet = await persistence.find('robotaxi');
+
+    expect(fleet.map((robotaxi) => robotaxi.id)).toEqual(['RT-01', 'RT-02', 'RT-03']);
+  });
+
+  it('rispetta ordinamento e limite quando glieli si indica', async () => {
+    await givenFleet(3);
+
+    const fleet = await persistence.find('robotaxi', {
+      orderBy: [{ field: 'id', direction: 'desc' }],
+      limit: 2,
+    });
+
+    expect(fleet.map((robotaxi) => robotaxi.id)).toEqual(['RT-03', 'RT-02']);
+  });
+
+  it('trova con un insieme di appartenenza', async () => {
+    await givenFleet(3);
+
+    const some = await persistence.find('robotaxi', {
+      where: { id: { oneOf: ['RT-01', 'RT-03'] } },
+    });
+
+    expect(some.map((robotaxi) => robotaxi.id)).toEqual(['RT-01', 'RT-03']);
+  });
+
+  it('su nessun risultato restituisce un elenco vuoto, non un errore', async () => {
+    expect(await persistence.find('robotaxi', { where: { state: 'MAINTENANCE' } })).toEqual([]);
   });
 });

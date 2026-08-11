@@ -17,9 +17,14 @@ import type {
  * nient'altro di questo modulo è visibile da fuori. Le entità TypeORM, il `DataSource` e le
  * migrazioni restano dietro questa classe astratta, che fa anche da token di iniezione per Nest.
  *
- * Le quattro operazioni sono quelle del DD §2.2 — `create`, `update`, `filterAvailable`,
- * `reserve` — e non se ne aggiungono altre. I tipi dei record esposti qui sono interfacce di dati
- * semplici, non entità dell'ORM: chi usa la porta non deve poter dedurre che dietro c'è TypeORM.
+ * Le operazioni sono le quattro del DD §2.2 — `create`, `update`, `filterAvailable`, `reserve` —
+ * più `find`. La quinta non è un'aggiunta arbitraria: il DD la presuppone in due punti espliciti
+ * (`findBookingsDueAt(now)` in §2.4, i percorsi di lettura di strategia e modo in §2.2.1) senza
+ * elencarla, e senza di essa l'unico modo di leggere sarebbe abusare di `update`. La divergenza è
+ * registrata come decisione D18 in `docs/DD.md`.
+ *
+ * I tipi dei record esposti qui sono interfacce di dati semplici, non entità dell'ORM: chi usa la
+ * porta non deve poter dedurre che dietro c'è TypeORM.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -49,7 +54,14 @@ export interface ReservationTiming {
   readonly activationLeadMinutes: number;
 }
 
-/** I valori di default previsti da MILESTONES.md §M1: 10 e 15 minuti. */
+/**
+ * I valori di default previsti da MILESTONES.md §M1: 10 e 15 minuti.
+ *
+ * Sono costanti, non variabili d'ambiente: nessun componente li configura ancora, e una variabile
+ * in `.env.example` che nessuno legge è una promessa falsa. Quando M4 avrà bisogno di renderli
+ * configurabili, `RideRequestManager` li leggerà da `ConfigService` e passerà un `ReservationTiming`
+ * esplicito alle funzioni qui sotto, che lo accettano già.
+ */
 export const DEFAULT_RESERVATION_TIMING: ReservationTiming = {
   bufferMinutes: 10,
   activationLeadMinutes: 15,
@@ -187,14 +199,27 @@ export interface BookingRecord {
 
 /**
  * Una riserva: il veicolo `robotaxiId` è impegnato per la corsa `rideRequestId` nella finestra
- * `period`. Il vincolo di esclusione sul database impedisce che due riserve dello stesso veicolo
- * si sovrappongano, qualunque sia l'interleaving degli scrittori (NFR4).
+ * `period`. Il vincolo di esclusione sul database impedisce che due riserve **non rilasciate**
+ * dello stesso veicolo si sovrappongano, qualunque sia l'interleaving degli scrittori (NFR4).
+ *
+ * `releasedAt` distingue i due modi in cui una riserva finisce, che il DD §2.4 tiene separati:
+ *
+ * - la corsa **termina**: il limite superiore di `period` si chiude all'istante effettivo, e il
+ *   tempo che avanza torna prenotabile (decisione D8);
+ * - la corsa viene **annullata** (R14): la riserva si rilascia per intero valorizzando
+ *   `releasedAt`, e l'intera finestra torna prenotabile.
+ *
+ * Il secondo caso non è esprimibile restringendo l'intervallo: annullare una prenotazione *prima*
+ * che la sua finestra cominci richiederebbe un intervallo vuoto, che lo schema vieta perché non
+ * escluderebbe nulla. Una riserva rilasciata resta in tabella — serve allo storico — ma esce dal
+ * vincolo di esclusione, che è parziale su `released_at IS NULL`.
  */
 export interface ReservationRecord {
   readonly id: string;
   readonly robotaxiId: string;
   readonly rideRequestId: string;
   readonly period: TimeWindow;
+  readonly releasedAt: Date | null;
   readonly createdAt: Date;
 }
 
@@ -202,7 +227,14 @@ export interface ReservationRecord {
 export interface DemandSampleRecord {
   readonly id: string;
   readonly zoneId: string;
-  /** 0 = domenica … 6 = sabato, la convenzione di `Date.getUTCDay()`. */
+  /**
+   * La fascia oraria settimanale è in **ora locale di Milano** (Europe/Rome), non in UTC: i
+   * profili di domanda parlano di "picchi del mattino" e "ore serali", che sono fenomeni dell'ora
+   * locale. `analyzeDemand()` (M6) deve quindi convertire l'istante `t` prima di cercare la
+   * fascia. Indicizzare su UTC avrebbe spostato ogni picco di un'ora d'inverno e di due d'estate.
+   *
+   * 0 = domenica … 6 = sabato, la numerazione dei giorni di JavaScript.
+   */
   readonly dayOfWeek: number;
   readonly hourOfDay: number;
   readonly baseDemand: number;
@@ -313,6 +345,48 @@ export type NewRecord<K extends EntityKind> = Omit<PersistedRecord<K>, 'id' | Ti
 export type RecordPatch<K extends EntityKind> = Partial<Omit<PersistedRecord<K>, 'id'>>;
 
 // ---------------------------------------------------------------------------------------------
+// Interrogazione
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Il criterio su un singolo campo: un valore, che significa uguaglianza, oppure un confronto.
+ *
+ * L'insieme dei confronti è **chiuso e minimo**: sono quelli che i requisiti chiedono davvero —
+ * le prenotazioni dovute (`activationDueAt` non oltre adesso, decisione D9), gli eventi di domanda
+ * attivi in un istante (`startsAt` non oltre `t`, `endsAt` oltre `t`, decisione D12) e l'insieme
+ * di appartenenza. Non è un linguaggio di interrogazione: se un giorno servisse una `OR` o una
+ * `JOIN`, è il segno che quell'operazione appartiene alla porta, non al chiamante.
+ */
+export type FieldCriterion<V> =
+  | V
+  | { readonly atMost: V }
+  | { readonly atLeast: V }
+  | { readonly lessThan: V }
+  | { readonly greaterThan: V }
+  | { readonly oneOf: readonly V[] };
+
+/** I criteri su più campi si combinano in **and**. */
+export type RecordFilter<K extends EntityKind> = {
+  readonly [F in keyof PersistedRecord<K>]?: FieldCriterion<PersistedRecord<K>[F]>;
+};
+
+export interface SortOrder<K extends EntityKind> {
+  readonly field: keyof PersistedRecord<K> & string;
+  readonly direction?: 'asc' | 'desc';
+}
+
+export interface FindCriteria<K extends EntityKind> {
+  readonly where?: RecordFilter<K>;
+  /**
+   * L'ordinamento. Se non lo si indica è per `id` crescente, e non è un dettaglio: ogni
+   * ordinamento del sistema dev'essere **totale**, o due esecuzioni della stessa interrogazione
+   * possono restituire lo stesso insieme in ordine diverso e un test diventa instabile.
+   */
+  readonly orderBy?: readonly SortOrder<K>[];
+  readonly limit?: number;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Riserva
 // ---------------------------------------------------------------------------------------------
 
@@ -321,14 +395,17 @@ export type RecordPatch<K extends EntityKind> = Partial<Omit<PersistedRecord<K>,
  *
  * `booking` è presente solo per le prenotazioni anticipate: passandolo, la riga di `booking` e
  * quella di `robotaxi_reservation` vengono scritte **nella stessa transazione**, che è ciò che
- * MILESTONES.md §M4 pretende ("o scrive entrambe le righe o nessuna"). Senza questo campo servirebbe
- * una quinta operazione sulla porta, che il DD §2.2 non prevede.
+ * MILESTONES.md §M4 pretende ("o scrive entrambe le righe o nessuna").
+ *
+ * La prenotazione non ripete `rideRequestId` né `reservationId`: li prende dalla riserva che la
+ * sta creando. Se li accettasse, un chiamante distratto potrebbe scrivere una prenotazione che
+ * punta a una richiesta diversa da quella riservata — in transazione, senza che nulla protesti.
  */
 export interface ReservationInput {
   readonly robotaxiId: string;
   readonly rideRequestId: string;
   readonly window: TimeWindow;
-  readonly booking?: Omit<NewRecord<'booking'>, 'reservationId'>;
+  readonly booking?: Omit<NewRecord<'booking'>, 'reservationId' | 'rideRequestId'>;
 }
 
 /**
@@ -363,13 +440,31 @@ export abstract class PersistencePort {
 
   /**
    * Aggiorna i campi indicati e restituisce il record aggiornato.
-   * Solleva `RecordNotFoundError` se l'identificatore non esiste.
+   *
+   * Solleva `RecordNotFoundError` se l'identificatore non esiste, e `ReservationConflictError` se
+   * l'aggiornamento allarga una riserva fino a sovrapporsi a un'altra — il caso della corsa che
+   * sfora il proprio intervallo (DD §2.4). Anche lì il rifiuto arriva dal vincolo di esclusione:
+   * l'eccezione tipizzata serve solo a non far uscire un errore del driver dal modulo.
    */
   abstract update<K extends EntityKind>(
     kind: K,
     id: string,
     patch: RecordPatch<K>,
   ): Promise<PersistedRecord<K>>;
+
+  /**
+   * I record che soddisfano i criteri, in ordine deterministico.
+   *
+   * È la via di lettura del `PersistenceManager`, che il DD presuppone in più punti senza
+   * elencarla fra le operazioni di §2.2: `findBookingsDueAt(now)` nel diagramma di attivazione
+   * delle prenotazioni (§2.4) e i due percorsi di lettura di strategia e modo (§2.2.1). Una sola
+   * operazione generica invece di una per caso d'uso: il registro dei tipi persistiti la rende
+   * già sicura sui tipi, e la porta non cresce a ogni milestone.
+   */
+  abstract find<K extends EntityKind>(
+    kind: K,
+    criteria?: FindCriteria<K>,
+  ): Promise<PersistedRecord<K>[]>;
 
   /**
    * Dei veicoli indicati, quelli **senza** alcuna riserva che si sovrapponga alla finestra.
@@ -402,5 +497,21 @@ export class RecordNotFoundError extends Error {
   ) {
     super(`Nessun record "${kind}" con id ${id}.`);
     this.name = 'RecordNotFoundError';
+  }
+}
+
+/**
+ * Sollevata da `update` quando la nuova finestra di una riserva si sovrappone a un'altra.
+ *
+ * `reserve` descrive il conflitto nel proprio esito invece di sollevare, perché lì il conflitto è
+ * un esito ordinario: due passeggeri hanno chiesto lo stesso veicolo. Qui no: chi allarga una
+ * riserva sta già usando quel veicolo, e la collisione è una condizione eccezionale che il
+ * chiamante deve gestire esplicitamente (DD §2.4: la prenotazione in collisione viene ri-allocata
+ * al momento dell'attivazione).
+ */
+export class ReservationConflictError extends Error {
+  constructor(readonly id: string) {
+    super(`La riserva ${id} si sovrapporrebbe a un'altra riserva dello stesso veicolo.`);
+    this.name = 'ReservationConflictError';
   }
 }

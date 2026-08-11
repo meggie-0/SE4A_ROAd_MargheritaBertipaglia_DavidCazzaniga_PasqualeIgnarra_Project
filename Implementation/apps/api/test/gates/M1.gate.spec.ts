@@ -143,15 +143,19 @@ describe('[M1] Cancello: schema e PersistenceManager', () => {
       expect(rows).toHaveLength(1);
     });
 
-    it('dichiara no_overlapping_reservations come vincolo di esclusione', async () => {
+    it('dichiara no_overlapping_reservations come vincolo di esclusione parziale', async () => {
       // `contype = 'x'` è un vincolo di esclusione. Se domani qualcuno lo sostituisse con un
       // indice unico o con un controllo applicativo, questo test lo direbbe: la garanzia di NFR4
-      // sta nel *tipo* di vincolo, non nel suo nome.
-      const rows = await harness.query<{ contype: string }>(
-        `SELECT "contype" FROM pg_constraint WHERE "conname" = 'no_overlapping_reservations'`,
+      // sta nel *tipo* di vincolo, non nel suo nome. La clausola `WHERE` è ciò che rende
+      // possibile l'annullamento di R14: una riserva rilasciata esce dal vincolo.
+      const rows = await harness.query<{ contype: string; definition: string }>(
+        `SELECT "contype", pg_get_constraintdef("oid") AS definition
+           FROM pg_constraint WHERE "conname" = 'no_overlapping_reservations'`,
       );
 
-      expect(rows).toEqual([{ contype: 'x' }]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.contype).toBe('x');
+      expect(rows[0]?.definition).toContain('released_at IS NULL');
     });
   });
 
@@ -223,6 +227,33 @@ describe('[M1] Cancello: schema e PersistenceManager', () => {
       expect(await harness.countRows('robotaxi_reservation')).toBe(2);
     });
 
+    it('lascia riprenotare la stessa finestra dopo che la riserva è stata rilasciata (R14)', async () => {
+      const [first, second] = await givenOneRobotaxiAndTwoRequests();
+
+      const outcome = await persistence.reserve({
+        robotaxiId: 'RT-01',
+        rideRequestId: first,
+        window: WINDOW,
+      });
+      if (!outcome.reserved) throw new Error('la prima riserva doveva riuscire');
+
+      // Annullamento: la finestra dev'essere di nuovo prenotabile *per intero*. Restringere
+      // l'intervallo non basterebbe — un intervallo vuoto lo schema lo vieta — quindi la riserva
+      // si rilascia e il vincolo, che è parziale, smette di considerarla.
+      await persistence.update('robotaxi_reservation', outcome.reservation.id, { releasedAt: NOW });
+
+      expect(await persistence.filterAvailable(['RT-01'], WINDOW)).toEqual(['RT-01']);
+      const again = await persistence.reserve({
+        robotaxiId: 'RT-01',
+        rideRequestId: second,
+        window: WINDOW,
+      });
+
+      expect(again.reserved).toBe(true);
+      // Due righe, una sola attiva: lo storico resta.
+      expect(await harness.countRows('robotaxi_reservation')).toBe(2);
+    });
+
     it('rifiuta una riserva con un estremo illimitato (decisione D8)', async () => {
       const [first] = await givenOneRobotaxiAndTwoRequests();
       const connection = await harness.openRawConnection();
@@ -264,6 +295,15 @@ describe('[M1] Cancello: schema e PersistenceManager', () => {
       expect(accepted).toHaveLength(1);
       expect(rejected).toHaveLength(1);
       expect(await harness.countRows('robotaxi_reservation')).toBe(1);
+
+      // Il motivo dipende da chi arriva prima al blocco di riga, e le due possibilità sono
+      // entrambe corrette: o il veicolo risulta impegnato da una transazione in corso
+      // (`SKIP LOCKED`), o è il vincolo di esclusione a fermare la seconda scrittura. Il criterio
+      // della milestone è "esattamente una riesce"; che il vincolo *funzioni* lo dimostra il test
+      // con l'interleaving controllato qui sopra.
+      expect(['ROBOTAXI_BUSY', 'OVERLAPPING_RESERVATION']).toContain(
+        rejected[0]?.reserved === false ? rejected[0].reason : undefined,
+      );
     });
   });
 

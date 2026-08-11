@@ -34,6 +34,15 @@ import { SYSTEM_MODE_ID } from '../entities/system-mode.entity';
  * e aggiungere uno stato senza una migrazione diventa impossibile invece che silenzioso.
  */
 
+/**
+ * L'istante con cui nasce la riga singleton di `system_mode`.
+ *
+ * Una costante e non `now()`: due esecuzioni delle migrazioni devono produrre lo stesso database.
+ * Coincide con il timestamp di questa migrazione, così si legge per quello che è — "da quando
+ * esiste lo schema" — e non come una data di modifica reale.
+ */
+const SCHEMA_EPOCH = new Date(1786320000000).toISOString();
+
 /** `'A', 'B', 'C'` — l'elenco di valori ammessi in un `CHECK ... IN (...)`. */
 const values = (allowed: readonly string[]): string =>
   allowed.map((value) => `'${value}'`).join(', ');
@@ -104,6 +113,7 @@ export class InitialSchema1786320000000 implements MigrationInterface {
         "robotaxi_id"     varchar(40) NOT NULL REFERENCES "robotaxi" ("id") ON DELETE CASCADE,
         "ride_request_id" uuid NOT NULL REFERENCES "ride_request" ("id") ON DELETE CASCADE,
         "period"          tstzrange NOT NULL,
+        "released_at"     timestamptz,
         "created_at"      timestamptz NOT NULL,
         -- Decisione D8: mai un intervallo illimitato, e mai uno vuoto (che non escluderebbe nulla).
         CONSTRAINT "reservation_period_is_bounded"
@@ -113,10 +123,16 @@ export class InitialSchema1786320000000 implements MigrationInterface {
     `);
 
     // L'invariante centrale della milestone (NFR4, G10, C1).
+    //
+    // Il vincolo è **parziale**: una riserva rilasciata resta in tabella per lo storico ma non
+    // impegna più il veicolo. Serve a R14 — l'annullamento deve restituire al pool l'intera
+    // finestra, e restringere l'intervallo non basta: annullare una prenotazione prima che la sua
+    // finestra cominci richiederebbe un intervallo vuoto, che il CHECK qui sopra vieta.
     await queryRunner.query(`
       ALTER TABLE "robotaxi_reservation"
         ADD CONSTRAINT "no_overlapping_reservations"
         EXCLUDE USING gist ("robotaxi_id" WITH =, "period" WITH &&)
+        WHERE ("released_at" IS NULL)
     `);
 
     await queryRunner.query(`
@@ -195,9 +211,13 @@ export class InitialSchema1786320000000 implements MigrationInterface {
     // La riga singleton nasce con lo schema, non con il seed: il sistema deve poter rispondere
     // "qual è la strategia attiva?" anche su un database mai seminato, e il default è
     // NearestAvailable in modo Auto (RASD §2.4).
+    //
+    // L'istante è una costante e non `now()`: l'orologio del database è pur sempre un orologio di
+    // sistema (CLAUDE.md Regola 3), e con una costante due esecuzioni delle migrazioni producono
+    // un database identico. Il valore vero lo scrive il primo `update`, che passa da `ClockPort`.
     await queryRunner.query(`
       INSERT INTO "system_mode" ("id", "active_strategy", "mode", "last_traffic_level", "updated_at")
-      VALUES ('${SYSTEM_MODE_ID}', '${DEFAULT_STRATEGY}', 'AUTO', NULL, now())
+      VALUES ('${SYSTEM_MODE_ID}', '${DEFAULT_STRATEGY}', 'AUTO', NULL, '${SCHEMA_EPOCH}')
     `);
 
     await queryRunner.query(`

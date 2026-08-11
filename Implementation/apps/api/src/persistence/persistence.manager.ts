@@ -1,5 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import type { EntityManager, EntityTarget, ObjectLiteral } from 'typeorm';
+import {
+  In,
+  IsNull,
+  LessThan,
+  LessThanOrEqual,
+  MoreThan,
+  MoreThanOrEqual,
+  type EntityManager,
+  type EntityTarget,
+  type FindOptionsOrder,
+  type FindOptionsWhere,
+  type ObjectLiteral,
+} from 'typeorm';
 
 import { ClockPort } from '../platform/clock.port';
 
@@ -8,9 +20,12 @@ import { ENTITY_BY_KIND } from './entities';
 import {
   PersistencePort,
   RecordNotFoundError,
+  ReservationConflictError,
   type EntityKind,
+  type FindCriteria,
   type NewRecord,
   type PersistedRecord,
+  type RecordFilter,
   type RecordPatch,
   type ReservationInput,
   type ReservationOutcome,
@@ -68,13 +83,42 @@ export class PersistenceManager extends PersistencePort {
     }
 
     if (Object.keys(changes).length > 0) {
-      const result = await repository.update({ id }, changes);
-      if (result.affected === 0) throw new RecordNotFoundError(kind, id);
+      try {
+        const result = await repository.update({ id }, changes);
+        if (result.affected === 0) throw new RecordNotFoundError(kind, id);
+      } catch (error) {
+        // Allargare una riserva fino a sovrapporsi a un'altra è il caso della corsa che sfora
+        // (DD §2.4): il vincolo la rifiuta, e qui l'errore del driver diventa un errore del
+        // dominio, che il chiamante può distinguere da un guasto.
+        if (isExclusionViolation(error)) throw new ReservationConflictError(id);
+        throw error;
+      }
     }
 
     const row = await repository.findOneBy({ id });
     if (row === null) throw new RecordNotFoundError(kind, id);
     return row as PersistedRecord<K>;
+  }
+
+  async find<K extends EntityKind>(
+    kind: K,
+    criteria: FindCriteria<K> = {},
+  ): Promise<PersistedRecord<K>[]> {
+    const source = await this.database.connection();
+    const repository = source.getRepository(entityFor(kind));
+
+    const order: FindOptionsOrder<ObjectLiteral> = {};
+    for (const sort of criteria.orderBy ?? [{ field: 'id' }]) {
+      order[sort.field] = sort.direction === 'desc' ? 'DESC' : 'ASC';
+    }
+
+    const rows = await repository.find({
+      where: buildWhere(criteria.where),
+      order,
+      ...(criteria.limit === undefined ? {} : { take: criteria.limit }),
+    });
+
+    return rows as PersistedRecord<K>[];
   }
 
   async filterAvailable(robotaxiIds: readonly string[], window: TimeWindow): Promise<string[]> {
@@ -84,6 +128,8 @@ export class PersistenceManager extends PersistencePort {
     // `NOT EXISTS` invece di una `LEFT JOIN` con filtro: dice esattamente ciò che la porta
     // promette — nessuna riserva sovrapposta — e resta vero anche con più riserve per veicolo.
     // L'intervallo è semiaperto, quindi due finestre che si toccano non si escludono a vicenda.
+    // Le riserve rilasciate non contano: è la stessa condizione del vincolo di esclusione, che è
+    // parziale su `released_at IS NULL`, e le due devono restare d'accordo.
     const rows: ReadonlyArray<{ id: string }> = await source.query(
       `SELECT candidate AS id
          FROM unnest($1::varchar[]) AS candidate
@@ -91,6 +137,7 @@ export class PersistenceManager extends PersistencePort {
               SELECT 1
                 FROM "robotaxi_reservation" reservation
                WHERE reservation."robotaxi_id" = candidate
+                 AND reservation."released_at" IS NULL
                  AND reservation."period" && tstzrange($2::timestamptz, $3::timestamptz, '[)')
         )
         ORDER BY candidate ASC`,
@@ -126,15 +173,18 @@ export class PersistenceManager extends PersistencePort {
           robotaxiId: input.robotaxiId,
           rideRequestId: input.rideRequestId,
           period: input.window,
+          releasedAt: null,
         });
 
         // La prenotazione anticipata nasce nella stessa transazione della riserva: o esistono
-        // entrambe le righe o nessuna (MILESTONES.md §M4).
+        // entrambe le righe o nessuna (MILESTONES.md §M4). Richiesta e riserva le prende da qui,
+        // non dal chiamante, così non possono divergere.
         const booking =
           input.booking === undefined
             ? null
             : await this.insert(manager, 'booking', {
                 ...input.booking,
+                rideRequestId: input.rideRequestId,
                 reservationId: reservation.id,
               });
 
@@ -184,6 +234,52 @@ export class PersistenceManager extends PersistencePort {
     if (row === null) throw new RecordNotFoundError(kind, id);
     return row as PersistedRecord<K>;
   }
+}
+
+/**
+ * Traduce i criteri della porta nelle condizioni di TypeORM.
+ *
+ * L'insieme dei confronti è chiuso (vedi `FieldCriterion`): ogni ramo qui sotto corrisponde a uno
+ * di essi, e un valore nudo significa uguaglianza. `null` diventa `IS NULL`, perché in SQL
+ * `= NULL` non è mai vero — una svista che farebbe restituire zero righe invece di quelle giuste.
+ */
+function buildWhere<K extends EntityKind>(
+  filter: RecordFilter<K> | undefined,
+): FindOptionsWhere<ObjectLiteral> | undefined {
+  if (filter === undefined) return undefined;
+
+  const where: FindOptionsWhere<ObjectLiteral> = {};
+
+  for (const [field, criterion] of Object.entries(filter)) {
+    if (criterion === undefined) continue;
+    if (criterion === null) {
+      where[field] = IsNull();
+      continue;
+    }
+
+    if (typeof criterion === 'object' && !(criterion instanceof Date)) {
+      const comparison = criterion as {
+        atMost?: unknown;
+        atLeast?: unknown;
+        lessThan?: unknown;
+        greaterThan?: unknown;
+        oneOf?: readonly unknown[];
+      };
+
+      if (comparison.atMost !== undefined) where[field] = LessThanOrEqual(comparison.atMost);
+      else if (comparison.atLeast !== undefined) where[field] = MoreThanOrEqual(comparison.atLeast);
+      else if (comparison.lessThan !== undefined) where[field] = LessThan(comparison.lessThan);
+      else if (comparison.greaterThan !== undefined)
+        where[field] = MoreThan(comparison.greaterThan);
+      else if (comparison.oneOf !== undefined) where[field] = In([...comparison.oneOf]);
+      else where[field] = criterion;
+      continue;
+    }
+
+    where[field] = criterion;
+  }
+
+  return where;
 }
 
 /** La classe entità che mappa una tabella. Il cast tiene l'ORM confinato dietro la porta. */

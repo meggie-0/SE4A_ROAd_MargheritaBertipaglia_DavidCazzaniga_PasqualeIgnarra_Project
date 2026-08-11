@@ -92,7 +92,7 @@ confine, stai sbagliando qualcosa.
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
 | `notifications` | `NotificationPort` | `update` |
-| `persistence` | `PersistencePort` | `create`, `update`, `filterAvailable`, `reserve` |
+| `persistence` | `PersistencePort` | `create`, `update`, `find`, `filterAvailable`, `reserve` |
 | `external` | `ExternalServicesPort` | `getETA`, `getTraffic`, `getDemandData`, `commandRoute`, `readTelemetry` |
 | `platform` | `ClockPort`, `RandomPort` | `now`, `next` |
 | `gateway` | — | Controller REST e WebSocket. Importa solo porte. |

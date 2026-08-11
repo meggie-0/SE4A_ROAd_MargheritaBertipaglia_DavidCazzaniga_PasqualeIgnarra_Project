@@ -210,6 +210,10 @@ frattempo.
 
 **Copre:** R6, G7, NFR2
 
+La tabella `ride` **non** esiste ancora: lo schema di M1 si è fermato alle undici tabelle elencate
+sopra, e `Ride` con il suo `RideStatus` (RASD §2.2.3) arriva qui, insieme all'oggetto che di
+`Subject` ha bisogno. Serve una migrazione, più l'enum in `packages/shared`.
+
 Eventi di dominio emessi da `fleet` e `rides`: `Robotaxi` e `Ride` implementano `Subject` e hanno
 `NotificationManager` come unico observer registrato. `NotificationPort.update(event)`. Subscriber
 di secondo livello espliciti `PassengerAppSession` e `OperatorDashboardSession`, registrati alla
@@ -248,6 +252,12 @@ divergono (NFR3).
 
 `RebalancingPort`: `analyzeDemand` combina base storica e eventi attivi per stimare la domanda per
 zona; `rebalance` invia i veicoli inattivi verso le zone scoperte e produce alert in dashboard.
+Anche qui manca una tabella: `rebalancing_action` (RASD §2.2.3, con il suo `RebalancingStatus`) va
+aggiunta con una migrazione, insieme all'enum in `packages/shared`.
+
+Le fasce orarie di `demand_sample` sono in **ora locale di Milano** (Europe/Rome), non in UTC: i
+profili di domanda descrivono fenomeni dell'ora locale. `analyzeDemand` deve convertire l'istante
+prima di cercare la fascia.
 `RebalancingScheduler` espone `runOnce()` chiamato da `@Cron` in produzione e dai test direttamente.
 
 **Metrica e ordinamento** (DD §2.2.1, decisione D12), obbligatori perché i test siano stabili:

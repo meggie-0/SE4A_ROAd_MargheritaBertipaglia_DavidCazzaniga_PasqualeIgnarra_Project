@@ -9,7 +9,7 @@ import { formatTstzRange, parseTstzRange } from '../range';
  * È la tabella su cui vive l'invariante centrale del progetto:
  *
  * ```sql
- * EXCLUDE USING gist (robotaxi_id WITH =, period WITH &&)
+ * EXCLUDE USING gist (robotaxi_id WITH =, period WITH &&) WHERE (released_at IS NULL)
  * ```
  *
  * Due riserve dello stesso veicolo non possono sovrapporsi **qualunque sia l'interleaving degli
@@ -20,6 +20,11 @@ import { formatTstzRange, parseTstzRange } from '../range';
  *
  * `period` è un `tstzrange` semiaperto `[start, end)`: due finestre che si toccano non si
  * sovrappongono.
+ *
+ * Il vincolo è **parziale** perché l'annullamento (R14) deve poter restituire l'intera finestra al
+ * pool, cosa che restringere l'intervallo non ottiene: una prenotazione annullata prima del suo
+ * inizio richiederebbe un intervallo vuoto, che lo schema vieta. Una riserva rilasciata resta in
+ * tabella per lo storico ma esce dal vincolo.
  */
 @Entity({ name: 'robotaxi_reservation' })
 export class ReservationEntity implements ReservationRecord {
@@ -40,6 +45,10 @@ export class ReservationEntity implements ReservationRecord {
     },
   })
   period!: TimeWindow;
+
+  /** Valorizzata quando la riserva viene rilasciata: da lì in poi non impegna più il veicolo. */
+  @Column({ name: 'released_at', type: 'timestamptz', nullable: true })
+  releasedAt!: Date | null;
 
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

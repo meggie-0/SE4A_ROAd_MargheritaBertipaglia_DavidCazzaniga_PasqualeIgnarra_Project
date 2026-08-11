@@ -79,6 +79,11 @@ una riga di logica di dominio; le schermate vere arrivano con M8.
 > `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
 > il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica
 > zone, flotta e domanda, così eseguirlo due volte non è un errore.
+>
+> L'API applica le migrazioni da sé alla prima query, il che rende il comando manuale una comodità e
+> non un obbligo. È la scelta giusta per un prototipo, ma va detta: con il tier applicativo
+> replicato (NFR3), due istanze che partono insieme su un database non migrato le eseguirebbero in
+> parallelo. In un deploy vero le migrazioni sono un passo a sé, prima di avviare le repliche.
 
 ## Verifica
 
