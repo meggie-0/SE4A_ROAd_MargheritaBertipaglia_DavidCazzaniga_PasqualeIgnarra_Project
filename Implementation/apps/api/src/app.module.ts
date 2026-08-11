@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { AllocationModule } from './allocation/allocation.module';
 import { AuthModule } from './auth/auth.module';
@@ -9,6 +10,7 @@ import { GatewayModule } from './gateway/gateway.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { PersistenceModule } from './persistence/persistence.module';
 import { PlatformModule } from './platform/platform.module';
+import { RidesModule } from './rides/rides.module';
 
 /**
  * Composizione dell'applicazione.
@@ -22,7 +24,12 @@ import { PlatformModule } from './platform/platform.module';
  *
  * `fleet` e `maintenance` non pubblicano ancora endpoint: MILESTONES.md §M2 chiede il modello e le
  * porte. Il primo endpoint operatore è quello di M3, lettura e cambio della strategia di
- * allocazione, protetto dai guard di M1b.
+ * allocazione, protetto dai guard di M1b; i primi endpoint del passeggero sono quelli di M4.
+ *
+ * **`ScheduleModule` è importato qui e in nessun altro posto.** È ciò che trasforma i `@Cron` dei
+ * file `*.schedule.ts` in esecuzioni vere, e vale solo per l'applicazione composta per intero: un
+ * test che compone `rides` non lo importa, quindi nessun timer parte e le prenotazioni si attivano
+ * solo quando un test chiama `runOnce()` (CLAUDE.md Regola 3, DD decisione D16).
  *
  * `PersistenceModule` non apre la connessione all'avvio (vedi `persistence/database.ts`): comporre
  * l'applicazione non richiede un database, e i controlli che con il database non c'entrano —
@@ -35,6 +42,7 @@ import { PlatformModule } from './platform/platform.module';
       // Il monorepo sta in Implementation/: l'API può girare con cwd sulla radice o su apps/api.
       envFilePath: ['.env', '../../.env'],
     }),
+    ScheduleModule.forRoot(),
     PlatformModule,
     PersistenceModule,
     ExternalModule,
@@ -42,6 +50,7 @@ import { PlatformModule } from './platform/platform.module';
     FleetModule,
     MaintenanceModule,
     AllocationModule,
+    RidesModule,
     GatewayModule,
   ],
 })

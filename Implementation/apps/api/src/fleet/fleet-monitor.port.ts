@@ -6,8 +6,12 @@ import type { RobotaxiSnapshot } from './robotaxi';
 /**
  * La porta del `FleetMonitor` (DD §2.2, CLAUDE.md Regola 1).
  *
- * Le cinque operazioni sono quelle del DD §2.2 — `getCandidates`, `getAvailableRobotaxis`,
- * `getFleetStatus`, `assign`, `requestRebalancing` — e nient'altro.
+ * Le cinque operazioni del DD §2.2 — `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`,
+ * `assign`, `requestRebalancing` — più `releaseAssignment`, che M4 aggiunge insieme alla
+ * transizione 11 della Figura 2.10 (decisione D28). Il DD attribuisce a `RideRequestManager` il
+ * compito di riportare il veicolo ad `AVAILABLE` quando una corsa viene annullata (§2.4, R14) senza
+ * dire attraverso quale operazione: `rides` non può toccare la colonna di stato — la macchina la
+ * governa `fleet` — quindi l'operazione che mancava è questa.
  *
  * I tipi che compaiono nelle firme, `RobotaxiSnapshot` e `RideAssignment`, sono pubblicati
  * dall'altra porta del modulo, `robotaxi.port.ts`: chi sta fuori li importa da lì.
@@ -75,6 +79,21 @@ export abstract class FleetMonitorPort {
    * l'assegnazione e impegna la finestra in una sola transazione (M4).
    */
   abstract assign(robotaxiId: string, request: RideAssignment): Promise<RobotaxiSnapshot>;
+
+  /**
+   * Riporta ad `AVAILABLE` un veicolo che era stato assegnato e la cui corsa è stata annullata
+   * (transizione 11, R14).
+   *
+   * Sta a `assign()` come la transizione 11 sta alla 3, e ne condivide la disciplina: solleva
+   * `IllegalTransitionError` se il veicolo non è in `ASSIGNED` — in particolare se si è già mosso
+   * verso il punto di ritiro —, `ConcurrentTransitionError` se un altro scrittore lo ha cambiato
+   * fra la lettura e la scrittura, `UnknownRobotaxiError` se non esiste.
+   *
+   * **Non** rilascia la riserva né tocca la richiesta di corsa: quelle sono scritture di
+   * `PersistenceManager` che `RideRequestManager` ordina subito dopo, esattamente come
+   * nell'assegnazione (DD §2.4).
+   */
+  abstract releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot>;
 
   /**
    * Porta il veicolo a `REBALANCING` e ne persiste lo stato (transizione 8).

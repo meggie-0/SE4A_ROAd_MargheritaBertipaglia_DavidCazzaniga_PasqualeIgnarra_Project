@@ -73,6 +73,10 @@ export class FleetMonitor extends FleetMonitorPort {
     );
   }
 
+  async releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'cancelRide', (robotaxi) => robotaxi.cancelRide());
+  }
+
   async requestRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot> {
     return this.applyTransition(robotaxiId, 'requestRebalancing', (robotaxi) =>
       robotaxi.requestRebalancing(),

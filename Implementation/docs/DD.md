@@ -254,6 +254,8 @@ NotificationManager  -up- INotificationService
 RideRequestManager --( IPersistenceService
 RideRequestManager --( IAllocationService
 RideRequestManager --( INotificationService
+RideRequestManager --( IFleetMonitorService
+RideRequestManager --( IExternalServices
 
 AllocationManager --( IExternalServices
 
@@ -286,7 +288,10 @@ The main components and the operations they export are:
   said "accounts and sessions"; there are no sessions — NFR3 excludes any server-side session state,
   and Section 2.2.1 states what the component does and does not own.)*
 - **RideRequestManager**: `submitImmediate()`, `submitAdvance()`, `cancel()`. Validates requests,
-  coordinates advance reservations and drives the request lifecycle (R3, R4).
+  coordinates advance reservations and drives the request lifecycle (R3, R4, R14). **[v1.2]** It
+  also owns `AdvanceBookingActivator.runOnce()`, published as a second port of the component
+  (decision D33), and it reaches `IFleetMonitorService` and `IExternalServices` — two arcs the v1.1
+  Figure 2.1 omitted although Figure 2.9 and Figure 2.5 both used them (decision D29).
 - **AllocationManager**: `allocate(request, candidates)`, `setActiveStrategy()`. Selects the
   robotaxi to assign by delegating to the active allocation strategy (R5, R8). This is the context
   of the Strategy pattern.
@@ -991,6 +996,13 @@ end
 reservation, and returns the robotaxi to `AVAILABLE` if it had already been assigned. Releasing the
 reservation makes the window bookable again, which is the observable effect the tests assert.
 
+**[v1.2]** The return to `AVAILABLE` is **transition 11** of Figure 2.10, driven through
+`FleetMonitor.releaseAssignment()` (decisions D27 and D28): `RideRequestManager` never writes the
+state column itself. The vehicle is released **before** the reservation, so that a cancellation
+refused by the state machine — the vehicle has already left towards the pickup point — leaves the
+reservation standing and the request untouched, rather than freeing a window for a ride that is
+still going to happen.
+
 ## 2.5 Deployment view
 
 Figure 2.9 shows how the components are deployed onto physical nodes. The clients run on the users'
@@ -1056,6 +1068,7 @@ MaintenanceManager --> FleetMonitor
 RebalancingManager --> FleetMonitor
 
 AllocationManager --> ExternalServicesGateway
+RideRequestManager --> ExternalServicesGateway
 MaintenanceManager --> ExternalServicesGateway
 RebalancingManager --> ExternalServicesGateway
 FleetMonitor --> ExternalServicesGateway
@@ -1155,9 +1168,27 @@ The figure is a drawn image; the transitions are transcribed below.
 | 8 | `AVAILABLE` | `requestRebalancing()` `[hasNoActiveRide()]` / `computeTargetArea()` | `REBALANCING` |
 | 9 | `REBALANCING` | `completeRebalancing()` `[hasReachedTargetArea()]` / `setAvailable()` | `AVAILABLE` |
 | 10 | `REBALANCING` | `assignRide(request)` `[hasReceivedRideRequest()]` / `interruptRebalancing()` | `ASSIGNED` |
+| 11 **[v1.2]** | `ASSIGNED` | `cancelRide()` `[hasAssignedRide()]` / `releaseRobotaxi()` | `AVAILABLE` |
 
 States: `AVAILABLE`, `ASSIGNED`, `ARRIVING`, `ARRIVED`, `IN RIDE`, `REBALANCING`, `MAINTENANCE`.
 Every transition not listed above raises `IllegalTransitionError`.
+
+**[v1.2]** Transition 11 is added because without it **R14 is not implementable**. The requirement,
+and §2.4 with it, ask that cancelling a ride "returns the vehicle to the available state if it had
+already been assigned"; the v1.1 figure gave `ASSIGNED` a single exit, transition 4 towards
+`ARRIVING`, so the document contradicted itself. The contradiction is resolved where the machine is
+written rather than worked around in a service, which is what the State pattern exists to prevent
+(§2.6.3, NFR5). Two consequences:
+
+- The action is `releaseRobotaxi()`, the same as transition 7: the vehicle lets go of the ride it
+  was holding and becomes available again. What differs is who originates it — the passenger rather
+  than the arrival at the destination.
+- Cancellation is legal **only from `ASSIGNED`**. R14 speaks of cancelling "before the ride begins",
+  which would also cover `ARRIVING` and `ARRIVED`, but a vehicle already moving towards the pickup
+  point is executing a physical manoeuvre: declaring it available while it is still on the road
+  requires countermanding its route (`commandRoute()`, M7), which is a command to the fleet and not
+  a lifecycle transition. Until that command exists, cancellation stops where the vehicle is still
+  stationary, and a passenger who cancels later is refused with the vehicle's current state.
 
 **[v1.1]** This seven-state machine — not the six-state one of RASD §3.2 — is the machine the system
 implements, and the one the tests enumerate exhaustively. The RASD machine remains correct as the
@@ -1429,6 +1460,13 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D24 | `AllocationStrategy.selectRobotaxi()` restituisce `Robotaxi [0..1]` | §2.3.1, Fig. 2.2 | D3 ha allargato `allocate()`, ma il manager è un contesto che delega e restituisce ciò che la strategia gli dà: una firma che può rifiutare sopra e non sotto non è implementabile |
 | D25 | A parità di metrica vince il `robotaxiID` lessicograficamente minore; un candidato il cui punteggio non è un numero finito non è idoneo | §2.3.1 | D12 dava già per esistente «lo stesso criterio adottato per i pareggi fra strategie», ma il documento non lo enunciava da nessuna parte. Senza una regola totale l'esito di un'allocazione dipenderebbe dall'ordine con cui il database ha restituito i candidati, e i test sarebbero instabili. Il secondo punto è la stessa esigenza vista da vicino: `NaN` non è confrontabile, quindi un veicolo di cui non si conosce la posizione — o, per `MinimumETA`, un veicolo per cui il fornitore non sa dare un ETA — resta fuori dalla scelta invece di renderla arbitraria |
 | D26 | Il contesto tiene il **registro** delle strategie — `strategies: Map<StrategyName, AllocationStrategy>` — e non un riferimento alla sola strategia attiva: il nome di quella attiva sta nel record `system_mode` e viene risolto a ogni `allocate()` | §2.3.1, Fig. 2.2, §2.6.1 | Conseguenza diretta di D6: se la sede autorevole della strategia attiva è la riga, un riferimento tenuto in memoria dal manager è una seconda copia che diverge dalla colonna appena un'altra replica la cambia (NFR3). Il pattern Strategy resta intatto — il contesto continua a non conoscere nessuna classe concreta e a delegare — ma l'associazione della Fig. 2.2 è `1 o--> 1..*` verso le politiche registrate, e la scelta di quale usare è una ricerca per nome. È anche ciò che rende vera la promessa di NFR7: si registra una politica in più, non si sostituisce quella corrente |
+| D27 | Aggiunta la **transizione 11**: `ASSIGNED --cancelRide()--> AVAILABLE` | §2.6.3, Fig. 2.10, §2.4 | Senza di essa **R14 non è implementabile**: il requisito e il §2.4 pretendono che l'annullamento riporti ad `AVAILABLE` un veicolo già assegnato, ma la figura v1.1 dava ad `ASSIGNED` una sola uscita, la 4 verso `ARRIVING`. Il documento contraddiceva sé stesso. È legale **solo** da `ASSIGNED`: fermare un veicolo già in movimento verso il ritiro richiede di revocarne la rotta (`commandRoute()`, M7), che è un comando alla flotta e non una transizione del ciclo di vita |
+| D28 | `FleetMonitor` espone una sesta operazione, `releaseAssignment(robotaxiID)` | §2.2 | Conseguenza di D27. Il §2.4 attribuisce a `RideRequestManager` il compito di riportare il veicolo fra i disponibili, ma `rides` non può scrivere la colonna di stato — la macchina la governa `fleet`, ed è il punto del pattern State (§2.6.3). Sta a `assign()` come la transizione 11 sta alla 3 |
+| D29 | `RideRequestManager` dipende anche da `ExternalServicesGateway` | §2.2.1, Fig. 2.1, §2.4 | D8 impone che ogni riserva copra `[…, … + etaToPickup + estimatedRideDuration + buffer)`, ma la Fig. 2.1 non dà a questo componente l'arco verso il gateway, e nessun altro componente sa produrre quei due numeri. Le alternative erano peggiori: allargare il tipo di ritorno di `allocate()` per farci passare un ETA (che è un dato del percorso, non della scelta), oppure ricalcolare i tempi di viaggio dentro `rides`, cioè duplicare la responsabilità che NFR8 assegna al facade |
+| D30 | Nella richiesta immediata l'ordine è `reserve()` **poi** `assign()`, e su rifiuto si ri-alloca fra i candidati rimanenti | §2.4, Fig. 2.5 | Il documento si contraddiceva: la Fig. 2.5 mette `assign()` prima di `reserve()`, il diagramma di attivazione delle prenotazioni l'inverso. Vince il secondo, perché `reserve()` è il punto in cui la concorrenza viene arbitrata (`FOR UPDATE SKIP LOCKED` più il vincolo di esclusione): prenotare per primo significa che un rifiuto non lascia nulla da disfare, mentre l'ordine opposto lascerebbe un veicolo in `ASSIGNED` per una corsa che non ha ottenuto la finestra. Il ciclo sui candidati rimanenti è la risposta che il §2.4 prevede già per `ROBOTAXI_BUSY` |
+| D31 | Il filtro sulla timeline di una prenotazione anticipata usa una finestra **nominale**, con ETA verso il ritiro pari a zero | §2.4, Fig. 2.8 | La Fig. 2.8 chiama `filterAvailable(candidates, timeWindow)` *prima* di conoscere il veicolo, ma la finestra reale dipende dall'ETA del veicolo scelto: la sequenza non è eseguibile alla lettera. La finestra nominale è contenuta in ogni finestra reale, quindi il filtro non scarta mai un candidato idoneo; a decidere resta il vincolo di esclusione al momento della `reserve()`, che è dove D8 e C1 vogliono che si decida |
+| D32 | All'attivazione, «il veicolo riservato è ancora idoneo» significa che compare fra i candidati di `getCandidates()` | §2.4 | Il §2.4 lo scriveva come «it is `AVAILABLE`, and not in maintenance», che escluderebbe un veicolo in `REBALANCING` — ma il §2.6.3 dichiara esplicitamente che un veicolo in `REBALANCING` **è allocabile** (transizione 10), e la 10 esiste proprio per dirottarlo su una corsa. Con la lettura letterale si rilascerebbe la riserva di un veicolo perfettamente utilizzabile per ri-allocarne un altro |
+| D33 | `AdvanceBookingActivator` è pubblicato da una **seconda porta** del modulo `rides` | §2.2, §2.2.1 | `runOnce()` non è una delle tre operazioni di `IRideRequestService`, e il §2.2.1 pretende che sia pubblico e chiamabile dai test senza passare da uno scheduler. È la stessa divisione fra porta di servizio e porta di meccanismo già adottata per `fleet` (D21) |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16 e D25
 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

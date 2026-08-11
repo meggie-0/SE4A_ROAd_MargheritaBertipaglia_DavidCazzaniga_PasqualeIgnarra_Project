@@ -27,7 +27,7 @@ export interface RobotaxiSnapshot {
 /**
  * Il **contesto** del pattern State (DD §2.3.2, Figura 2.3).
  *
- * `Robotaxi` non decide nulla: delega ognuna delle nove transizioni all'oggetto di stato corrente,
+ * `Robotaxi` non decide nulla: delega ognuna delle dieci transizioni all'oggetto di stato corrente,
  * che la esegue o la rifiuta. È questo a rendere impossibile per costruzione una transizione
  * illegale, ed è il motivo per cui la macchina a stati **non** va scritta con degli `switch` sparsi
  * nei service (CLAUDE.md Regola 2).
@@ -64,7 +64,7 @@ export class Robotaxi implements RobotaxiContext {
   }
 
   // -------------------------------------------------------------------------------------------
-  // Le nove transizioni della Figura 2.3, tutte delegate allo stato corrente
+  // Le dieci transizioni della Figura 2.3, tutte delegate allo stato corrente
   // -------------------------------------------------------------------------------------------
 
   assignRide(request: RideAssignment): void {
@@ -101,6 +101,10 @@ export class Robotaxi implements RobotaxiContext {
 
   completeMaintenance(): void {
     this.state.completeMaintenance(this);
+  }
+
+  cancelRide(): void {
+    this.state.cancelRide(this);
   }
 
   // -------------------------------------------------------------------------------------------

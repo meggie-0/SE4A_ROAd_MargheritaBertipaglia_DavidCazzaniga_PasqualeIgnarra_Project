@@ -14,6 +14,9 @@ import { PersistenceModule } from '../../src/persistence/persistence.module';
 import { PersistencePort, type TimeWindow } from '../../src/persistence/persistence.port';
 import { ClockPort } from '../../src/platform/clock.port';
 import { FakeClock } from '../../src/platform/fake-clock';
+import { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
+import { RidesModule } from '../../src/rides/rides.module';
+import { RideRequestPort } from '../../src/rides/rides.port';
 
 /**
  * Un Postgres vero, usa e getta, con lo schema di ROAd già applicato e i moduli di dominio
@@ -38,6 +41,14 @@ export interface ApiHarness {
   readonly fleet: FleetMonitorPort;
   readonly maintenance: MaintenancePort;
   readonly allocation: AllocationPort;
+  readonly rides: RideRequestPort;
+  /**
+   * L'attivatore delle prenotazioni (M4).
+   *
+   * `RidesModule` si compone **senza** `ScheduleModule`, quindi il suo `@Cron` resta inerte: le
+   * prenotazioni si attivano solo quando un test chiama `runOnce()`, con l'istante che decide lui.
+   */
+  readonly advanceBooking: AdvanceBookingActivatorPort;
   /** L'orologio del modulo, sotto il controllo del test (CLAUDE.md Regola 3). */
   readonly clock: FakeClock;
   readonly databaseUrl: string;
@@ -108,7 +119,14 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
 
   const clock = new FakeClock(now);
   const moduleRef: TestingModule = await Test.createTestingModule({
-    imports: [PersistenceModule, AuthModule, FleetModule, MaintenanceModule, AllocationModule],
+    imports: [
+      PersistenceModule,
+      AuthModule,
+      FleetModule,
+      MaintenanceModule,
+      AllocationModule,
+      RidesModule,
+    ],
   })
     .overrideProvider(ClockPort)
     .useValue(clock)
@@ -119,6 +137,8 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
   const fleet = moduleRef.get(FleetMonitorPort);
   const maintenance = moduleRef.get(MaintenancePort);
   const allocation = moduleRef.get(AllocationPort);
+  const rides = moduleRef.get(RideRequestPort);
+  const advanceBooking = moduleRef.get(AdvanceBookingActivatorPort);
 
   // La connessione del modulo è pigra e porta con sé le migrazioni: la prima operazione vera è
   // ciò che crea lo schema. Va fatta qui, o il `reset()` del primo test troverebbe un database
@@ -141,6 +161,8 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     fleet,
     maintenance,
     allocation,
+    rides,
+    advanceBooking,
     clock,
     databaseUrl,
 

@@ -9,12 +9,19 @@ import type { RobotaxiState as RobotaxiStateName } from '@road/shared';
  */
 
 /**
- * I nove metodi dichiarati da `RobotaxiState` nel DD §2.3.2, Figura 2.3.
+ * I dieci metodi dichiarati da `RobotaxiState` nel DD §2.3.2, Figura 2.3.
  *
  * Sono un elenco esplicito e non una deduzione dai nomi dei metodi: il cancello di M2 enumera
- * 7 stati × 9 transizioni = 63 combinazioni, e deve poterle generare da una fonte che non sia il
+ * 7 stati × 10 transizioni = 70 combinazioni, e deve poterle generare da una fonte che non sia il
  * codice sotto esame. Un test che ricavasse i metodi per introspezione della classe passerebbe
  * anche se un metodo sparisse, che è il difetto che il cancello esiste per escludere.
+ *
+ * `cancelRide` è la **transizione 11 [v1.2]**, aggiunta in M4 con la riga corrispondente del DD
+ * §2.6.3: senza di essa R14 non è realizzabile. Il requisito pretende che l'annullamento «returns
+ * the vehicle to the available state if it had already been assigned», ma la Figura 2.10 nella sua
+ * versione v1.1 non aveva **nessuna** uscita da `ASSIGNED` verso `AVAILABLE` — l'unica era la
+ * transizione 4 verso `ARRIVING`. Il documento contraddiceva sé stesso, e la contraddizione si
+ * risolve dove la macchina è scritta, non aggirandola in un service.
  */
 export const ROBOTAXI_TRANSITIONS = [
   'assignRide',
@@ -26,6 +33,7 @@ export const ROBOTAXI_TRANSITIONS = [
   'completeRebalancing',
   'requestMaintenance',
   'completeMaintenance',
+  'cancelRide',
 ] as const;
 
 export type RobotaxiTransition = (typeof ROBOTAXI_TRANSITIONS)[number];

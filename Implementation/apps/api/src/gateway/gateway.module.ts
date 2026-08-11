@@ -4,10 +4,12 @@ import { ConfigModule } from '@nestjs/config';
 import { AllocationModule } from '../allocation/allocation.module';
 import { AuthModule } from '../auth/auth.module';
 import { PlatformModule } from '../platform/platform.module';
+import { RidesModule } from '../rides/rides.module';
 
 import { AllocationController } from './allocation.controller';
 import { AuthController } from './auth.controller';
 import { HealthController } from './health.controller';
+import { RidesController } from './rides.controller';
 
 /**
  * API Gateway (DD §2.2): unico punto d'ingresso dei client.
@@ -24,9 +26,14 @@ import { HealthController } from './health.controller';
  * `AllocationModule` gli dà `AllocationPort`, con cui `AllocationController` legge e cambia la
  * strategia attiva (M3, R8). È il primo endpoint riservato all'operatore, e usa i guard di M1b
  * senza aggiungere nulla al meccanismo.
+ *
+ * `RidesModule` gli dà `RideRequestPort`, con cui `RidesController` pubblica le tre operazioni del
+ * passeggero (M4, R3, R4, R14). Il gateway **non** importa `FleetModule` né `PersistenceModule`
+ * per servirle: la catena richiesta → candidati → allocazione → riserva → assegnazione la coordina
+ * `rides`, e il gateway conosce una porta sola per caso d'uso.
  */
 @Module({
-  imports: [ConfigModule, PlatformModule, AuthModule, AllocationModule],
-  controllers: [HealthController, AuthController, AllocationController],
+  imports: [ConfigModule, PlatformModule, AuthModule, AllocationModule, RidesModule],
+  controllers: [HealthController, AuthController, AllocationController, RidesController],
 })
 export class GatewayModule {}
