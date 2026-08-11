@@ -5,6 +5,7 @@ import { AllocationPort } from '../../src/allocation/allocation.port';
 import { ExternalServicesPort } from '../../src/external/external-services.port';
 import { FleetMonitorPort, type FleetStatus } from '../../src/fleet/fleet-monitor.port';
 import {
+  ALLOCATABLE_STATES,
   IllegalTransitionError,
   type RideAssignment,
   type RobotaxiSnapshot,
@@ -132,10 +133,33 @@ export class RidesPersistenceDouble extends PersistencePort {
       Object.entries(where).every(([field, criterion]) => matches(row[field], criterion)),
     );
 
-    const [order] = criteria.orderBy ?? [];
-    const field = order?.field ?? 'id';
-    rows = [...rows].sort((left, right) => compare(left[field], right[field]));
-    if (order?.direction === 'desc') rows.reverse();
+    /**
+     * L'ordinamento applica **tutte** le chiavi, non solo la prima.
+     *
+     * Non è pignoleria: `AdvanceBookingActivator` ordina per `[activationDueAt, id]` proprio perché
+     * il pareggio sia risolto in modo totale, e un doppio che si fermasse alla prima chiave
+     * lascerebbe quella regola non verificabile — l'ordine dipenderebbe da quello di inserimento, e
+     * il test passerebbe per caso.
+     */
+    const orderBy = criteria.orderBy ?? [{ field: 'id' as const }];
+    /**
+     * Le righe si mescolano **prima** di ordinarle, invertendone l'ordine di inserimento.
+     *
+     * Un archivio in memoria restituirebbe naturalmente le righe nell'ordine in cui sono state
+     * scritte, che è più deterministico di un database vero: senza `ORDER BY`, PostgreSQL non
+     * promette nulla. Un doppio più gentile della realtà nasconde esattamente i difetti che questi
+     * test cercano — un ordinamento a cui manca la chiave di pareggio passerebbe qui e sarebbe
+     * instabile in produzione. Invertire è il disordine più economico che resta riproducibile.
+     */
+    rows = [...rows].reverse();
+    rows = rows.sort((left, right) => {
+      for (const order of orderBy) {
+        const sign = order.direction === 'desc' ? -1 : 1;
+        const difference = compare(left[order.field], right[order.field]) * sign;
+        if (difference !== 0) return difference;
+      }
+      return 0;
+    });
 
     if (criteria.limit !== undefined) rows = rows.slice(0, criteria.limit);
     return Promise.resolve(rows.map((row) => asRecord<PersistedRecord<K>>({ ...row })));
@@ -207,9 +231,14 @@ export class RidesPersistenceDouble extends PersistencePort {
  * un veicolo si assegna una volta sola, e solo se è in uno stato allocabile.
  *
  * Non riproduce la macchina a stati: quella è di `fleet`, è verificata in modo esaustivo dal
- * cancello di M2, e riscriverla qui significherebbe avere due macchine che divergono. Ciò che
- * questo doppio permette è **cambiare la flotta fra due chiamate** — mandare in officina il veicolo
- * riservato di una prenotazione — che è il caso che M4 deve saper gestire.
+ * cancello di M2, e riscriverla qui significherebbe avere due macchine che divergono. L'insieme
+ * degli stati allocabili viene infatti da `ALLOCATABLE_STATES`, che `fleet` pubblica: se un giorno
+ * la figura 2.10 ne aggiungesse uno, questo doppio lo seguirebbe invece di restare indietro in
+ * silenzio. Delle transizioni riproduce le due condizioni di ingresso che i test di `rides` devono
+ * poter far fallire — assegnare un veicolo non allocabile, liberarne uno che non è `ASSIGNED`.
+ *
+ * Ciò che questo doppio permette è **cambiare la flotta fra due chiamate** — mandare in officina il
+ * veicolo riservato di una prenotazione — che è il caso che M4 deve saper gestire.
  */
 export class FleetDouble extends FleetMonitorPort {
   private readonly vehicles = new Map<string, RobotaxiSnapshot>();
@@ -251,7 +280,7 @@ export class FleetDouble extends FleetMonitorPort {
 
   assign(robotaxiId: string, request: RideAssignment): Promise<RobotaxiSnapshot> {
     const vehicle = this.require(robotaxiId);
-    if (vehicle.state !== 'AVAILABLE' && vehicle.state !== 'REBALANCING') {
+    if (!ALLOCATABLE_STATES.includes(vehicle.state)) {
       return Promise.reject(new IllegalTransitionError(robotaxiId, vehicle.state, 'assignRide'));
     }
 
@@ -273,7 +302,7 @@ export class FleetDouble extends FleetMonitorPort {
 
   private allocatable(): RobotaxiSnapshot[] {
     return [...this.vehicles.values()]
-      .filter((vehicle) => vehicle.state === 'AVAILABLE' || vehicle.state === 'REBALANCING')
+      .filter((vehicle) => ALLOCATABLE_STATES.includes(vehicle.state))
       .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
   }
 

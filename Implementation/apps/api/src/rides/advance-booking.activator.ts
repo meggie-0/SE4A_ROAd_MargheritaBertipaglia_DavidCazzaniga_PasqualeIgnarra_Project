@@ -19,7 +19,7 @@ import {
   type ActivationReport,
   type BookingActivation,
 } from './advance-booking.port';
-import { destinationOf, pickupOf } from './ride-request.manager';
+import { destinationOf, pickupOf } from './ride-request-geo';
 import { RideAllocator } from './ride-allocator';
 
 /**
@@ -143,7 +143,9 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
     now: Date,
   ): Promise<BookingActivation> {
     if (booking.reservationId !== null) {
-      await this.allocator.releaseReservation(booking.reservationId, now);
+      await this.persistence.update('robotaxi_reservation', booking.reservationId, {
+        releasedAt: now,
+      });
     }
 
     const pickup = pickupOf(request);

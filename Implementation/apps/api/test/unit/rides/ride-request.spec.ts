@@ -200,6 +200,10 @@ describe('[R4][G3] Advance booking', () => {
     const outcome = await harness.rides.submitAdvance(advanceDraft);
 
     expect(outcome.accepted).toBe(true);
+    // `booking` va asserito **prima** del `return`: se `submitAdvance` smettesse di passare la
+    // prenotazione a `reserve()`, un `return` non asserito farebbe uscire il test verde saltando
+    // tutto ciò che segue — cioè proprio il difetto che questo caso esiste per escludere.
+    expect(outcome.accepted && outcome.booking).not.toBeNull();
     if (!outcome.accepted || outcome.booking === null) return;
 
     expect(outcome.booking.scheduledPickup).toEqual(inTwoHours);

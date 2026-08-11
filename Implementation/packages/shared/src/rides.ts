@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { RIDE_REQUEST_KINDS, RIDE_REQUEST_STATUSES } from './domain.js';
+import type { GeoPoint } from './geo.js';
 
 /**
  * Il contratto pubblico delle richieste di corsa (RASD R3, R4, R14; G2, G3; DD §2.4).
@@ -24,7 +25,13 @@ import { RIDE_REQUEST_KINDS, RIDE_REQUEST_STATUSES } from './domain.js';
  * legato a una bounding box scritta a mano. La zona a cui un punto appartiene la decide comunque
  * il centroide più vicino (decisione D10), che è definito ovunque.
  */
-export const geoPointSchema = z.object({
+/*
+ * L'annotazione `z.ZodType<GeoPoint>` non è decorativa: **lega lo schema al tipo di dominio**.
+ * `geo.ts` dichiara già `GeoPoint`, e due definizioni strutturalmente identiche ma senza rapporto
+ * fra loro divergono alla prima che qualcuno tocca — un campo aggiunto qui e non là passerebbe
+ * inosservato. Così il compilatore fallisce.
+ */
+export const geoPointSchema: z.ZodType<GeoPoint> = z.object({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
 });

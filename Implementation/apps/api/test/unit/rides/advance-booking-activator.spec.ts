@@ -199,4 +199,30 @@ describe('[R4][G3] Advance booking activation', () => {
       later.request.id,
     ]);
   });
+
+  it('e a parità di scadenza il pareggio si rompe sull id crescente', async () => {
+    harness = await composeRides({
+      now: NOW,
+      vehicles: [north('RT-01', 0.01), north('RT-02', 0.05)],
+    });
+
+    // Stesso orario, quindi stesso `activationDueAt`: senza la seconda chiave di ordinamento
+    // l'esito dipenderebbe dall'ordine di inserimento, e due prenotazioni che si contendono
+    // l'ultimo veicolo si scambierebbero il posto fra un'esecuzione e l'altra.
+    const first = await harness.rides.submitAdvance(draft);
+    const second = await harness.rides.submitAdvance(draft);
+
+    const report = await harness.advanceBooking.runOnce(DUE_AT);
+    const bookings = harness.persistence.rowsOf('booking');
+    const expectedOrder = [...bookings].sort((left, right) => (left.id < right.id ? -1 : 1));
+
+    expect(report.activations.map((activation) => activation.bookingId)).toEqual(
+      expectedOrder.map((booking) => booking.id),
+    );
+    // Entrambe attivate, su veicoli diversi: nessuna delle due è andata persa nel pareggio.
+    expect(new Set(report.activations.map((activation) => activation.robotaxiId)).size).toBe(2);
+    expect(report.activations.map((activation) => activation.rideRequestId).sort()).toEqual(
+      [first.request.id, second.request.id].sort(),
+    );
+  });
 });

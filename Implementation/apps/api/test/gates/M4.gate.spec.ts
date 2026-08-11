@@ -194,6 +194,10 @@ describe('[M4] Cancello: RideRequestManager', () => {
       });
 
       expect(outcome.accepted).toBe(true);
+      // Asserito **prima** del `return`: un `return` non asserito su `booking === null` lascerebbe
+      // passare verde proprio la regressione che questo caso deve prendere — `submitAdvance` che
+      // smette di scrivere la prenotazione dentro la transazione della riserva.
+      expect(outcome.accepted && outcome.booking).not.toBeNull();
       if (!outcome.accepted || outcome.booking === null) return;
 
       expect(await harness.countRows('booking')).toBe(1);
@@ -255,6 +259,40 @@ describe('[M4] Cancello: RideRequestManager', () => {
       // Un solo veicolo in flotta, già riservato in quella finestra: `filterAvailable` lo esclude,
       // e il vincolo di esclusione lo escluderebbe comunque.
       expect(second.accepted).toBe(false);
+      expect(await harness.countRows('booking')).toBe(1);
+    });
+
+    it('e il rifiuto passa da submitAdvance senza lasciare una riga a metà', async () => {
+      await givenRobotaxi('RT-01', 0.01);
+
+      // La prima prenotazione impegna l'unico veicolo; la seconda e la terza vengono rifiutate.
+      // Il caso qui sopra forza l'errore *dentro* `reserve()`, e prova che la transazione è una
+      // sola; questo prova che a passare da quella transazione è **`submitAdvance`**. Senza,
+      // un `submitAdvance` riscritto come `create('booking')` seguito da `reserve()` supererebbe
+      // il cancello: scriverebbe tre prenotazioni e una sola riserva.
+      await rides.submitAdvance({ ...immediateDraft(), scheduledPickup: PICKUP_AT });
+      await rides.submitAdvance({ ...immediateDraft(), scheduledPickup: PICKUP_AT });
+      await rides.submitAdvance({ ...immediateDraft(), scheduledPickup: PICKUP_AT });
+
+      // L'invariante nei due versi: nessuna prenotazione senza la sua riserva, nessuna riserva di
+      // prenotazione senza la sua prenotazione.
+      const orphanBookings = await harness.query<{ total: string }>(
+        `SELECT count(*)::text AS total
+           FROM "booking" b
+          WHERE NOT EXISTS (
+                SELECT 1 FROM "robotaxi_reservation" r WHERE r."id" = b."reservation_id")`,
+      );
+      const orphanReservations = await harness.query<{ total: string }>(
+        `SELECT count(*)::text AS total
+           FROM "robotaxi_reservation" r
+           JOIN "ride_request" q ON q."id" = r."ride_request_id"
+          WHERE q."kind" = 'ADVANCE'
+            AND NOT EXISTS (
+                SELECT 1 FROM "booking" b WHERE b."reservation_id" = r."id")`,
+      );
+
+      expect(orphanBookings[0]?.total).toBe('0');
+      expect(orphanReservations[0]?.total).toBe('0');
       expect(await harness.countRows('booking')).toBe(1);
     });
   });

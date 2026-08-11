@@ -131,8 +131,13 @@ export class RideRequestNotFoundError extends Error {
  *   l'annullamento «before the ride begins», ma la Figura 2.10 lascia tornare disponibile solo un
  *   veicolo ancora fermo (transizione 11, decisione D27): fermarne uno in movimento è un comando
  *   alla flotta, non una transizione del ciclo di vita, e arriva con M7.
+ * - `VEHICLE_CHANGED_CONCURRENTLY`: fra la lettura della richiesta e la scrittura, qualcun altro ha
+ *   cambiato lo stato del veicolo. È l'unico dei tre per cui **ripetere la chiamata ha senso**: la
+ *   richiesta era giusta e si è persa una corsa, non è arrivata tardi. Confonderlo con gli altri due
+ *   direbbe al passeggero di rinunciare quando invece basta riprovare.
  */
-export type CancellationRefusal = 'REQUEST_NOT_ACTIVE' | 'RIDE_ALREADY_UNDER_WAY';
+export type CancellationRefusal =
+  'REQUEST_NOT_ACTIVE' | 'RIDE_ALREADY_UNDER_WAY' | 'VEHICLE_CHANGED_CONCURRENTLY';
 
 /** Sollevata quando la richiesta esiste ma non è più annullabile (R14). */
 export class RideNotCancellableError extends Error {
@@ -214,9 +219,10 @@ export abstract class RideRequestPort {
    * è una richiesta che per quel passeggero non esiste, e per questo solleva
    * `RideRequestNotFoundError`.
    *
-   * Solleva `RideNotCancellableError` se la richiesta non è più attiva o se la corsa è già in
-   * corso. In entrambi i casi **nulla viene scritto**: il veicolo si libera prima della riserva,
-   * quindi un rifiuto della macchina a stati lascia la riserva in piedi e la richiesta intatta.
+   * Solleva `RideNotCancellableError` se la richiesta non è più attiva, se la corsa è già in corso,
+   * o se il veicolo è cambiato sotto le mani fra la lettura e la scrittura. In tutti e tre i casi
+   * **nulla viene scritto**: il veicolo si libera prima della riserva, quindi un rifiuto della
+   * macchina a stati lascia la riserva in piedi e la richiesta intatta.
    */
   abstract cancel(rideRequestId: string, passengerId: string): Promise<RideCancellation>;
 }

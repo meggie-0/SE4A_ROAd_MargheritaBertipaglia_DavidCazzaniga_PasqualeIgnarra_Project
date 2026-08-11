@@ -19,8 +19,8 @@
 >
 > **Da v1.1 questo Markdown è la fonte autorevole**, non il PDF: il PDF v1.0 verrà rigenerato a fine
 > progetto a partire da qui. Tutte le modifiche rispetto al PDF v1.0 sono raccolte nell'
-> [Appendice A — Registro delle decisioni](#appendice-a--registro-delle-decisioni-v11), e nel corpo
-> del documento sono marcate come **[v1.1]**.
+> [Appendice A — Registro delle decisioni](#appendice-a--registro-delle-decisioni), e nel corpo del
+> documento sono marcate con la versione che le ha introdotte — **[v1.1]** o **[v1.2]**.
 
 ---
 
@@ -56,7 +56,7 @@
    - 5.2 [Implementation and integration order](#52-implementation-and-integration-order) — 17
    - 5.3 [Testing strategy](#53-testing-strategy) — 18
 6. [References](#6-references) — 19
-- [Appendice A — Registro delle decisioni (v1.1)](#appendice-a--registro-delle-decisioni-v11)
+- [Appendice A — Registro delle decisioni](#appendice-a--registro-delle-decisioni)
 
 ---
 
@@ -124,7 +124,8 @@ The design explicitly addresses these goals in terms of design patterns:
 | Version | Date | Description |
 |---|---|---|
 | 1.0 | July 11, 2026 | Initial release of the Design Document |
-| 1.1 | August 10, 2026 | **[v1.1]** Realisation decisions taken before implementation: port signatures aligned with the code contract, Observer realisation, `IllegalTransitionError` naming, reservation timeline for immediate rides, advance-booking activation, zone membership rule, `enableAuto()` re-evaluation, demand ranking, operational definitions for NFR3/NFR6/NFR8, R14. See [Appendice A](#appendice-a--registro-delle-decisioni-v11). |
+| 1.1 | August 10, 2026 | **[v1.1]** Realisation decisions taken before implementation: port signatures aligned with the code contract, Observer realisation, `IllegalTransitionError` naming, reservation timeline for immediate rides, advance-booking activation, zone membership rule, `enableAuto()` re-evaluation, demand ranking, operational definitions for NFR3/NFR6/NFR8, R14. See [Appendice A](#appendice-a--registro-delle-decisioni). |
+| 1.2 | August 11, 2026 | **[v1.2]** Decisions taken while implementing the ride request flows (M4), and the resolution of two contradictions the document carried: R14 required a cancelled ride to free an already assigned vehicle while Figure 2.10 gave `ASSIGNED` no exit towards `AVAILABLE` (transition 11 added), and Figures 2.5 and the activation diagram disagreed on the order of `reserve()` and `assign()`. Also: the `RideRequestManager` arcs missing from Figure 2.1, the sixth `FleetMonitor` operation, the nominal filtering window of Figure 2.8, and the meaning of "still eligible" at activation. See decisions D27–D33 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
 ## 1.4 Document Structure
 
@@ -299,9 +300,11 @@ The main components and the operations they export are:
   the automatic strategy switching with hysteresis and the priority of human intervention (R12, R13,
   NFR9, NFR10).
 - **FleetMonitor**: `getCandidates()`, `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
-  `requestRebalancing()`. Keeps the real-time picture of every robotaxi (position, state) and
-  coordinates vehicle lifecycle updates (R7, G6, G8). Each Robotaxi manages its own lifecycle
-  through the State pattern.
+  `releaseAssignment()` **[v1.2]**, `requestRebalancing()`. Keeps the real-time picture of every
+  robotaxi (position, state) and coordinates vehicle lifecycle updates (R7, G6, G8). Each Robotaxi
+  manages its own lifecycle through the State pattern. `releaseAssignment()` drives transition 11 and
+  is what makes R14 realisable: `RideRequestManager` owns the cancellation, but the state column is
+  written only here (decision D28).
 - **RebalancingManager**: `analyzeDemand()`, `rebalance()`. Identifies high-demand zones and
   repositions available robotaxis (R10, R11, G9).
 - **MaintenanceManager**: `requestMaintenance()`, `completeMaintenance()`. Marks robotaxis in/out of
@@ -1426,9 +1429,10 @@ correspond to defects.
 
 ---
 
-# Appendice A — Registro delle decisioni (v1.1)
+# Appendice A — Registro delle decisioni
 
-Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento. Serve a due cose:
+Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento: D1–D26 sono di
+v1.1, D27–D33 di v1.2. Serve a due cose:
 rigenerare il PDF a fine progetto senza rileggere il diff, e permettere a chi rivede il codice di
 capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove, e per quale ragione.
 

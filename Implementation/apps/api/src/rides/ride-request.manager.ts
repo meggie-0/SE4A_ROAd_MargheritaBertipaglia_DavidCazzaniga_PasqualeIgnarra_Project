@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import type { GeoPoint } from '@road/shared';
 
 import { FleetMonitorPort } from '../fleet/fleet-monitor.port';
-import { IllegalTransitionError } from '../fleet/robotaxi.port';
+import { ConcurrentTransitionError, IllegalTransitionError } from '../fleet/robotaxi.port';
 import {
   PersistencePort,
   activationDueAt,
@@ -187,7 +186,7 @@ export class RideRequestManager extends RideRequestPort {
       where: { rideRequestId, releasedAt: null },
     });
     for (const reservation of reservations) {
-      await this.allocator.releaseReservation(reservation.id, now);
+      await this.persistence.update('robotaxi_reservation', reservation.id, { releasedAt: now });
     }
 
     // La prenotazione perde il puntatore alla riserva rilasciata, come lo schema di M1 prescrive.
@@ -217,9 +216,14 @@ export class RideRequestManager extends RideRequestPort {
   /**
    * Riporta ad `AVAILABLE` il veicolo assegnato alla richiesta, se ce n'è uno (transizione 11).
    *
-   * Traduce il rifiuto della macchina a stati in un errore del dominio: `IllegalTransitionError`
-   * qui significa che il veicolo si è già mosso verso il punto di ritiro, cioè che la corsa è
-   * cominciata — un fatto che il passeggero deve poter capire, e non un guasto.
+   * Traduce i due rifiuti della macchina a stati in errori del dominio, e li tiene **distinti**:
+   *
+   * - `IllegalTransitionError` significa che il veicolo si è già mosso verso il punto di ritiro,
+   *   cioè che la corsa è cominciata. Ripetere la chiamata non cambierà nulla.
+   * - `ConcurrentTransitionError` significa che la transizione era legale quando si è letto e non
+   *   lo era più quando si è scritto. Ripetere ha senso, ed è la differenza che il passeggero deve
+   *   poter vedere. Senza questo ramo l'errore uscirebbe grezzo dal manager e diventerebbe un 500:
+   *   un guasto annunciato per una corsa che nel frattempo è semplicemente partita.
    */
   private async releaseVehicle(request: RideRequestRecord): Promise<string | null> {
     if (request.assignedRobotaxiId === null) return null;
@@ -230,6 +234,13 @@ export class RideRequestManager extends RideRequestPort {
     } catch (error) {
       if (error instanceof IllegalTransitionError) {
         throw new RideNotCancellableError(request.id, 'RIDE_ALREADY_UNDER_WAY', error.from);
+      }
+      if (error instanceof ConcurrentTransitionError) {
+        throw new RideNotCancellableError(
+          request.id,
+          'VEHICLE_CHANGED_CONCURRENTLY',
+          error.expected,
+        );
       }
       throw error;
     }
@@ -267,14 +278,4 @@ function newRideRequest(
     destinationAddress: draft.destinationAddress ?? null,
     assignedRobotaxiId: null,
   };
-}
-
-/** Il punto di ritiro di una richiesta persistita, per chi la rilegge (l'attivatore). */
-export function pickupOf(request: RideRequestRecord): GeoPoint {
-  return { lat: request.pickupLat, lon: request.pickupLon };
-}
-
-/** La destinazione di una richiesta persistita. */
-export function destinationOf(request: RideRequestRecord): GeoPoint {
-  return { lat: request.destinationLat, lon: request.destinationLon };
 }

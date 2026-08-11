@@ -85,10 +85,10 @@ confine, stai sbagliando qualcosa.
 | Modulo | Porta | Operazioni (DD §2.2) |
 |---|---|---|
 | `auth` | `AuthPort` | `register`, `authenticate`, `updateProfile` |
-| `rides` | `RideRequestPort` | `submitImmediate`, `submitAdvance`, `cancel` |
+| `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce` |
 | `allocation` | `AllocationPort` | `allocate`, `setActiveStrategy`, `getActiveStrategy` |
 | `mode` | `ModePort` | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode` |
-| `fleet` | `FleetMonitorPort` | `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `requestRebalancing` |
+| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `releaseAssignment`, `requestRebalancing` |
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
 | `notifications` | `NotificationPort` | `update` |

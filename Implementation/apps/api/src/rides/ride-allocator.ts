@@ -32,6 +32,13 @@ import { ClockPort } from '../platform/clock.port';
  * `AllocationPort`), non decide quali transizioni sono ammesse (lo fanno le classi di stato, dietro
  * `FleetMonitorPort`) e non controlla le sovrapposizioni (lo fa il vincolo di esclusione del
  * database, dietro `PersistencePort.reserve()`).
+ *
+ * **Una conseguenza dell'estrazione, da tenere presente leggendo la Figura 2.1.** Gli archi
+ * `RideRequestManager --( IAllocationService` e `--( IExternalServices` esistono a livello di
+ * modulo — `rides.module.ts` importa entrambi — ma non si leggono più aprendo la classe che nella
+ * figura porta quel nome: le due porte sono iniettate qui. È il prezzo di non avere la stessa
+ * sequenza scritta in tre punti, ed è dichiarato perché chi confronta il codice con il documento
+ * non lo scambi per un arco mancante.
  */
 
 /** I due tempi di viaggio da cui dipende la finestra da riservare (DD §2.4, decisione D8). */
@@ -172,9 +179,20 @@ export class RideAllocator {
     return { allocated: false };
   }
 
-  /** Rilascia una riserva: da quel momento non impegna più il veicolo (decisione D19). */
-  async releaseReservation(reservationId: string, at: Date = this.clock.now()): Promise<void> {
-    await this.persistence.update('robotaxi_reservation', reservationId, { releasedAt: at });
+  /**
+   * Rilascia la riserva appena scritta, quando l'assegnazione che doveva seguirla non è riuscita
+   * (decisione D19).
+   *
+   * È **privato**: il rilascio di una riserva in generale — quello dell'annullamento, quello della
+   * ri-allocazione — appartiene a chi possiede quella riserva, e i due chiamanti hanno già
+   * `PersistencePort` iniettata. Farlo passare da una classe che si chiama `RideAllocator` sarebbe
+   * un giro che confonde il lettore su chi decide quando una riserva finisce. Qui c'è solo il caso
+   * che questa classe ha creato lei e deve disfare lei.
+   */
+  private async releaseOwnReservation(reservationId: string): Promise<void> {
+    await this.persistence.update('robotaxi_reservation', reservationId, {
+      releasedAt: this.clock.now(),
+    });
   }
 
   /**
@@ -195,7 +213,7 @@ export class RideAllocator {
       return true;
     } catch (error) {
       if (error instanceof IllegalTransitionError || error instanceof ConcurrentTransitionError) {
-        await this.releaseReservation(reservationId);
+        await this.releaseOwnReservation(reservationId);
         return false;
       }
       throw error;
