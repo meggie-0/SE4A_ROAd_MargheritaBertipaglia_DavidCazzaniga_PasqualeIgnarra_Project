@@ -93,7 +93,11 @@ describe('[R8][G5] La strategia attiva vive nel record system_mode', () => {
     expect(await allocation.getActiveStrategy()).toBe('MINIMUM_ETA');
   });
 
-  it('marca l istante del cambio con ClockPort e non con l orologio di sistema', async () => {
+  it('lascia in colonna l istante del cambio, preso dall orologio sotto controllo del test', async () => {
+    // La marca temporale la scrive `PersistenceManager` su ogni riga che ha la colonna, non questo
+    // modulo: il titolo dice ciò che il test può davvero distinguere. Ciò che qui si verifica è che
+    // un cambio di strategia sia datato in modo riproducibile — se un componente del giro leggesse
+    // l'orologio di sistema, questa asserzione fallirebbe (CLAUDE.md Regola 3).
     harness.clock.setNow('2026-05-04T18:30:00.000Z');
 
     await allocation.setActiveStrategy('MINIMUM_ETA', 'manual');

@@ -438,6 +438,19 @@ both sides of the delegation (decision D24). Ties are broken deterministically �
 `robotaxiID` at equal score — and a candidate whose score cannot be computed is not eligible
 (decision D25).
 
+**[v1.1]** The manager holds the **registry** of the registered strategies and not a reference to
+the active one alone. The authoritative seat of the active strategy is the `system_mode` record
+(decision D6), so the manager resolves it by name on every `allocate()`: a reference kept in memory
+would be a second copy of that value, and it would diverge from the column as soon as another
+replica changed it (NFR3). The pattern is unaffected — the context still knows no concrete class
+and still delegates — but the association is `1 o--> 1..*` and the choice of which policy to use is
+a lookup (decision D26).
+
+Asynchrony is a realisation detail and is not represented in Figure 2.2. `MinimumETAStrategy` asks
+`ExternalServicesGateway` for the ETAs (Figure 2.5), so `selectRobotaxi()` and, through it,
+`allocate()` complete asynchronously; policies that need no I/O pay only an already-resolved
+promise, which is the price of a single signature for all of them.
+
 #### Figure 2.2: Class diagram of the AllocationManager
 
 The Strategy pattern applied to vehicle allocation.
@@ -457,7 +470,7 @@ class MinimumETAStrategy {
 }
 
 class AllocationManager {
-    - strategy: AllocationStrategy
+    - strategies: Map<StrategyName, AllocationStrategy>
     --
     + allocate(request: RideRequest, candidates: List<Robotaxi>): Robotaxi [0..1]
     + setActiveStrategy(name: StrategyName, source: ChangeSource): void
@@ -492,7 +505,7 @@ enum Mode {
 AllocationStrategy <|.. NearestAvailableStrategy
 AllocationStrategy <|.. MinimumETAStrategy
 
-AllocationManager "1" o--> "1" AllocationStrategy : current strategy
+AllocationManager "1" o--> "1..*" AllocationStrategy : registered strategies
 ModeController "1" --> "1" AllocationManager : selects active strategy
 ```
 
@@ -1078,8 +1091,9 @@ request-handling code (NFR7).
 
 **Solution.** We define an abstract `AllocationStrategy` with a single operation
 `selectRobotaxi(request, candidates)`, and two concrete subclasses (`NearestAvailableStrategy`,
-`MinimumETAStrategy`). The `AllocationManager` is the context: it owns a reference to the abstract
-strategy and never to a concrete one. The `ModeController` replaces the active strategy via
+`MinimumETAStrategy`). The `AllocationManager` is the context: it owns references to the abstract
+strategy and never to a concrete one, in a registry keyed by strategy name from which it resolves
+the active policy (decision D26). The `ModeController` replaces the active strategy via
 `setActiveStrategy()` (see Figures 2.2 and 2.6).
 
 **Why.** Strategy turns "which algorithm" into a runtime choice instead of a hard-coded branch, which
@@ -1412,11 +1426,11 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D21 | L'`AuthenticationManager` non gestisce sessioni e **non verifica i token**: espone tre sole operazioni, e la verifica per richiesta è realizzata da guard pubblicati da una **seconda porta** del componente, che l'API Gateway applica alle proprie rotte | §2.2, §2.2.1 | Il §2.2 diceva «accounts and sessions», ma NFR3 esclude ogni stato di sessione lato server: non c'è sessione da gestire. La verifica è invece un'attività del cammino di richiesta, che la Fig. 2.1 attribuisce già al gateway («enforces authentication») e che nessuna delle tre operazioni copriva: senza un punto dichiarato, ogni controller reinventerebbe l'estrazione del token. La divisione fra porta di servizio e porta di meccanismo è la stessa già adottata per `fleet` |
 | D22 | La registrazione pubblica crea sempre un `PASSENGER`; il ruolo è parametro della **porta**, non del contratto HTTP, e gli account operatore nascono dal seed | §2.2.1 | Il RASD §1.4 elenca «Passenger registration», «Passenger login» e «Fleet operator login», ma non la registrazione di un operatore. Senza un account seminato nessuno potrebbe mai entrare come operatore, e metà di R1 resterebbe irrealizzabile; farlo passare dalla porta invece che da una riga scritta a mano tiene un solo codice a produrre gli hash |
 | D23 | `PersistenceManager` traduce la violazione di un vincolo di unicità in `UniqueConstraintError` | §2.2 | Stessa ragione di D19 per le riserve: un indirizzo già registrato è un esito previsto del dominio (R1), non un guasto, e il codice SQLSTATE del driver non deve uscire dal modulo. Il rifiuto arriva dal database e non da una lettura precedente, perché fra la lettura e la scrittura ci sta un'altra registrazione — su due repliche del tier applicativo (NFR3) quella finestra è reale |
-
-| D24 | `AllocationStrategy.selectRobotaxi()` restituisce `Robotaxi [0..1]` ed è **asincrona** | §2.3.1, Fig. 2.2 | D3 ha allargato `allocate()`, ma il manager è un contesto che delega e restituisce ciò che la strategia gli dà: una firma che può rifiutare sopra e non sotto non è implementabile. L'asincronia viene da `MinimumETAStrategy`, che secondo la Fig. 2.5 chiede gli ETA a `ExternalServicesGateway`: una sola firma per tutte le politiche, al prezzo di una promessa già risolta in quelle che non fanno I/O |
+| D24 | `AllocationStrategy.selectRobotaxi()` restituisce `Robotaxi [0..1]` | §2.3.1, Fig. 2.2 | D3 ha allargato `allocate()`, ma il manager è un contesto che delega e restituisce ciò che la strategia gli dà: una firma che può rifiutare sopra e non sotto non è implementabile |
 | D25 | A parità di metrica vince il `robotaxiID` lessicograficamente minore; un candidato il cui punteggio non è un numero finito non è idoneo | §2.3.1 | D12 dava già per esistente «lo stesso criterio adottato per i pareggi fra strategie», ma il documento non lo enunciava da nessuna parte. Senza una regola totale l'esito di un'allocazione dipenderebbe dall'ordine con cui il database ha restituito i candidati, e i test sarebbero instabili. Il secondo punto è la stessa esigenza vista da vicino: `NaN` non è confrontabile, quindi un veicolo di cui non si conosce la posizione — o, per `MinimumETA`, un veicolo per cui il fornitore non sa dare un ETA — resta fuori dalla scelta invece di renderla arbitraria |
+| D26 | Il contesto tiene il **registro** delle strategie — `strategies: Map<StrategyName, AllocationStrategy>` — e non un riferimento alla sola strategia attiva: il nome di quella attiva sta nel record `system_mode` e viene risolto a ogni `allocate()` | §2.3.1, Fig. 2.2, §2.6.1 | Conseguenza diretta di D6: se la sede autorevole della strategia attiva è la riga, un riferimento tenuto in memoria dal manager è una seconda copia che diverge dalla colonna appena un'altra replica la cambia (NFR3). Il pattern Strategy resta intatto — il contesto continua a non conoscere nessuna classe concreta e a delegare — ma l'associazione della Fig. 2.2 è `1 o--> 1..*` verso le politiche registrate, e la scelta di quale usare è una ricerca per nome. È anche ciò che rende vera la promessa di NFR7: si registra una politica in più, non si sostituisce quella corrente |
 
-**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13 e D16
+**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16 e D25
 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
 `HARNESS.md`, `docs/requirements.json`), che sono stati allineati nella stessa occasione. Il DD
 resta la fonte: se in futuro divergono, è il file operativo a doversi adeguare.

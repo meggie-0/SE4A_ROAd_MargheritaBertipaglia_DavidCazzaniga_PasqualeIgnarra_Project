@@ -48,6 +48,12 @@ const strategyRegistry: Provider = {
  * Aggiungere quell'arco renderebbe l'allocazione dipendente dalla flotta e ogni strategia
  * impossibile da provare con un semplice elenco di veicoli.
  */
+/*
+ * `PlatformModule` è fra gli `imports` perché è la forma che CLAUDE.md Regola 1 prescrive per
+ * questo modulo, ma oggi nessun provider di `allocation` inietta `ClockPort` o `RandomPort`: la
+ * data dell'ultima modifica di `system_mode` la mette `PersistenceManager`, dallo stesso orologio.
+ * Se resterà inutilizzato anche dopo M6, va tolto da qui e dalla Regola 1 nella stessa occasione.
+ */
 @Module({
   imports: [ExternalModule, PersistenceModule, PlatformModule],
   providers: [

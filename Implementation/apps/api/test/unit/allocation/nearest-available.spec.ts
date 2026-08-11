@@ -57,7 +57,7 @@ describe('[R5][G4] Allocazione con NearestAvailable', () => {
   });
 
   it('distingue due candidati che differiscono di un margine minimo', async () => {
-    // Un centesimo di grado di differenza è circa un metro: il valore di frontiera della metrica.
+    // Un centomillesimo di grado, poco più di un metro: il valore di frontiera della metrica.
     // Se la distanza venisse arrotondata — ai minuti, ai cento metri — questi due sembrerebbero
     // pari merito e vincerebbe l'id, cioè RT-01.
     const candidates = [northOfDuomo('RT-01', 0.01001), northOfDuomo('RT-02', 0.01)];

@@ -87,8 +87,8 @@ const CASES: readonly StrategyCase[] = [
     // già decisi `FleetMonitor` e `filterAvailable` prima di arrivare qui.
     noneEligible: [robotaxiAt('RT-01', Number.NaN, Number.NaN)],
     many: [north('RT-01', 0.05), north('RT-02', 0.03), north('RT-03', 0.01)],
-    // Un centesimo di grado: circa un metro. Se la distanza venisse arrotondata, i due
-    // sembrerebbero pari merito e vincerebbe RT-01 per via dell'id.
+    // Un centomillesimo di grado: poco più di un metro. Se la distanza venisse arrotondata, i
+    // due sembrerebbero pari merito e vincerebbe RT-01 per via dell'id.
     boundary: [north('RT-01', 0.01001), north('RT-02', 0.01)],
     tie: [north('RT-07', 0.02), north('RT-02', 0.02), north('RT-05', 0.02)],
   },
@@ -127,12 +127,17 @@ const CASES: readonly StrategyCase[] = [
  *
  * È scritta qui, in un file di test, estendendo la sola classe astratta che `allocation` pubblica.
  * Non conosce `AllocationManager`, non tocca `allocation.module.ts` e non richiede un metodo nuovo
- * su nessuna porta: è esattamente la forma che NFR7 promette — «una classe e una registrazione».
+ * su nessuna porta: è la forma che NFR7 promette — «una classe e una registrazione».
+ *
+ * Il nome resta una stringa nuda, e la conversione a `StrategyName` compare **una volta sola**, nel
+ * punto in cui la classe astratta la pretende. È anche la misura esatta di ciò che NFR7 *non*
+ * copre: una politica vera in più richiede il suo nome in `STRATEGY_NAMES` e una migrazione della
+ * colonna `system_mode.active_strategy`, che da quella tupla ha generato il vincolo `CHECK`.
  */
-const NORTHERNMOST: StrategyName = 'NORTHERNMOST_FIRST' as StrategyName;
+const NORTHERNMOST = 'NORTHERNMOST_FIRST';
 
 class NorthernmostStrategy extends AllocationStrategy {
-  readonly name = NORTHERNMOST;
+  readonly name = NORTHERNMOST as StrategyName;
 
   selectRobotaxi(
     _request: AllocationRequest,
@@ -356,6 +361,11 @@ describe('[M3] Cancello: AllocationManager e strategie (Strategy)', () => {
       // AllocationManager né RideRequestManager». Il test sopra mostra che una politica nuova
       // funziona; questo mostra perché — nel manager non compare il nome di nessuna classe
       // concreta, quindi non c'è niente da modificare quando se ne aggiunge una.
+      //
+      // È un **complemento**, non la prova: cerca due nomi e uno `switch`, quindi passerebbe
+      // anche davanti a una catena di `if (name === ...)`, che sarebbe la stessa cosa scritta a
+      // mano. La prova di NFR7 è il test comportamentale qui sopra; questo dice a chi legge il
+      // rosso *dove* guardare quando quello fallisce.
       const managerSource = readFileSync(
         resolve(__dirname, '..', '..', 'src', 'allocation', 'allocation.manager.ts'),
         'utf8',

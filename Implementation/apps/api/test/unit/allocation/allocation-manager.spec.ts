@@ -1,6 +1,9 @@
 import { DEFAULT_STRATEGY, type StrategyName } from '@road/shared';
 
-import { UnknownStrategyError } from '../../../src/allocation/allocation.port';
+import {
+  SystemModeNotInitialisedError,
+  UnknownStrategyError,
+} from '../../../src/allocation/allocation.port';
 import type { RobotaxiSnapshot } from '../../../src/fleet/robotaxi.port';
 import { composeAllocation, type AllocationHarness } from '../../support/allocation';
 
@@ -46,7 +49,6 @@ describe('[R8][G5] Selezione della strategia a runtime', () => {
     expect(harness.systemMode.systemMode).toMatchObject({
       activeStrategy: 'MINIMUM_ETA',
       mode: 'AUTO',
-      updatedAt: NOW,
     });
   });
 
@@ -75,6 +77,20 @@ describe('[R8][G5] Selezione della strategia a runtime', () => {
     ).rejects.toBeInstanceOf(UnknownStrategyError);
 
     expect(harness.systemMode.systemMode).toBe(before);
+  });
+
+  it('e non alloca se la riga singleton di system_mode non esiste', async () => {
+    // Non è una condizione di dominio: quella riga nasce con la migrazione iniziale. Fallire
+    // subito con un errore tipizzato è più utile che tornare una strategia di default inventata
+    // dal manager, che nasconderebbe uno schema sbagliato fino al primo comportamento strano.
+    harness.systemMode.forgetSystemMode();
+
+    await expect(
+      harness.allocation.allocate(REQUEST, [robotaxiAt('RT-01', DUOMO.lat, DUOMO.lon)]),
+    ).rejects.toBeInstanceOf(SystemModeNotInitialisedError);
+    await expect(harness.allocation.getActiveStrategy()).rejects.toBeInstanceOf(
+      SystemModeNotInitialisedError,
+    );
   });
 
   it('e non alloca se la colonna porta una strategia che non sa eseguire', async () => {

@@ -51,7 +51,7 @@ import { FakeClock } from '../../src/platform/fake-clock';
  * a scrivere altro, i test lo direbbero invece di ignorarlo.
  */
 export class SystemModeDouble extends PersistencePort {
-  private record: SystemModeRecord;
+  private record: SystemModeRecord | null;
 
   constructor(activeStrategy: StrategyName = DEFAULT_STRATEGY, updatedAt = new Date(0)) {
     super();
@@ -65,8 +65,17 @@ export class SystemModeDouble extends PersistencePort {
   }
 
   /** Il record com'è adesso: serve alle asserzioni su cosa è stato scritto. */
-  get systemMode(): SystemModeRecord {
+  get systemMode(): SystemModeRecord | null {
     return this.record;
+  }
+
+  /**
+   * Toglie di mezzo la riga singleton, per il caso in cui il database non è quello che il sistema
+   * si aspetta: è l'unico modo di far vedere `SystemModeNotInitialisedError`, che su Postgres non
+   * si raggiunge perché quella riga nasce con la migrazione iniziale e il suo `id` è vincolato.
+   */
+  forgetSystemMode(): void {
+    this.record = null;
   }
 
   /**
@@ -80,6 +89,7 @@ export class SystemModeDouble extends PersistencePort {
    * tupla ha generato il proprio vincolo `CHECK`. Nessuna delle due tocca la logica di allocazione.
    */
   forceActiveStrategy(name: string): void {
+    if (this.record === null) throw new Error('La riga singleton è stata tolta dal test.');
     this.record = { ...this.record, activeStrategy: name as StrategyName };
   }
 
@@ -92,7 +102,7 @@ export class SystemModeDouble extends PersistencePort {
     id: string,
     patch: RecordPatch<K>,
   ): Promise<PersistedRecord<K>> {
-    if (kind !== 'system_mode' || id !== SYSTEM_MODE_ID) {
+    if (kind !== 'system_mode' || id !== SYSTEM_MODE_ID || this.record === null) {
       return Promise.reject(new RecordNotFoundError(kind, id));
     }
 
@@ -101,7 +111,7 @@ export class SystemModeDouble extends PersistencePort {
   }
 
   override find<K extends EntityKind>(kind: K): Promise<PersistedRecord<K>[]> {
-    if (kind !== 'system_mode') return Promise.resolve([]);
+    if (kind !== 'system_mode' || this.record === null) return Promise.resolve([]);
     return Promise.resolve([this.asRecordOf<K>(this.record)]);
   }
 
@@ -176,8 +186,13 @@ export interface ComposeOptions {
   /**
    * Politiche **aggiuntive** rispetto a quelle registrate da `allocation.module.ts`.
    *
-   * È la «registrazione» di NFR7 vista dal test: la classe la scrive il test, e questa opzione
-   * corrisponde alla riga che in produzione si aggiunge all'elenco `STRATEGIES` del modulo.
+   * È la «registrazione» di NFR7 vista dal test, e va detto con precisione cosa fa: **sostituisce
+   * il provider del registro** con le politiche del modulo più quelle passate qui. Non esegue la
+   * riga che in produzione si aggiunge all'elenco `STRATEGIES` di `allocation.module.ts` — quella
+   * riga non è eseguibile da un test senza esporre un punto di estensione che il DD non prevede.
+   * Ciò che resta dimostrato per intero è la parte di NFR7 che conta: la classe è scritta fuori dal
+   * modulo estendendo la sola classe astratta pubblicata, e il manager la esegue senza essere stato
+   * modificato.
    */
   readonly extraStrategies?: readonly AllocationStrategy[];
 }

@@ -3,7 +3,6 @@ import type { StrategyName } from '@road/shared';
 
 import type { RobotaxiSnapshot } from '../fleet/robotaxi.port';
 import { PersistencePort, SYSTEM_MODE_ID } from '../persistence/persistence.port';
-import { ClockPort } from '../platform/clock.port';
 
 import type { AllocationRequest, AllocationStrategy } from './allocation-strategy';
 import {
@@ -25,7 +24,14 @@ import {
  * `AllocationManager` né `RideRequestManager`», DD §4.3).
  *
  * Il registro arriva da `allocation.module.ts`, dove le strategie disponibili sono elencate in un
- * posto solo. Il manager le indicizza per il nome che ognuna dichiara.
+ * posto solo. Il manager le indicizza per il nome che ognuna dichiara, e la strategia *attiva* la
+ * risolve per nome a ogni chiamata: non ne tiene un riferimento, perché sarebbe una seconda copia
+ * di un valore la cui sede autorevole è il record `system_mode` (DD §2.2.1, decisioni D6 e D26).
+ *
+ * Non dipende da `ClockPort`, e non è una dimenticanza: la data dell'ultima modifica la mette
+ * `PersistenceManager` su ogni riga che ha quella colonna, dallo stesso orologio. Scriverla anche
+ * qui sarebbe la stessa responsabilità in due posti, e il DD §2.2.1 dà a questo componente due sole
+ * dipendenze — `ExternalServicesGateway` e `PersistenceManager`.
  */
 @Injectable()
 export class AllocationManager extends AllocationPort {
@@ -34,7 +40,6 @@ export class AllocationManager extends AllocationPort {
   constructor(
     @Inject(ALLOCATION_STRATEGIES) strategies: readonly AllocationStrategy[],
     private readonly persistence: PersistencePort,
-    private readonly clock: ClockPort,
   ) {
     super();
 
@@ -73,7 +78,6 @@ export class AllocationManager extends AllocationPort {
     await this.persistence.update('system_mode', SYSTEM_MODE_ID, {
       activeStrategy: name,
       ...(source === 'manual' ? { mode: 'MANUAL' as const } : {}),
-      updatedAt: this.clock.now(),
     });
   }
 

@@ -58,8 +58,13 @@ export class LinearEtaGateway extends ExternalServicesPort {
   }
 }
 
-/** `distanza in linea d'aria × circuità ÷ velocità media`, in minuti. Funzione pura. */
-export function etaMinutesBetween(from: GeoPoint, to: GeoPoint): number {
+/**
+ * `distanza in linea d'aria × circuità ÷ velocità media`, in minuti. Funzione pura.
+ *
+ * Non è esportata: questo file non è una porta, quindi nessuno fuori da `external/` potrebbe
+ * importarla senza violare i confini fra moduli. Chi ha bisogno di un ETA passa da `getETA()`.
+ */
+function etaMinutesBetween(from: GeoPoint, to: GeoPoint): number {
   const streetKm = haversineKm(from, to) * STREET_DETOUR_FACTOR;
   return (streetKm / AVERAGE_URBAN_SPEED_KMH) * MINUTES_PER_HOUR;
 }

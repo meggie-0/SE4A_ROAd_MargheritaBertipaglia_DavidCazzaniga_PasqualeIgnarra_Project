@@ -11,6 +11,10 @@ import { ExternalServicesPort } from '../../../src/external/external-services.po
  * origine. I minuti esatti dipendono da due costanti del modello — velocità media e circuità — che
  * M7 sostituirà con i tempi veri di OSRM: fissarli in un'asserzione renderebbe rosso un test sano
  * il giorno in cui il modello migliora.
+ *
+ * Il `describe` **non porta tag**: qui non si alloca nulla e non c'è nessuna strategia, quindi
+ * marcarlo `[R5]` gonfierebbe la matrice di tracciabilità con un test che non dimostra il
+ * requisito che nomina. Il requisito di competenza di questo file è NFR8, atteso in M7.
  */
 
 const DUOMO = { lat: 45.4642, lon: 9.19 };
@@ -29,7 +33,7 @@ afterEach(async () => {
   await moduleRef.close();
 });
 
-describe('[R5] Stima degli ETA dei servizi esterni', () => {
+describe('Stima degli ETA dei servizi esterni', () => {
   it('risponde per ogni origine, in minuti positivi', async () => {
     const estimates = await external.getETA(
       [
