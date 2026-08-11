@@ -88,7 +88,7 @@ confine, stai sbagliando qualcosa.
 | `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce` |
 | `allocation` | `AllocationPort` | `allocate`, `setActiveStrategy`, `getActiveStrategy` |
 | `mode` | `ModePort` | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode` |
-| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `releaseAssignment`, `requestRebalancing` |
+| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `releaseAssignment`, `requestRebalancing` |
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
 | `notifications` | `NotificationPort` | `update` |

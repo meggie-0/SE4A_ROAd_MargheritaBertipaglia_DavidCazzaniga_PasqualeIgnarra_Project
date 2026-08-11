@@ -299,7 +299,8 @@ The main components and the operations they export are:
 - **ModeController**: `onTrafficLevel()`, `setManual()`, `enableAuto()`. Implements Auto/Manual mode,
   the automatic strategy switching with hysteresis and the priority of human intervention (R12, R13,
   NFR9, NFR10).
-- **FleetMonitor**: `getCandidates()`, `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
+- **FleetMonitor**: `getCandidates()`, `getBookableRobotaxis()` **[v1.2]**,
+  `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
   `releaseAssignment()` **[v1.2]**, `requestRebalancing()`. Keeps the real-time picture of every
   robotaxi (position, state) and coordinates vehicle lifecycle updates (R7, G6, G8). Each Robotaxi
   manages its own lifecycle through the State pattern. `releaseAssignment()` drives transition 11 and
@@ -885,8 +886,8 @@ API -> RRM : submitAdvance(passengerId, pickup, destination, timeWindow)
 
 RRM -> RRM : validateAdvanceRequest()
 
-RRM -> FM : getCandidates(pickup)
-FM --> RRM : candidates
+RRM -> FM : getBookableRobotaxis()
+FM --> RRM : bookableRobotaxis
 
 RRM -> PM : filterAvailable(candidates, timeWindow)
 PM -> DB : findOverlappingAssignments(candidateIds, timeWindow)
@@ -919,6 +920,19 @@ else no feasible robotaxi
     API --> P : no availability error
 end
 ```
+
+**[v1.2] Who is a candidate for a booking.** The v1.1 figure called `getCandidates(pickup)` here,
+the same operation the immediate flow uses. That was wrong, and the error was not cosmetic:
+`getCandidates()` answers "which vehicles can take a ride **right now**", while a booking asks
+"which vehicles will be able to serve one **in two hours**". A vehicle that is currently `IN_RIDE`
+will be free long before the scheduled time, and rejecting it would mean that as soon as the fleet
+is busy, *every* future booking is refused — R4 would work only when it is not needed. The step is
+therefore `getBookableRobotaxis()`, every vehicle except those in maintenance, and it is
+`filterAvailable()` on the next line that decides who is actually taken during the requested window.
+That filter can be trusted precisely because every assignment reserves a **bounded** interval
+(decision D8), so the timeline is a complete statement of who is busy and until when. Maintenance is
+the one state kept out: `maintenance_record` has no expected end date, so the system cannot claim
+the vehicle will be back (decision D34).
 
 #### The reservation timeline **[v1.1]**
 
@@ -1471,6 +1485,8 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D31 | Il filtro sulla timeline di una prenotazione anticipata usa una finestra **nominale**, con ETA verso il ritiro pari a zero | §2.4, Fig. 2.8 | La Fig. 2.8 chiama `filterAvailable(candidates, timeWindow)` *prima* di conoscere il veicolo, ma la finestra reale dipende dall'ETA del veicolo scelto: la sequenza non è eseguibile alla lettera. La finestra nominale è contenuta in ogni finestra reale, quindi il filtro non scarta mai un candidato idoneo; a decidere resta il vincolo di esclusione al momento della `reserve()`, che è dove D8 e C1 vogliono che si decida |
 | D32 | All'attivazione, «il veicolo riservato è ancora idoneo» significa che compare fra i candidati di `getCandidates()` | §2.4 | Il §2.4 lo scriveva come «it is `AVAILABLE`, and not in maintenance», che escluderebbe un veicolo in `REBALANCING` — ma il §2.6.3 dichiara esplicitamente che un veicolo in `REBALANCING` **è allocabile** (transizione 10), e la 10 esiste proprio per dirottarlo su una corsa. Con la lettura letterale si rilascerebbe la riserva di un veicolo perfettamente utilizzabile per ri-allocarne un altro |
 | D33 | `AdvanceBookingActivator` è pubblicato da una **seconda porta** del modulo `rides` | §2.2, §2.2.1 | `runOnce()` non è una delle tre operazioni di `IRideRequestService`, e il §2.2.1 pretende che sia pubblico e chiamabile dai test senza passare da uno scheduler. È la stessa divisione fra porta di servizio e porta di meccanismo già adottata per `fleet` (D21) |
+| D34 | Una prenotazione anticipata parte da `FleetMonitor.getBookableRobotaxis()` — **tutti i veicoli tranne quelli in manutenzione** — e non da `getCandidates()` | §2.2, §2.4, Fig. 2.8 | La Fig. 2.8 riusava `getCandidates(pickup)`, cioè «chi può prendere una corsa **adesso**», per rispondere a «chi potrà servirne una **fra due ore**». Sono domande diverse, e confonderle rendeva R4 quasi inutile: con la flotta impegnata ogni prenotazione futura veniva rifiutata, anche per un orario in cui la flotta sarà tutta libera. R4 chiede di riservare la disponibilità «for the required time interval», e a dire chi è occupato in quella finestra è la timeline — `filterAvailable()` — che esiste ed è precisa proprio perché ogni riserva è limitata (D8). `MAINTENANCE` resta escluso: un intervento non ha una data di fine prevista, quindi prenotare quel veicolo prometterebbe una corsa su un'ipotesi (R9) |
+| D35 | `PersistenceManager.reserve()` scrive anche il legame richiesta↔veicolo, nella **stessa transazione** | §2.2, §2.4, Fig. 2.5 | È l'`updateAssignment(request, selectedRobotaxi)` che la Fig. 2.5 disegna già dentro `reserve()`, e che l'implementazione aveva lasciato fuori. Fuori transazione lascia una finestra in cui la riserva esiste e nessuna richiesta la rivendica: da lì il veicolo non è più recuperabile, perché `cancel()` cerca il veicolo proprio su `ride_request.assignedRobotaxiId` e lo troverebbe nullo — un robotaxi bloccato in `ASSIGNED` per sempre. Per la stessa ragione l'attivazione scrive il legame **prima** di `assign()`: la finestra che resta — legame scritto, veicolo ancora libero — è quella che l'annullamento sa assorbire, trattando un veicolo già `AVAILABLE` come lavoro già fatto |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16 e D25
 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

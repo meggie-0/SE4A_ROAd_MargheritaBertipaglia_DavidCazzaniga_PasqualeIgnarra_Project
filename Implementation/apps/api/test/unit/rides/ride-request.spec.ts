@@ -246,6 +246,39 @@ describe('[R4][G3] Advance booking', () => {
     expect(second.request.status).toBe('REJECTED');
   });
 
+  it('si prenota un veicolo occupato adesso ma libero all orario richiesto', async () => {
+    harness = await composeRides({ now: NOW, vehicles: [north('RT-01', 0.01)] });
+
+    // L'unico veicolo della flotta sta servendo una corsa in questo momento.
+    const running = await harness.rides.submitImmediate(immediateDraft);
+    expect(running.accepted).toBe(true);
+    expect(harness.fleet.stateOf('RT-01')).toBe('ASSIGNED');
+
+    // La prenotazione è per fra due ore, quando quella corsa sarà finita da un pezzo. Il veicolo
+    // **non è allocabile adesso**, ma è prenotabile: a decidere è la timeline, non lo stato
+    // istantaneo (decisione D34). Con i soli candidati allocabili, R4 rifiuterebbe ogni
+    // prenotazione futura appena la flotta è impegnata — cioè funzionerebbe solo quando non serve.
+    const booked = await harness.rides.submitAdvance(advanceDraft);
+
+    expect(booked.accepted && booked.robotaxiId).toBe('RT-01');
+    // E la corsa in esecuzione non è stata toccata: la prenotazione riserva, non assegna.
+    expect(harness.fleet.stateOf('RT-01')).toBe('ASSIGNED');
+  });
+
+  it('ma non uno in manutenzione: non si sa quando tornerà', async () => {
+    harness = await composeRides({
+      now: NOW,
+      vehicles: [north('RT-01', 0.01), north('RT-02', 0.05)],
+    });
+    harness.fleet.setState('RT-01', 'MAINTENANCE');
+
+    const booked = await harness.rides.submitAdvance(advanceDraft);
+
+    // Un intervento non ha una data di fine prevista, quindi prenotare quel veicolo prometterebbe
+    // una corsa su un'ipotesi. È la lettura conservativa di R9.
+    expect(booked.accepted && booked.robotaxiId).toBe('RT-02');
+  });
+
   it('una finestra che non si sovrappone resta prenotabile sullo stesso veicolo', async () => {
     harness = await composeRides({ now: NOW, vehicles: [north('RT-01', 0.01)] });
 

@@ -6,6 +6,7 @@ import { ExternalServicesPort } from '../../src/external/external-services.port'
 import { FleetMonitorPort, type FleetStatus } from '../../src/fleet/fleet-monitor.port';
 import {
   ALLOCATABLE_STATES,
+  BOOKABLE_STATES,
   IllegalTransitionError,
   type RideAssignment,
   type RobotaxiSnapshot,
@@ -200,6 +201,16 @@ export class RidesPersistenceDouble extends PersistencePort {
       this.rowsFor('booking').push(booking);
     }
 
+    // Il legame richiesta↔veicolo si scrive nella stessa transazione (decisione D35): il doppio lo
+    // riproduce, o i test non vedrebbero la colonna che `cancel()` usa per ritrovare il veicolo.
+    if (input.rideRequest !== undefined) {
+      const request = this.rowsFor('ride_request').find((row) => row.id === input.rideRequestId);
+      if (request === undefined) {
+        return Promise.reject(new RecordNotFoundError('ride_request', input.rideRequestId));
+      }
+      Object.assign(request, input.rideRequest);
+    }
+
     return Promise.resolve({
       reserved: true,
       reservation: asRecord<PersistedRecord<'robotaxi_reservation'>>({ ...reservation }),
@@ -266,6 +277,14 @@ export class FleetDouble extends FleetMonitorPort {
 
   getCandidates(): Promise<RobotaxiSnapshot[]> {
     return Promise.resolve(this.allocatable());
+  }
+
+  getBookableRobotaxis(): Promise<RobotaxiSnapshot[]> {
+    return Promise.resolve(
+      [...this.vehicles.values()]
+        .filter((vehicle) => BOOKABLE_STATES.includes(vehicle.state))
+        .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)),
+    );
   }
 
   getAvailableRobotaxis(): Promise<RobotaxiSnapshot[]> {

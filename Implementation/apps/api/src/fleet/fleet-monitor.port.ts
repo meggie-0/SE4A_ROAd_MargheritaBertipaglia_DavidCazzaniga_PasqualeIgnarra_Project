@@ -7,8 +7,9 @@ import type { RobotaxiSnapshot } from './robotaxi';
  * La porta del `FleetMonitor` (DD §2.2, CLAUDE.md Regola 1).
  *
  * Le cinque operazioni del DD §2.2 — `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`,
- * `assign`, `requestRebalancing` — più `releaseAssignment`, che M4 aggiunge insieme alla
- * transizione 11 della Figura 2.10 (decisione D28). Il DD attribuisce a `RideRequestManager` il
+ * `assign`, `requestRebalancing` — più le due che M4 aggiunge: `releaseAssignment`, insieme alla
+ * transizione 11 della Figura 2.10 (decisione D28), e `getBookableRobotaxis`, perché «può prendere
+ * una corsa adesso» e «potrà servirne una fra due ore» non sono la stessa domanda (decisione D34). Il DD attribuisce a `RideRequestManager` il
  * compito di riportare il veicolo ad `AVAILABLE` quando una corsa viene annullata (§2.4, R14) senza
  * dire attraverso quale operazione: `rides` non può toccare la colonna di stato — la macchina la
  * governa `fleet` — quindi l'operazione che mancava è questa.
@@ -54,6 +55,22 @@ export abstract class FleetMonitorPort {
    * `RideRequestManager`: `allocation` non dipende da `fleet` (DD §2.2.1, decisione D5).
    */
   abstract getCandidates(): Promise<RobotaxiSnapshot[]>;
+
+  /**
+   * I veicoli che possono ricevere una **prenotazione** per una finestra futura, in ordine di `id`
+   * crescente: quelli in uno stato di `BOOKABLE_STATES`, cioè tutti tranne quelli in manutenzione
+   * (R4, decisione D34).
+   *
+   * Non è `getCandidates()` e non deve diventarlo. Quella risponde a «chi può prendere una corsa
+   * adesso», questa a «chi potrà servirne una fra due ore»: un veicolo oggi `IN_RIDE` sarà libero
+   * appena la corsa finisce, e la sua riserva — limitata, per la decisione D8 — dice esattamente
+   * quando. Se una prenotazione partisse dai soli candidati allocabili, con la flotta impegnata
+   * verrebbe rifiutata sempre, anche per un orario in cui la flotta sarà tutta libera.
+   *
+   * Come `getCandidates()`, guarda **solo lo stato**: a escludere chi è già impegnato nella finestra
+   * richiesta è `PersistencePort.filterAvailable()`, che `RideRequestManager` chiama subito dopo.
+   */
+  abstract getBookableRobotaxis(): Promise<RobotaxiSnapshot[]>;
 
   /**
    * I veicoli **inattivi**, cioè in stato `AVAILABLE`, in ordine di `id` crescente.

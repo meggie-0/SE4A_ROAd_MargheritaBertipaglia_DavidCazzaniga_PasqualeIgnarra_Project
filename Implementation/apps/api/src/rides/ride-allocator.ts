@@ -156,6 +156,16 @@ export class RideAllocator {
         rideRequestId: request.rideRequestId,
         window: request.windowFor(travel),
         ...(request.bookingFor === undefined ? {} : { booking: request.bookingFor(chosen.id) }),
+        /**
+         * Quando il veicolo va anche assegnato, il legame richiesta↔veicolo si scrive **dentro la
+         * transazione della riserva** (decisione D35).
+         *
+         * È ciò che rende il veicolo sempre recuperabile: qualunque cosa interrompa la sequenza
+         * dopo questo punto, `ride_request.assignedRobotaxiId` indica già chi tiene la corsa, e
+         * `cancel()` sa a chi restituire la libertà. Una prenotazione anticipata non lo scrive —
+         * il suo veicolo è *riservato*, non assegnato, e il legame nasce all'attivazione.
+         */
+        ...(request.assign ? { rideRequest: { assignedRobotaxiId: chosen.id } } : {}),
       });
 
       if (!outcome.reserved) continue;

@@ -233,6 +233,7 @@ describe('[M4] Cancello: RideRequestManager', () => {
             scheduledPickup: PICKUP_AT,
             activationDueAt: new Date(PICKUP_AT.getTime() + 60_000),
             activatedAt: null,
+            closedAt: null,
           },
         }),
       ).rejects.toThrow();
@@ -247,6 +248,46 @@ describe('[M4] Cancello: RideRequestManager', () => {
         [PICKUP_AT.toISOString()],
       );
       expect(orphans[0]?.total).toBe('0');
+    });
+
+    it('si prenota un veicolo occupato adesso ma libero all orario richiesto', async () => {
+      await givenRobotaxi('RT-01', 0.01);
+
+      // L'unico veicolo della flotta parte per una corsa immediata: da adesso è `ASSIGNED`, quindi
+      // **non allocabile**.
+      const running = await rides.submitImmediate(immediateDraft());
+      expect(running.accepted).toBe(true);
+      expect(await persistedState('RT-01')).toBe('ASSIGNED');
+
+      // La prenotazione è per fra due ore. Il veicolo è prenotabile lo stesso, perché la riserva
+      // della corsa in corso è **limitata** (decisione D8) e non si sovrappone alla finestra
+      // richiesta: a decidere è la timeline, non lo stato istantaneo (decisione D34). Partendo dai
+      // soli candidati allocabili, questa prenotazione sarebbe rifiutata — e con essa ogni
+      // prenotazione futura fatta a flotta impegnata, che è quasi la definizione di R4 inutile.
+      const booked = await rides.submitAdvance({
+        ...immediateDraft(),
+        scheduledPickup: PICKUP_AT,
+      });
+
+      expect(booked.accepted && booked.robotaxiId).toBe('RT-01');
+      // La corsa in esecuzione non è stata toccata: una prenotazione riserva, non assegna.
+      expect(await persistedState('RT-01')).toBe('ASSIGNED');
+      expect(await harness.countRows('booking')).toBe(1);
+    });
+
+    it('ma non si prenota un veicolo in manutenzione', async () => {
+      await givenRobotaxi('RT-01', 0.01);
+      await givenRobotaxi('RT-02', 0.05);
+      await harness.maintenance.requestMaintenance('RT-01', 'freni');
+
+      const booked = await rides.submitAdvance({
+        ...immediateDraft(),
+        scheduledPickup: PICKUP_AT,
+      });
+
+      // `maintenance_record` non ha una data di fine prevista: il sistema non sa se quel veicolo
+      // sarà tornato in servizio, e prenotarlo prometterebbe una corsa su un'ipotesi (R9).
+      expect(booked.accepted && booked.robotaxiId).toBe('RT-02');
     });
 
     it('due prenotazioni sulla stessa finestra non ottengono lo stesso veicolo', async () => {

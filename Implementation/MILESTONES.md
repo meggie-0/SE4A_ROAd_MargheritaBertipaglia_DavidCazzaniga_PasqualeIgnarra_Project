@@ -292,6 +292,14 @@ ne pubblica la telemetria. Vive in `tools/simulator` ed è raggiunto solo attrav
 sostituibile da veicoli reali senza toccare i manager. Sotto test avanza solo su `tick()` esplicito;
 in esecuzione normale ha un ciclo proprio.
 
+**Da completare qui: la seconda metà di R14.** M4 annulla una corsa fino al veicolo assegnato e
+fermo; da `ARRIVING` in poi rifiuta, perché fermare un veicolo in movimento richiede di revocarne la
+rotta e `commandRoute()` nasce in questa milestone (DD §2.6.3, decisione D27; RASD R14, nota di
+copertura). Con l'adapter di flotta disponibile, `cancelRide()` va reso legale anche da `ARRIVING` e
+`ARRIVED` — due righe nella tabella della Figura 2.10 e i corrispondenti metodi nelle due classi di
+stato — e l'annullamento deve revocare la rotta prima di liberare il veicolo. Il cancello di M2 va
+aggiornato ai nuovi conteggi, e quello di M4 esteso all'annullamento a veicolo in avvicinamento.
+
 **Cancello M7:** configurando gli adapter reali il sistema funziona senza mock; con OSRM
 irraggiungibile il fallback produce comunque un ETA e nessuna richiesta va persa; il simulatore
 porta un veicolo da `assigned` ad `arrived` in un numero deterministico di tick.

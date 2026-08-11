@@ -194,6 +194,14 @@ export interface BookingRecord {
   readonly scheduledPickup: Date;
   readonly activationDueAt: Date;
   readonly activatedAt: Date | null;
+  /**
+   * Quando l'attivatore ha finito con questa prenotazione, comunque sia andata.
+   *
+   * `activatedAt` dice **se** è diventata un'assegnazione, `closedAt` **quando** l'attivatore ha
+   * smesso di occuparsene: una prenotazione rifiutata all'attivazione o annullata prima (R14) è
+   * chiusa senza essere mai stata attivata. Le prenotazioni dovute si cercano su questa colonna.
+   */
+  readonly closedAt: Date | null;
   readonly createdAt: Date;
 }
 
@@ -418,6 +426,18 @@ export interface ReservationInput {
   readonly rideRequestId: string;
   readonly window: TimeWindow;
   readonly booking?: Omit<NewRecord<'booking'>, 'reservationId' | 'rideRequestId'>;
+  /**
+   * Il cambiamento da applicare alla **richiesta** nella stessa transazione (decisione D35).
+   *
+   * È l'`updateAssignment(request, selectedRobotaxi)` che la Figura 2.5 disegna dentro `reserve()`,
+   * e non è una comodità: senza, il legame fra corsa e veicolo verrebbe scritto da un'istruzione
+   * separata, e un'interruzione fra le due lascerebbe una riserva su un veicolo che nessuna
+   * richiesta rivendica. Da lì il veicolo non sarebbe più recuperabile — l'annullamento cerca il
+   * veicolo proprio su `ride_request.assignedRobotaxiId`, e lo troverebbe nullo.
+   *
+   * Se la richiesta non esiste, l'intera transazione fallisce: nessuna riserva resta scritta.
+   */
+  readonly rideRequest?: RecordPatch<'ride_request'>;
 }
 
 /**

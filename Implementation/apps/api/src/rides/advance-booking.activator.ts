@@ -57,9 +57,13 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
      * L'ordinamento è totale — prima le più urgenti, pareggi sull'id — perché quando due
      * prenotazioni si contendono l'ultimo veicolo l'esito non deve dipendere dall'ordine con cui il
      * database ha restituito le righe.
+     *
+     * Il filtro è su `closedAt` e non su `activatedAt`: una prenotazione rifiutata all'attivazione
+     * non è mai stata attivata — e `activatedAt` resta giustamente nullo — ma la sua sorte è decisa,
+     * quindi non deve ricadere qui a ogni esecuzione per sempre.
      */
     const due = await this.persistence.find('booking', {
-      where: { activatedAt: null, activationDueAt: { atMost: now } },
+      where: { closedAt: null, activationDueAt: { atMost: now } },
       orderBy: [{ field: 'activationDueAt' }, { field: 'id' }],
     });
 
@@ -80,8 +84,13 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
     });
 
     // Una prenotazione annullata nel frattempo (R14) non è un esito dell'attivazione: non c'è
-    // niente da attivare, e la sua riserva è già stata rilasciata da `cancel()`.
-    if (request === undefined || request.status !== 'ACCEPTED') return null;
+    // niente da attivare, e la sua riserva è già stata rilasciata da `cancel()`, che chiude anche
+    // la prenotazione. Questo controllo resta come rete di sicurezza — se una richiesta cambia
+    // stato per una via che oggi non esiste, l'attivazione non la ripesca comunque.
+    if (request === undefined || request.status !== 'ACCEPTED') {
+      await this.persistence.update('booking', booking.id, { closedAt: now });
+      return null;
+    }
 
     const candidates = await this.fleet.getCandidates();
     const reserved = candidates.find((candidate) => candidate.id === booking.robotaxiId);
@@ -106,6 +115,16 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
     reserved: RobotaxiSnapshot,
     now: Date,
   ): Promise<BookingActivation | null> {
+    // Il legame si scrive **prima** dell'assegnazione, per la stessa ragione per cui `reserve()` lo
+    // scrive nella propria transazione (decisione D35): se qualcosa interrompe la sequenza dopo la
+    // transizione di stato, il veicolo resterebbe `ASSIGNED` senza che nessuna richiesta lo
+    // rivendichi, e `cancel()` non saprebbe più a chi restituire la libertà. Nell'ordine giusto la
+    // finestra che resta è quella innocua — legame scritto, veicolo ancora libero — che
+    // l'annullamento sa già assorbire.
+    await this.persistence.update('ride_request', request.id, {
+      assignedRobotaxiId: reserved.id,
+    });
+
     try {
       await this.fleet.assign(reserved.id, { rideRequestId: request.id });
     } catch (error) {
@@ -115,10 +134,7 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
       throw error;
     }
 
-    await this.persistence.update('ride_request', request.id, {
-      assignedRobotaxiId: reserved.id,
-    });
-    await this.persistence.update('booking', booking.id, { activatedAt: now });
+    await this.persistence.update('booking', booking.id, { activatedAt: now, closedAt: now });
 
     return {
       bookingId: booking.id,
@@ -153,9 +169,14 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
 
     if (result === null) {
       // Nessun veicolo idoneo in quella finestra: è il ramo `[request rejected]` della Figura 3.2
-      // del RASD. La prenotazione resta con `activatedAt` nullo, ma non tornerà: l'attivazione
-      // salta le richieste che non sono più in `ACCEPTED`.
-      await this.persistence.update('ride_request', request.id, { status: 'REJECTED' });
+      // del RASD. `activatedAt` resta nullo — nessuna assegnazione è avvenuta — ma la prenotazione
+      // si **chiude**, o ricadrebbe fra le dovute a ogni esecuzione per sempre. Il legame si azzera
+      // insieme: un tentativo può averlo lasciato scritto, e una richiesta rifiutata non ha veicolo.
+      await this.persistence.update('ride_request', request.id, {
+        status: 'REJECTED',
+        assignedRobotaxiId: null,
+      });
+      await this.persistence.update('booking', booking.id, { closedAt: now });
       return {
         bookingId: booking.id,
         rideRequestId: request.id,
@@ -164,13 +185,12 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
       };
     }
 
+    // `assignedRobotaxiId` l'ha già scritto `reserve()` nella propria transazione (decisione D35).
     await this.persistence.update('booking', booking.id, {
       robotaxiId: result.robotaxiId,
       reservationId: result.reservationId,
       activatedAt: now,
-    });
-    await this.persistence.update('ride_request', request.id, {
-      assignedRobotaxiId: result.robotaxiId,
+      closedAt: now,
     });
 
     return {

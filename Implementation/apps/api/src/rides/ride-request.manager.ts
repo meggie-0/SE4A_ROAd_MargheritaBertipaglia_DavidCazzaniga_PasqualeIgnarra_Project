@@ -77,9 +77,10 @@ export class RideRequestManager extends RideRequestPort {
 
     if (!result.allocated) return this.reject(request);
 
+    // `assignedRobotaxiId` l'ha già scritto `reserve()`, nella stessa transazione della riserva
+    // (decisione D35): qui resta solo lo stato della richiesta.
     const accepted = await this.persistence.update('ride_request', request.id, {
       status: 'ACCEPTED',
-      assignedRobotaxiId: result.robotaxi.id,
     });
 
     return {
@@ -107,7 +108,17 @@ export class RideRequestManager extends RideRequestPort {
     );
     if (estimatedRideMinutes === null) return this.reject(request);
 
-    const candidates = await this.fleet.getCandidates();
+    /**
+     * I candidati di una prenotazione sono i veicoli **prenotabili**, non quelli allocabili adesso
+     * (decisione D34).
+     *
+     * La Figura 2.8 scrive `getCandidates(pickup)`, la stessa chiamata della corsa immediata, ma le
+     * due domande sono diverse: qui la corsa è fra due ore, e un veicolo che in questo momento sta
+     * portando qualcun altro a destinazione sarà libero molto prima. Con `getCandidates()` una
+     * flotta impegnata rifiuterebbe **ogni** prenotazione futura, cioè R4 funzionerebbe solo quando
+     * non serve. A dire chi è davvero occupato in quella finestra è la timeline, qui sotto.
+     */
+    const candidates = await this.fleet.getBookableRobotaxis();
 
     /**
      * Il filtro sulla timeline della Figura 2.8, con la finestra **nominale** della decisione D31.
@@ -143,6 +154,7 @@ export class RideRequestManager extends RideRequestPort {
         scheduledPickup: draft.scheduledPickup,
         activationDueAt: activationDueAt(draft.scheduledPickup),
         activatedAt: null,
+        closedAt: null,
       }),
       // Il veicolo resta libero fino all'attivazione (decisione D9).
       assign: false,
@@ -198,7 +210,12 @@ export class RideRequestManager extends RideRequestPort {
     const cancelledBooking =
       booking === undefined
         ? null
-        : await this.persistence.update('booking', booking.id, { reservationId: null });
+        : await this.persistence.update('booking', booking.id, {
+            reservationId: null,
+            // Chiusa senza essere mai stata attivata: l'attivatore non deve più prenderla in
+            // considerazione, e `activatedAt` resta nullo perché nessuna assegnazione è avvenuta.
+            closedAt: now,
+          });
 
     const cancelled = await this.persistence.update('ride_request', rideRequestId, {
       status: 'CANCELLED',
@@ -233,6 +250,11 @@ export class RideRequestManager extends RideRequestPort {
       return request.assignedRobotaxiId;
     } catch (error) {
       if (error instanceof IllegalTransitionError) {
+        // Il veicolo è **già** disponibile: la riserva era stata scritta ma l'assegnazione non è
+        // mai avvenuta — è la finestra che resta dopo D35, ed è quella innocua. Lo scopo di questo
+        // passo è che il veicolo sia libero, e lo è: l'annullamento prosegue invece di bloccarsi su
+        // una corsa che nessun veicolo sta servendo.
+        if (error.from === 'AVAILABLE') return null;
         throw new RideNotCancellableError(request.id, 'RIDE_ALREADY_UNDER_WAY', error.from);
       }
       if (error instanceof ConcurrentTransitionError) {
@@ -250,6 +272,9 @@ export class RideRequestManager extends RideRequestPort {
   private async reject(request: RideRequestRecord): Promise<RideRequestOutcome> {
     const rejected = await this.persistence.update('ride_request', request.id, {
       status: 'REJECTED',
+      // Il legame si azzera insieme al rifiuto: un tentativo andato male può aver lasciato scritto
+      // un veicolo che poi ha rifiutato l'assegnazione, e una richiesta rifiutata non ne ha nessuno.
+      assignedRobotaxiId: null,
     });
     return { accepted: false, request: rejected, reason: 'NO_ELIGIBLE_ROBOTAXI' };
   }
