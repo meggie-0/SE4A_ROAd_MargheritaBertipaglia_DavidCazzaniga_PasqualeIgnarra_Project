@@ -8,7 +8,7 @@ import {
   type PersistencePort,
   type TimeWindow,
 } from '../../src/persistence/persistence.port';
-import { startPersistence, type PersistenceHarness } from '../support/postgres';
+import { startApiHarness, type ApiHarness } from '../support/postgres';
 
 /**
  * Cancello di M1 (MILESTONES.md §M1, HARNESS.md §6).
@@ -58,7 +58,7 @@ const HOOK_TIMEOUT_MS = 180_000;
 /** Il seed compila l'API e scrive qualche migliaio di righe: gli serve più aria di un test normale. */
 const SEED_TIMEOUT_MS = 300_000;
 
-let harness: PersistenceHarness;
+let harness: ApiHarness;
 let persistence: PersistencePort;
 
 /** Lo SQLSTATE di un errore del driver, comunque la libreria scelga di annidarlo. */
@@ -69,7 +69,7 @@ function sqlState(error: unknown): string | undefined {
 }
 
 beforeAll(async () => {
-  harness = await startPersistence(NOW.toISOString());
+  harness = await startApiHarness(NOW.toISOString());
   persistence = harness.persistence;
 }, HOOK_TIMEOUT_MS);
 

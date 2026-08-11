@@ -445,11 +445,20 @@ export abstract class PersistencePort {
    * l'aggiornamento allarga una riserva fino a sovrapporsi a un'altra — il caso della corsa che
    * sfora il proprio intervallo (DD §2.4). Anche lì il rifiuto arriva dal vincolo di esclusione:
    * l'eccezione tipizzata serve solo a non far uscire un errore del driver dal modulo.
+   *
+   * `expected` rende la scrittura **condizionata**: la riga viene aggiornata solo se soddisfa
+   * ancora quei criteri, e altrimenti la chiamata solleva `StaleRecordError` senza toccare nulla.
+   * Serve a chi legge un record, decide in base a ciò che ha letto e poi riscrive — il ciclo di
+   * vita del veicolo di M2 è esattamente questo. Senza la condizione, fra la lettura e la
+   * scrittura ci sta l'intera decisione di un'altra replica del tier applicativo (NFR3), e due
+   * transizioni concorrenti sullo stesso veicolo riuscirebbero entrambe. La condizione la valuta
+   * il database nella stessa istruzione della scrittura, quindi non c'è finestra in cui infilarsi.
    */
   abstract update<K extends EntityKind>(
     kind: K,
     id: string,
     patch: RecordPatch<K>,
+    expected?: RecordFilter<K>,
   ): Promise<PersistedRecord<K>>;
 
   /**
@@ -497,6 +506,24 @@ export class RecordNotFoundError extends Error {
   ) {
     super(`Nessun record "${kind}" con id ${id}.`);
     this.name = 'RecordNotFoundError';
+  }
+}
+
+/**
+ * Sollevata da `update` quando la riga esiste ma non soddisfa più i criteri di `expected`.
+ *
+ * Significa una cosa sola: fra la lettura su cui il chiamante ha deciso e la scrittura, qualcun
+ * altro ha cambiato quella riga. Non è un guasto ed è distinta da `RecordNotFoundError`, perché il
+ * chiamante ha una via d'uscita utile — rileggere e decidere di nuovo, o rinunciare a favore di un
+ * altro candidato, che è ciò che fa `reserve` quando trova il veicolo impegnato.
+ */
+export class StaleRecordError extends Error {
+  constructor(
+    readonly kind: EntityKind,
+    readonly id: string,
+  ) {
+    super(`Il record "${kind}" ${id} è cambiato dopo la lettura su cui si è deciso.`);
+    this.name = 'StaleRecordError';
   }
 }
 

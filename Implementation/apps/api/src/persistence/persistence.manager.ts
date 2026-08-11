@@ -21,6 +21,7 @@ import {
   PersistencePort,
   RecordNotFoundError,
   ReservationConflictError,
+  StaleRecordError,
   type EntityKind,
   type FindCriteria,
   type NewRecord,
@@ -70,6 +71,7 @@ export class PersistenceManager extends PersistencePort {
     kind: K,
     id: string,
     patch: RecordPatch<K>,
+    expected?: RecordFilter<K>,
   ): Promise<PersistedRecord<K>> {
     const source = await this.database.connection();
     const target = entityFor(kind);
@@ -84,8 +86,18 @@ export class PersistenceManager extends PersistencePort {
 
     if (Object.keys(changes).length > 0) {
       try {
-        const result = await repository.update({ id }, changes);
-        if (result.affected === 0) throw new RecordNotFoundError(kind, id);
+        // La condizione entra nella `WHERE` della stessa `UPDATE`: è il database a valutarla
+        // nell'istante della scrittura, quindi fra il controllo e la scrittura non c'è nessuna
+        // finestra in cui un altro scrittore possa infilarsi.
+        const result = await repository.update({ id, ...buildWhere(expected) }, changes);
+        if (result.affected === 0) {
+          // Zero righe toccate significa due cose diverse — la riga non c'è, oppure c'è ma è
+          // cambiata — e il chiamante ne ha una sola da gestire in modo utile. Distinguerle costa
+          // una lettura, ma solo qui, cioè sul cammino raro.
+          const current = await repository.findOneBy({ id });
+          if (current !== null && expected !== undefined) throw new StaleRecordError(kind, id);
+          throw new RecordNotFoundError(kind, id);
+        }
       } catch (error) {
         // Allargare una riserva fino a sovrapporsi a un'altra è il caso della corsa che sfora
         // (DD §2.4): il vincolo la rifiuta, e qui l'errore del driver diventa un errore del

@@ -2,28 +2,36 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { DataSource, type QueryRunner } from 'typeorm';
 
+import { FleetModule } from '../../src/fleet/fleet.module';
+import { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
+import { MaintenanceModule } from '../../src/maintenance/maintenance.module';
+import { MaintenancePort } from '../../src/maintenance/maintenance.port';
 import { PersistenceModule } from '../../src/persistence/persistence.module';
 import { PersistencePort, type TimeWindow } from '../../src/persistence/persistence.port';
 import { ClockPort } from '../../src/platform/clock.port';
 import { FakeClock } from '../../src/platform/fake-clock';
 
 /**
- * Un Postgres vero, usa e getta, con lo schema di ROAd già applicato (HARNESS.md §2).
+ * Un Postgres vero, usa e getta, con lo schema di ROAd già applicato e i moduli di dominio
+ * composti sopra (HARNESS.md §2).
  *
- * Il vincolo di esclusione che questa milestone deve garantire **non esiste** su un doppio in
- * memoria: è una funzione del database. Testarlo su un finto significherebbe testare il finto, e
- * il difetto arriverebbe in produzione intatto. Per questo i test di M1 partono da un container
- * pulito, con le migrazioni applicate e nessun dato residuo.
+ * Il vincolo di esclusione che M1 deve garantire **non esiste** su un doppio in memoria: è una
+ * funzione del database. Testarlo su un finto significherebbe testare il finto, e il difetto
+ * arriverebbe in produzione intatto. Vale lo stesso per lo stato del veicolo di M2, che deve
+ * sopravvivere a un giro di persistenza e ricostruzione: su un doppio sopravviverebbe da solo,
+ * perché non andrebbe mai davvero via.
  *
- * Il modulo si raggiunge **solo** attraverso `PersistencePort`: nessun test conosce le entità
- * TypeORM né il `DataSource` del modulo (CLAUDE.md Regola 1, HARNESS.md §3). La connessione
+ * Ogni modulo si raggiunge **solo** attraverso la sua porta: nessun test conosce le entità TypeORM,
+ * il `DataSource` o il `FleetMonitor` concreto (CLAUDE.md Regola 1, HARNESS.md §3). La connessione
  * `openRawConnection()` che l'harness offre è un'altra cosa — è un client verso il *database*,
- * non verso il modulo, e serve ai test che devono decidere loro l'ordine con cui due transazioni
+ * non verso un modulo, e serve ai test che devono decidere loro l'ordine con cui due transazioni
  * si intrecciano.
  */
-export interface PersistenceHarness {
-  /** La porta: l'unico modo in cui i test parlano con il modulo. */
+export interface ApiHarness {
+  /** Le porte: l'unico modo in cui i test parlano con i moduli. */
   readonly persistence: PersistencePort;
+  readonly fleet: FleetMonitorPort;
+  readonly maintenance: MaintenancePort;
   /** L'orologio del modulo, sotto il controllo del test (CLAUDE.md Regola 3). */
   readonly clock: FakeClock;
   readonly databaseUrl: string;
@@ -62,9 +70,7 @@ const WARMUP_WINDOW: TimeWindow = {
   end: new Date('2026-01-01T01:00:00.000Z'),
 };
 
-export async function startPersistence(
-  now = '2026-05-04T09:00:00.000Z',
-): Promise<PersistenceHarness> {
+export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise<ApiHarness> {
   const container: StartedTestContainer = await new GenericContainer('postgres:16-alpine')
     .withEnvironment({ POSTGRES_USER: 'road', POSTGRES_PASSWORD: 'road', POSTGRES_DB: 'road' })
     .withExposedPorts(5432)
@@ -78,12 +84,16 @@ export async function startPersistence(
   process.env.DATABASE_URL = databaseUrl;
 
   const clock = new FakeClock(now);
-  const moduleRef: TestingModule = await Test.createTestingModule({ imports: [PersistenceModule] })
+  const moduleRef: TestingModule = await Test.createTestingModule({
+    imports: [PersistenceModule, FleetModule, MaintenanceModule],
+  })
     .overrideProvider(ClockPort)
     .useValue(clock)
     .compile();
 
   const persistence = moduleRef.get(PersistencePort);
+  const fleet = moduleRef.get(FleetMonitorPort);
+  const maintenance = moduleRef.get(MaintenancePort);
 
   // La connessione del modulo è pigra e porta con sé le migrazioni: la prima operazione vera è
   // ciò che crea lo schema. Va fatta qui, o il `reset()` del primo test troverebbe un database
@@ -102,6 +112,8 @@ export async function startPersistence(
 
   return {
     persistence,
+    fleet,
+    maintenance,
     clock,
     databaseUrl,
 

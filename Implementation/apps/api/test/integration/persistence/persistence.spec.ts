@@ -1,12 +1,13 @@
 import {
   RecordNotFoundError,
   ReservationConflictError,
+  StaleRecordError,
   advanceReservationWindow,
   immediateReservationWindow,
   type PersistencePort,
   type TimeWindow,
 } from '../../../src/persistence/persistence.port';
-import { startPersistence, type PersistenceHarness } from '../../support/postgres';
+import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
 /**
  * Il `PersistenceManager` su un Postgres vero (HARNESS.md §1, passo 9).
@@ -22,14 +23,14 @@ const DESTINATION = { lat: 45.4781, lon: 9.227 };
 /** L'orario a cui è fermo l'orologio finto dell'harness. */
 const NOW = new Date('2026-05-04T09:00:00.000Z');
 
-let harness: PersistenceHarness;
+let harness: ApiHarness;
 let persistence: PersistencePort;
 
 /** Avviare un container Postgres a freddo non sta nei 5 secondi di default dei hook di Jest. */
 const HOOK_TIMEOUT_MS = 180_000;
 
 beforeAll(async () => {
-  harness = await startPersistence(NOW.toISOString());
+  harness = await startApiHarness(NOW.toISOString());
   persistence = harness.persistence;
 }, HOOK_TIMEOUT_MS);
 
@@ -523,5 +524,43 @@ describe('Persistence: interrogazione', () => {
 
   it('su nessun risultato restituisce un elenco vuoto, non un errore', async () => {
     expect(await persistence.find('robotaxi', { where: { state: 'MAINTENANCE' } })).toEqual([]);
+  });
+});
+
+describe('[NFR4] Scrittura condizionata: update con `expected`', () => {
+  it('scrive se la riga soddisfa ancora la condizione', async () => {
+    await givenFleet(1);
+
+    const updated = await persistence.update(
+      'robotaxi',
+      'RT-01',
+      { state: 'ASSIGNED' },
+      { state: 'AVAILABLE' },
+    );
+
+    expect(updated.state).toBe('ASSIGNED');
+  });
+
+  it('non scrive nulla se la riga è cambiata dopo la lettura', async () => {
+    await givenFleet(1);
+
+    // Qualcun altro l'ha già portato altrove: è ciò che accade a chi legge, decide e poi scrive
+    // mentre una seconda replica del tier applicativo fa lo stesso (NFR3).
+    await persistence.update('robotaxi', 'RT-01', { state: 'MAINTENANCE' });
+
+    await expect(
+      persistence.update('robotaxi', 'RT-01', { state: 'ASSIGNED' }, { state: 'AVAILABLE' }),
+    ).rejects.toBeInstanceOf(StaleRecordError);
+
+    // Non «ha scritto e poi ha protestato»: la condizione sta nella stessa istruzione della
+    // scrittura, quindi la riga non è stata toccata affatto.
+    const [robotaxi] = await persistence.find('robotaxi', { where: { id: 'RT-01' } });
+    expect(robotaxi?.state).toBe('MAINTENANCE');
+  });
+
+  it('distingue una riga cambiata da una riga che non esiste', async () => {
+    await expect(
+      persistence.update('robotaxi', 'RT-99', { state: 'ASSIGNED' }, { state: 'AVAILABLE' }),
+    ).rejects.toBeInstanceOf(RecordNotFoundError);
   });
 });
