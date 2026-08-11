@@ -1,8 +1,15 @@
-// `pnpm db:migrate`.
+// `pnpm db:migrate` — applica le migrazioni TypeORM (MILESTONES.md §M1).
 //
-// Le migrazioni TypeORM (schema, estensione btree_gist, vincolo di esclusione sulle riserve)
-// sono il contenuto di M1: in M0 esiste solo il comando, perché il README lo cita fra i passi di
-// installazione e un comando che non esiste è peggio di uno che dice cosa manca.
+// Il lavoro vero sta in `apps/api/src/persistence/migrate.ts`: migrazioni e schema sono affari
+// del modulo `persistence`, e un file qui fuori che li raggiungesse dovrebbe importarne gli
+// interni, cioè attraversare un confine (CLAUDE.md Regola 1). Questo script compila e lancia
+// quell'entry point.
 
-console.log('Nessuna migrazione da applicare: lo schema arriva con M1 (MILESTONES.md §M1).');
-console.log('Il database di sviluppo si alza comunque con `docker compose up -d`.');
+import { join } from 'node:path';
+
+import { runOrExit, repoRoot } from '../lib/run.mjs';
+
+import { buildApi } from './build-api.mjs';
+
+buildApi();
+runOrExit('node', [join(repoRoot, 'apps', 'api', 'dist', 'persistence', 'migrate.js')]);

@@ -5,7 +5,14 @@ packages:
 # pnpm chiede esplicitamente quali pacchetti possono eseguire script di installazione.
 # esbuild e unrs-resolver ne hanno bisogno: scaricano/collegano il binario nativo usato
 # rispettivamente da Vite e da dependency-cruiser. @scarf/scarf invia solo telemetria.
+#
+# cpu-features, protobufjs e ssh2 arrivano da `testcontainers` (che parla con Docker): i loro
+# script compilano acceleratori nativi opzionali. Senza, la libreria funziona lo stesso in pura
+# JavaScript — e una compilazione nativa in più è una cosa in più che può rompersi in CI.
 allowBuilds:
   '@scarf/scarf': false
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
   unrs-resolver: true
