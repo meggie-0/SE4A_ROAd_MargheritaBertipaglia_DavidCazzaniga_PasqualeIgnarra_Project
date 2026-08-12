@@ -8,6 +8,7 @@ import {
   type RobotaxiSnapshot,
   type RobotaxiTransition,
 } from '../fleet/robotaxi.port';
+import { NotificationPort } from '../notifications/notification.port';
 import {
   PersistencePort,
   StaleRecordError,
@@ -50,6 +51,17 @@ export class MaintenanceManager extends MaintenancePort {
   constructor(
     private readonly persistence: PersistencePort,
     private readonly clock: ClockPort,
+    /**
+     * L'unico observer registrato sul `Robotaxi` che questo componente costruisce (DD §2.3.3).
+     *
+     * Il DD §1.3 dice che l'Observer serve a notificare «when the state of a vehicle changes», e non
+     * dice *da quale componente* la transizione sia stata innescata: un veicolo che entra in
+     * officina sparisce dalla mappa dell'operatore esattamente come uno che parte per una corsa, e
+     * una dashboard che lo scoprisse solo ricaricando la pagina violerebbe NFR2 tanto quanto
+     * l'altra. Questo modulo è il secondo posto che scrive la colonna di stato — il primo è
+     * `FleetMonitor` — quindi è il secondo che deve notificare.
+     */
+    private readonly notifications: NotificationPort,
   ) {
     super();
   }
@@ -120,20 +132,41 @@ export class MaintenanceManager extends MaintenancePort {
     transition: RobotaxiTransition,
     now: Date,
   ): Promise<RobotaxiSnapshot> {
+    robotaxi.registerObserver(this.notifications);
+
+    let updated;
     try {
-      const updated = await this.persistence.update(
+      updated = await this.persistence.update(
         'robotaxi',
         read.id,
         { state: robotaxi.currentState, updatedAt: now },
         { state: read.state },
       );
-      return robotaxiSnapshotOf(updated);
     } catch (error) {
       if (error instanceof StaleRecordError) {
         throw new ConcurrentTransitionError(read.id, read.state, transition);
       }
       throw error;
     }
+
+    /**
+     * Notificato **dopo** la scrittura, come in `FleetMonitor`: si racconta ciò che è successo.
+     *
+     * `rideRequestId` è nullo, e non per pigrizia — un veicolo entra ed esce dalla manutenzione solo
+     * da `AVAILABLE` (Figura 2.10, transizioni 1 e 2), quindi non ha una corsa in carico. L'evento
+     * non ha un passeggero destinatario: raggiunge la dashboard dell'operatore e non lascia una
+     * riga in `notification`, che il RASD §2.2.3 indirizza a un passeggero.
+     */
+    await robotaxi.notifyObservers({
+      kind: 'ROBOTAXI_STATE_CHANGED',
+      occurredAt: now,
+      robotaxiId: read.id,
+      from: read.state,
+      to: updated.state,
+      rideRequestId: null,
+    });
+
+    return robotaxiSnapshotOf(updated);
   }
 
   /**

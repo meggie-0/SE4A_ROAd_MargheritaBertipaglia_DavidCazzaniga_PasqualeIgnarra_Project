@@ -21,6 +21,7 @@ import {
 } from './advance-booking.port';
 import { destinationOf, pickupOf } from './ride-request-geo';
 import { RideAllocator } from './ride-allocator';
+import { RideJournal } from './ride-journal';
 
 /**
  * L'attivatore delle prenotazioni anticipate (DD §2.4, decisione D9).
@@ -41,6 +42,8 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
     private readonly fleet: FleetMonitorPort,
     private readonly allocator: RideAllocator,
     private readonly clock: ClockPort,
+    /** La corsa esiste già dalla prenotazione: qui si scrive chi la farà (M5). */
+    private readonly journal: RideJournal,
   ) {
     super();
   }
@@ -136,6 +139,10 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
 
     await this.persistence.update('booking', booking.id, { activatedAt: now, closedAt: now });
 
+    // Il veicolo riservato è ora assegnato: la corsa aperta da `submitAdvance` lo scopre adesso.
+    // Nessuna notifica parte di qui — l'ha già mandata il veicolo passando ad `ASSIGNED`.
+    await this.journal.attachRobotaxi(request.id, reserved.id);
+
     return {
       bookingId: booking.id,
       rideRequestId: request.id,
@@ -177,6 +184,8 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
         assignedRobotaxiId: null,
       });
       await this.persistence.update('booking', booking.id, { closedAt: now });
+      // Nessun veicolo potrà servirla: la corsa si chiude, ed è da lei che il passeggero lo sa.
+      await this.journal.advance(request.id, 'CANCELLED', now);
       return {
         bookingId: booking.id,
         rideRequestId: request.id,
@@ -192,6 +201,8 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
       activatedAt: now,
       closedAt: now,
     });
+
+    await this.journal.attachRobotaxi(request.id, result.robotaxiId);
 
     return {
       bookingId: booking.id,

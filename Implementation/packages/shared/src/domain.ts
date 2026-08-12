@@ -47,11 +47,42 @@ export const RIDE_REQUEST_STATUSES = [
 ] as const;
 export type RideRequestStatus = (typeof RIDE_REQUEST_STATUSES)[number];
 
+/**
+ * Ciclo di vita di una **corsa** (RASD §2.2.3, enum `RideStatus`).
+ *
+ * Non è un doppione di `RIDE_REQUEST_STATUSES`: quello è il ciclo di vita della *richiesta* — se il
+ * sistema l'ha accettata, rifiutata o annullata — mentre questo è il ciclo di vita del *servizio di
+ * trasporto* che una richiesta accettata genera (RASD §2.2.1: «An accepted Ride Request can generate
+ * one Ride»). Una richiesta `ACCEPTED` può avere una corsa `SCHEDULED`, `WAITING_FOR_PICKUP` o
+ * `IN_PROGRESS`, e sono tre cose diverse per il passeggero.
+ *
+ * `WAITING_FOR_PICKUP` è il veicolo **arrivato** al punto di ritiro che aspetta che il passeggero
+ * salga: la corrispondenza con la macchina a stati del veicolo (DD §2.6.3, Figura 2.10) è
+ * `ARRIVED`, non `ARRIVING`.
+ */
+export const RIDE_STATUSES = [
+  'SCHEDULED',
+  'WAITING_FOR_PICKUP',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'CANCELLED',
+] as const;
+export type RideStatus = (typeof RIDE_STATUSES)[number];
+
 /** Ciclo di vita di un evento di manutenzione (RASD §2.2.3, enum `MaintenanceStatus`). */
 export const MAINTENANCE_STATUSES = ['SCHEDULED', 'ONGOING', 'COMPLETED', 'CANCELLED'] as const;
 export type MaintenanceStatus = (typeof MAINTENANCE_STATUSES)[number];
 
-/** Tipi di notifica (RASD §2.2.3, enum `NotificationType`). Il trasporto arriva con M5. */
+/**
+ * Tipi di notifica (RASD §2.2.3, enum `NotificationType`).
+ *
+ * Sono le categorie che il RASD assegna a una `Notification`, e la `Notification` del RASD è
+ * indirizzata a un **passeggero** (Figura 2.2: `Notification "0..*" --> "1" Passenger : sent to`).
+ * Gli eventi di flotta che nessuna corsa riguarda — un veicolo che entra in manutenzione, uno che
+ * comincia a riposizionarsi — raggiungono comunque la dashboard dell'operatore, ma non sono di
+ * questo insieme e non lasciano una riga in `notification`. È il motivo per cui il campo `type`
+ * della notifica spedita sul canale push è **annullabile**: vedi `notificationPushSchema`.
+ */
 export const NOTIFICATION_TYPES = [
   'VEHICLE_ASSIGNED',
   'VEHICLE_ARRIVING',

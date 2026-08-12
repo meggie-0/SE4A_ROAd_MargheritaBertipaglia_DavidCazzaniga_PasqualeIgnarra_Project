@@ -13,6 +13,7 @@ import {
 import { ClockPort } from '../platform/clock.port';
 
 import { RideAllocator } from './ride-allocator';
+import { RideJournal } from './ride-journal';
 import {
   RideNotCancellableError,
   RideRequestNotFoundError,
@@ -34,10 +35,11 @@ import {
  * controllo di sovrapposizione: le tre cose stanno rispettivamente in `allocation`, in `fleet` e
  * nel vincolo di esclusione del database, ed è questo che rende il componente sostituibile.
  *
- * La notifica al passeggero, che le Figure 2.5 e 2.8 mettono in coda a ogni ramo, **non c'è
- * ancora**: `NotificationPort` nasce con M5, insieme all'Observer e al trasporto push. Aggiungere
- * qui una scrittura diretta sulla tabella `notification` significherebbe dare a `rides` una
- * responsabilità che il DD §2.2 attribuisce al `NotificationManager`, e M5 dovrebbe disfarla.
+ * La notifica al passeggero che le Figure 2.5 e 2.8 mettono in coda a ogni ramo arriva con M5, e
+ * **non passa di qui**: questo componente apre la corsa attraverso `RideJournal`, e a notificare è
+ * la `Ride` — un `Subject` del DD §2.3.3 — verso l'unico observer registrato. `rides` non scrive una
+ * riga sulla tabella `notification`, che è una responsabilità che il DD §2.2 assegna al
+ * `NotificationManager` e a nessun altro.
  */
 @Injectable()
 export class RideRequestManager extends RideRequestPort {
@@ -46,6 +48,8 @@ export class RideRequestManager extends RideRequestPort {
     private readonly fleet: FleetMonitorPort,
     private readonly allocator: RideAllocator,
     private readonly clock: ClockPort,
+    /** Apre e chiude la `Ride`, il secondo soggetto dell'Observer (M5, DD §2.3.3). */
+    private readonly journal: RideJournal,
   ) {
     super();
   }
@@ -82,6 +86,10 @@ export class RideRequestManager extends RideRequestPort {
     const accepted = await this.persistence.update('ride_request', request.id, {
       status: 'ACCEPTED',
     });
+
+    // La richiesta accettata genera la corsa (RASD §2.2.1). Il veicolo è già assegnato, quindi la
+    // corsa nasce sapendo chi la farà.
+    await this.journal.open(accepted, result.robotaxi.id, now);
 
     return {
       accepted: true,
@@ -166,6 +174,10 @@ export class RideRequestManager extends RideRequestPort {
       status: 'ACCEPTED',
     });
 
+    // La corsa nasce **senza veicolo**: quello è riservato, non assegnato, e lo diventerà
+    // all'attivazione (decisione D9). È l'attivatore a scrivercelo.
+    await this.journal.open(accepted, null, now);
+
     return {
       accepted: true,
       request: accepted,
@@ -221,6 +233,11 @@ export class RideRequestManager extends RideRequestPort {
       status: 'CANCELLED',
       assignedRobotaxiId: null,
     });
+
+    // La corsa si chiude insieme alla richiesta, e la notifica parte da lei: il passeggero deve
+    // vedere l'annullamento anche quando nessun veicolo era stato assegnato — nel qual caso il
+    // `Robotaxi` non ha nessuna transizione da raccontare, perché non si è mosso.
+    await this.journal.advance(rideRequestId, 'CANCELLED', now);
 
     return {
       request: cancelled,

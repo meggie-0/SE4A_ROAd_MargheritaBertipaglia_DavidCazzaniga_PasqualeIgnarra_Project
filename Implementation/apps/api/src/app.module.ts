@@ -8,6 +8,7 @@ import { ExternalModule } from './external/external.module';
 import { FleetModule } from './fleet/fleet.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PersistenceModule } from './persistence/persistence.module';
 import { PlatformModule } from './platform/platform.module';
 import { RidesModule } from './rides/rides.module';
@@ -47,6 +48,8 @@ import { RidesModule } from './rides/rides.module';
     PersistenceModule,
     ExternalModule,
     AuthModule,
+    // `notifications` precede `fleet` e `rides`: è l'observer, e i soggetti dipendono da lui.
+    NotificationsModule,
     FleetModule,
     MaintenanceModule,
     AllocationModule,

@@ -6,6 +6,7 @@ import { DemandSampleEntity } from './demand-sample.entity';
 import { MaintenanceRecordEntity } from './maintenance-record.entity';
 import { NotificationEntity } from './notification.entity';
 import { ReservationEntity } from './reservation.entity';
+import { RideEntity } from './ride.entity';
 import { RideRequestEntity } from './ride-request.entity';
 import { RobotaxiEntity } from './robotaxi.entity';
 import { SystemModeEntity } from './system-mode.entity';
@@ -18,6 +19,7 @@ export { DemandSampleEntity } from './demand-sample.entity';
 export { MaintenanceRecordEntity } from './maintenance-record.entity';
 export { NotificationEntity } from './notification.entity';
 export { ReservationEntity } from './reservation.entity';
+export { RideEntity } from './ride.entity';
 export { RideRequestEntity } from './ride-request.entity';
 export { RobotaxiEntity } from './robotaxi.entity';
 export { SystemModeEntity, SYSTEM_MODE_ID } from './system-mode.entity';
@@ -37,6 +39,7 @@ export const ENTITY_BY_KIND = {
   zone: ZoneEntity,
   robotaxi: RobotaxiEntity,
   ride_request: RideRequestEntity,
+  ride: RideEntity,
   booking: BookingEntity,
   robotaxi_reservation: ReservationEntity,
   demand_sample: DemandSampleEntity,

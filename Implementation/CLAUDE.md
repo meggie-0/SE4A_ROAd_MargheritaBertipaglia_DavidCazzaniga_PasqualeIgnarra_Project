@@ -84,14 +84,14 @@ confine, stai sbagliando qualcosa.
 
 | Modulo | Porta | Operazioni (DD §2.2) |
 |---|---|---|
-| `auth` | `AuthPort` | `register`, `authenticate`, `updateProfile` |
-| `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce` |
+| `auth` | `AuthPort`, `access-control.port.ts` (`TokenVerifierPort`) | `register`, `authenticate`, `updateProfile`; `verify` |
+| `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort`, `RideLifecyclePort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce`; `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide` |
 | `allocation` | `AllocationPort` | `allocate`, `setActiveStrategy`, `getActiveStrategy` |
 | `mode` | `ModePort` | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode` |
-| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `releaseAssignment`, `requestRebalancing` |
+| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`, `releaseAssignment`, `requestRebalancing` |
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
-| `notifications` | `NotificationPort` | `update` |
+| `notifications` | `NotificationPort`, `session.port.ts` (`NotificationSessionPort`) | `update`; `registerSession`, `removeSession`, `registeredSessions` |
 | `persistence` | `PersistencePort` | `create`, `update`, `find`, `filterAvailable`, `reserve` |
 | `external` | `ExternalServicesPort` | `getETA`, `getTraffic`, `getDemandData`, `commandRoute`, `readTelemetry` |
 | `platform` | `ClockPort`, `RandomPort` | `now`, `next` |
@@ -122,6 +122,11 @@ registrato su di loro e implementa `update(event)`. I subscriber di secondo live
 espliciti (`PassengerAppSession`, `OperatorDashboardSession`), registrati alla connessione e
 deregistrati alla disconnessione. L'`EventEmitter` di Nest può fare da trasporto, ma non sostituisce
 le classi observer. Le due relazioni hanno vite diverse: vedi DD §2.3.3.
+
+`notifyObservers()` si chiama **dopo** aver persistito la transizione, e a chiamarlo è il componente
+che ha scritto — non la classe di stato. Una transizione legale in lettura può non esserlo più in
+scrittura (`ConcurrentTransitionError`), e una scrittura si disfa mentre una notifica no: si notifica
+ciò che è successo, non ciò che si stava per fare (DD §2.3.3, decisione D39).
 
 ---
 
