@@ -8,9 +8,11 @@ import { ExternalModule } from './external/external.module';
 import { FleetModule } from './fleet/fleet.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { ModeModule } from './mode/mode.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PersistenceModule } from './persistence/persistence.module';
 import { PlatformModule } from './platform/platform.module';
+import { RebalancingModule } from './rebalancing/rebalancing.module';
 import { RidesModule } from './rides/rides.module';
 
 /**
@@ -54,6 +56,11 @@ import { RidesModule } from './rides/rides.module';
     MaintenanceModule,
     AllocationModule,
     RidesModule,
+    // `mode` e `rebalancing` chiudono l'ordine bottom-up del DD §5.2: sono la logica di controllo
+    // di livello più alto, e ciascuno poggia su moduli già integrati — `mode` su `allocation`,
+    // `rebalancing` su `fleet`.
+    ModeModule,
+    RebalancingModule,
     GatewayModule,
   ],
 })

@@ -258,7 +258,11 @@ aggiunta con una migrazione, insieme all'enum in `packages/shared`.
 Le fasce orarie di `demand_sample` sono in **ora locale di Milano** (Europe/Rome), non in UTC: i
 profili di domanda descrivono fenomeni dell'ora locale. `analyzeDemand` deve convertire l'istante
 prima di cercare la fascia.
-`RebalancingScheduler` espone `runOnce()` chiamato da `@Cron` in produzione e dai test direttamente.
+`RebalancingScheduler` espone `runOnce()`, chiamato dal `@Cron` in produzione. **I test guidano
+invece `RebalancingPort.rebalance()`**, che è già pubblica e a cui quel metodo non aggiunge nulla se
+non registrare gli errori: darle un secondo nome su una porta significherebbe pubblicare due volte la
+stessa operazione (DD, decisione D49). `TrafficMonitor` è il caso opposto e ha la sua porta, perché
+legge una sorgente esterna e traduce — comportamento che nessun'altra operazione realizza.
 
 **Metrica e ordinamento** (DD §2.2.1, decisione D12), obbligatori perché i test siano stabili:
 

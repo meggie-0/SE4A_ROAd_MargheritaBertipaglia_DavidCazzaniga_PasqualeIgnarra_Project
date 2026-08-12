@@ -172,5 +172,9 @@ function serialise(delivery: NotificationDelivery): NotificationPush {
     robotaxiId: delivery.robotaxiId,
     robotaxiState: delivery.robotaxiState,
     rideStatus: delivery.rideStatus,
+    strategy: delivery.strategy,
+    mode: delivery.mode,
+    trafficLevel: delivery.trafficLevel,
+    zoneId: delivery.zoneId,
   };
 }

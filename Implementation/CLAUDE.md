@@ -87,13 +87,13 @@ confine, stai sbagliando qualcosa.
 | `auth` | `AuthPort`, `access-control.port.ts` (`TokenVerifierPort`) | `register`, `authenticate`, `updateProfile`; `verify` |
 | `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort`, `RideLifecyclePort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce`; `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide` |
 | `allocation` | `AllocationPort` | `allocate`, `setActiveStrategy`, `getActiveStrategy` |
-| `mode` | `ModePort` | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode` |
+| `mode` | `ModePort`, `traffic-monitor.port.ts` (`TrafficMonitorPort`) | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode`; `runOnce` |
 | `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`, `releaseAssignment`, `requestRebalancing` |
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
 | `notifications` | `NotificationPort`, `session.port.ts` (`NotificationSessionPort`) | `update`; `registerSession`, `removeSession`, `registeredSessions` |
 | `persistence` | `PersistencePort` | `create`, `update`, `find`, `filterAvailable`, `reserve` |
-| `external` | `ExternalServicesPort` | `getETA`, `getTraffic`, `getDemandData`, `commandRoute`, `readTelemetry` |
+| `external` | `ExternalServicesPort` | `getETA`, `getTraffic`; `getDemandData`, `commandRoute`, `readTelemetry` arrivano con M7 |
 | `platform` | `ClockPort`, `RandomPort` | `now`, `next` |
 | `gateway` | — | Controller REST e WebSocket. Importa solo porte. |
 

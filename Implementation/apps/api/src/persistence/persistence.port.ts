@@ -2,6 +2,7 @@ import type {
   ControlMode,
   MaintenanceStatus,
   NotificationType,
+  RebalancingStatus,
   RideRequestKind,
   RideRequestStatus,
   RideStatus,
@@ -287,6 +288,30 @@ export interface DemandEventRecord {
   readonly multiplier: number;
 }
 
+/**
+ * Un'azione di riposizionamento: il veicolo `robotaxiId` è stato mandato verso `targetZoneId`
+ * (RASD §2.2.3 `RebalancingAction`, R11, G9).
+ *
+ * È il **giornale** del riposizionamento, non la sua sede autorevole: che il veicolo si stia
+ * spostando lo dice la colonna di stato di `robotaxi`, che vale `REBALANCING` (transizione 8), e
+ * quella la scrive `fleet`. Qui resta perché la Figura 2.7 del DD prevede un piano persistito e
+ * perché senza una riga non ci sarebbe modo di dire, a posteriori, *verso dove* un veicolo era
+ * stato mandato: la zona di destinazione non è una colonna di `robotaxi` e non passa da
+ * `requestRebalancing()`.
+ *
+ * Una riga per veicolo mandato. La Figura 2.2 del RASD dà a `RebalancingAction` una molteplicità
+ * `1..*` verso `Robotaxi`, che una riga per veicolo soddisfa nel caso minimo; l'alternativa —
+ * un'azione con più veicoli — avrebbe richiesto una tabella di collegamento per rappresentare un
+ * raggruppamento che nessuna operazione del sistema interroga.
+ */
+export interface RebalancingActionRecord {
+  readonly id: string;
+  readonly robotaxiId: string;
+  readonly targetZoneId: string;
+  readonly status: RebalancingStatus;
+  readonly createdAt: Date;
+}
+
 /** Un periodo di indisponibilità del veicolo (RASD `MaintenanceEvent`, R9). */
 export interface MaintenanceRecord {
   readonly id: string;
@@ -351,6 +376,7 @@ export interface PersistedRecords {
   readonly demand_sample: DemandSampleRecord;
   readonly demand_event: DemandEventRecord;
   readonly maintenance_record: MaintenanceRecord;
+  readonly rebalancing_action: RebalancingActionRecord;
   readonly system_mode: SystemModeRecord;
   readonly notification: NotificationRecord;
 }
@@ -377,6 +403,7 @@ export type GeneratedIdKind =
   | 'demand_sample'
   | 'demand_event'
   | 'maintenance_record'
+  | 'rebalancing_action'
   | 'notification';
 
 /** Le marche temporali che il manager riempie da `ClockPort` quando il chiamante non le indica. */
