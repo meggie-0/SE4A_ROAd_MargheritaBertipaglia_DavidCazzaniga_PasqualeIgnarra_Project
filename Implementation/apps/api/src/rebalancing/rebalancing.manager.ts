@@ -31,8 +31,13 @@ import {
  * Le due operazioni condividono l'analisi e divergono su cosa ne fanno: `analyzeDemand()` la
  * restituisce e basta, `rebalance()` la usa per decidere. Il calcolo sta in `demand-model.ts`, che è
  * fatto di funzioni pure — qui dentro c'è solo la raccolta degli ingressi e l'esecuzione delle
- * decisioni. La divisione è quella che rende verificabile la metrica della decisione D12 senza un
- * database, e la lettura delle righe giuste senza rifare la metrica.
+ * decisioni.
+ *
+ * La divisione serve a **leggere** la metrica della decisione D12 in un file dove non c'è I/O, non a
+ * verificarla lì: `demand-model.ts` non è una porta, quindi nessun test può importarlo (HARNESS.md
+ * §3) e la metrica si verifica attraverso `analyzeDemand()`, con Postgres vero. È il prezzo del
+ * confine fra moduli, ed è quello giusto da pagare — un test che importasse l'interno di questo
+ * modulo smetterebbe di dimostrare che il modulo è sostituibile.
  *
  * **La zona di un veicolo si calcola, non si legge.** `robotaxi.zoneId` esiste in tabella ma nessun
  * componente lo aggiorna quando un veicolo si muove: prenderlo per buono significherebbe
@@ -76,7 +81,9 @@ export class RebalancingManager extends RebalancingPort {
     }
 
     const dispatched: RebalancingDispatch[] = [];
-    const sent = new Set<string>();
+    // I veicoli che questo ciclo non può più usare: già mandati, oppure sfuggiti a una corsa fra la
+    // lettura e la scrittura. Vale per l'intero ciclo, non per la singola zona.
+    const unavailable = new Set<string>();
 
     // Le zone in deficit, dalla più scoperta (decisione D12). `rankByDeficit` rompe i pareggi
     // sull'`id` crescente, quindi due esecuzioni sullo stesso stato mandano gli stessi veicoli.
@@ -86,7 +93,13 @@ export class RebalancingManager extends RebalancingPort {
       const centroid = zoneById.get(target.zoneId);
       if (centroid === undefined) continue;
 
-      const dispatch = await this.sendNearestIdle(centroid, idleByZone, spare, sent, analyzedAt);
+      const dispatch = await this.sendNearestIdle(
+        centroid,
+        idleByZone,
+        spare,
+        unavailable,
+        analyzedAt,
+      );
       if (dispatch !== null) dispatched.push(dispatch);
     }
 
@@ -104,19 +117,21 @@ export class RebalancingManager extends RebalancingPort {
    * inattivi e questa scrittura, quel veicolo ha preso una corsa. È l'esito normale di un sistema
    * con più scrittori (NFR1), non un guasto, e la corsa di un passeggero vale più di un
    * riposizionamento previsto.
+   *
+   * `unavailable` è **condiviso fra le zone di un ciclo** e non locale a questa chiamata: un veicolo
+   * che ha appena preso una corsa lo ha preso per tutte le zone, e riprovarci una volta per ogni
+   * zona in deficit costerebbe una transizione fallita a testa senza cambiare nessun esito.
    */
   private async sendNearestIdle(
     target: ZoneRecord,
     idleByZone: ReadonlyMap<string, readonly RobotaxiSnapshot[]>,
     spare: Map<string, number>,
-    sent: Set<string>,
+    unavailable: Set<string>,
     /** L'istante dell'analisi: tutte le righe di un ciclo lo condividono. */
     analyzedAt: Date,
   ): Promise<RebalancingDispatch | null> {
-    const excluded = new Set(sent);
-
     for (;;) {
-      const candidate = nearestSpareRobotaxi(target, idleByZone, spare, excluded);
+      const candidate = nearestSpareRobotaxi(target, idleByZone, spare, unavailable);
       if (candidate === null) return null;
 
       try {
@@ -126,14 +141,17 @@ export class RebalancingManager extends RebalancingPort {
           this.logger.log(
             `Il robotaxi ${candidate.robotaxi.id} non è più inattivo: si passa al successivo.`,
           );
-          excluded.add(candidate.robotaxi.id);
+          unavailable.add(candidate.robotaxi.id);
           continue;
         }
         throw error;
       }
 
-      sent.add(candidate.robotaxi.id);
-      spare.set(candidate.fromZoneId, (spare.get(candidate.fromZoneId) ?? 1) - 1);
+      // Mandato: non è più disponibile per nessun'altra zona di questo ciclo, e la zona che lo ha
+      // ceduto ha un veicolo in meno da cedere. `spare` ha una voce per ogni zona di `idleByZone`,
+      // e il candidato viene da una di quelle: la chiave esiste sempre.
+      unavailable.add(candidate.robotaxi.id);
+      spare.set(candidate.fromZoneId, (spare.get(candidate.fromZoneId) ?? 0) - 1);
 
       /**
        * La riga di giornale si scrive **dopo** la transizione, e non prima.
@@ -265,6 +283,14 @@ function groupByZone(
  * Funzione pura: riceve gli insiemi già costruiti e non tocca né orologio né database. È la parte
  * della scelta che vale la pena poter leggere tutta insieme — chi può partire, da dove, e chi vince
  * a parità di distanza.
+ *
+ * **I candidati si ordinano per `id` prima di cercare il minimo**, e questa riga è la ragione per cui
+ * l'ordinamento è totale. Senza, l'esito a parità di distanza dipenderebbe dall'ordine con cui
+ * `idleByZone` restituisce le sue chiavi — cioè dall'ordine in cui le zone sono state incontrate
+ * costruendo la mappa, che non è l'ordine degli `id` dei veicoli. Due veicoli equidistanti in **zone
+ * diverse** verrebbero confrontati nell'ordine sbagliato, e a vincere sarebbe quello della zona
+ * inserita per prima invece di quello con l'`id` minore. Ordinando prima, il primo minimo stretto
+ * che si incontra è già quello giusto e non serve nessun confronto sui pareggi.
  */
 function nearestSpareRobotaxi(
   target: ZoneRecord,
@@ -272,8 +298,7 @@ function nearestSpareRobotaxi(
   spare: ReadonlyMap<string, number>,
   excluded: ReadonlySet<string>,
 ): { robotaxi: RobotaxiSnapshot; fromZoneId: string } | null {
-  let best: { robotaxi: RobotaxiSnapshot; fromZoneId: string } | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  const eligible: { robotaxi: RobotaxiSnapshot; fromZoneId: string }[] = [];
 
   for (const [zoneId, robotaxis] of idleByZone) {
     // Una zona in deficit non cede veicoli, e nemmeno la zona di destinazione: prendere da lì
@@ -282,14 +307,23 @@ function nearestSpareRobotaxi(
 
     for (const robotaxi of robotaxis) {
       if (excluded.has(robotaxi.id)) continue;
+      eligible.push({ robotaxi, fromZoneId: zoneId });
+    }
+  }
 
-      const distance = haversineKm({ lat: robotaxi.lat, lon: robotaxi.lon }, target);
-      const closer = distance < bestDistance;
-      const tie = distance === bestDistance && best !== null && robotaxi.id < best.robotaxi.id;
-      if (closer || tie) {
-        best = { robotaxi, fromZoneId: zoneId };
-        bestDistance = distance;
-      }
+  eligible.sort((left, right) =>
+    left.robotaxi.id < right.robotaxi.id ? -1 : left.robotaxi.id > right.robotaxi.id ? 1 : 0,
+  );
+
+  let best: { robotaxi: RobotaxiSnapshot; fromZoneId: string } | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of eligible) {
+    const { lat, lon } = candidate.robotaxi;
+    const distance = haversineKm({ lat, lon }, target);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
     }
   }
 

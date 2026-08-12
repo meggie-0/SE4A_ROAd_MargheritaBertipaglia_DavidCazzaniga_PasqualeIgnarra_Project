@@ -4,8 +4,8 @@ import { z } from 'zod';
  * Il contratto pubblico dell'**analisi della domanda** (RASD R10, R11, G9; DD §2.2.1, decisione D12).
  *
  * R10 chiede che il sistema «identifichi le zone ad alta domanda»: è un risultato che esiste solo
- * se qualcuno lo può guardare, e chi lo guarda è l'operatore — il DD §2.11 disegna l'arco
- * `APIGateway → RebalancingManager` proprio per questo. Il riposizionamento vero e proprio non ha
+ * se qualcuno lo può guardare, e chi lo guarda è l'operatore — la vista di deployment del DD §2.5
+ * disegna l'arco `APIGateway → RebalancingManager` proprio per questo (decisione D55). Il riposizionamento vero e proprio non ha
  * un endpoint: lo innesca `RebalancingScheduler` e lo si osserva sul canale push, come ogni altro
  * movimento di flotta (R7, G8).
  */

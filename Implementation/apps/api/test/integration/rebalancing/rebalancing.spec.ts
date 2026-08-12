@@ -64,13 +64,19 @@ async function givenEvent(
  * destinazione, che è la regola su cui `rebalance()` sceglie.
  */
 async function givenIdleRobotaxi(id: string, lonOffset: number): Promise<void> {
-  await harness.persistence.create('robotaxi', {
-    id,
-    state: 'AVAILABLE',
-    lat: DUOMO.lat,
-    lon: DUOMO.lon + lonOffset,
-    zoneId: DUOMO.id,
-  });
+  await givenIdleRobotaxiAt(id, DUOMO.lat, DUOMO.lon + lonOffset);
+}
+
+/**
+ * Un veicolo inattivo a coordinate esatte.
+ *
+ * `zoneId` resta nullo di proposito: la zona di appartenenza non si legge da quella colonna — nessun
+ * componente la aggiorna quando un veicolo si muove — ma si calcola dalle coordinate con la regola
+ * della decisione D10. Lasciarla nulla è il modo di rendere il test cieco a una regressione che
+ * tornasse a fidarsi della colonna.
+ */
+async function givenIdleRobotaxiAt(id: string, lat: number, lon: number): Promise<void> {
+  await harness.persistence.create('robotaxi', { id, state: 'AVAILABLE', lat, lon, zoneId: null });
 }
 
 /** Lo stato persistito di un veicolo. */
@@ -189,7 +195,7 @@ describe('[R11][G9] Proactive Fleet Rebalancing', () => {
    * I tre veicoli stanno tutti nel centro ma a longitudini diverse: `RT-03` è il più a ovest,
    * quindi il più vicino a San Siro; fra i due rimasti `RT-01` è il più vicino ai Navigli.
    */
-  async function givenUnbalancedCity(): Promise<void> {
+  async function givenMatchAtSanSiro(): Promise<void> {
     await givenBaseDemand(SAN_SIRO.id, 0.5);
     await givenBaseDemand(NAVIGLI.id, 2);
     await givenBaseDemand(DUOMO.id, 1);
@@ -197,6 +203,10 @@ describe('[R11][G9] Proactive Fleet Rebalancing', () => {
       startsAt: '2026-05-04T18:00:00.000Z',
       endsAt: '2026-05-04T22:00:00.000Z',
     });
+  }
+
+  async function givenUnbalancedCity(): Promise<void> {
+    await givenMatchAtSanSiro();
     await givenIdleRobotaxi('RT-01', 0);
     await givenIdleRobotaxi('RT-02', 0.005);
     await givenIdleRobotaxi('RT-03', -0.005);
@@ -265,6 +275,67 @@ describe('[R11][G9] Proactive Fleet Rebalancing', () => {
     expect(dashboard.robotaxiStates()).toEqual(['REBALANCING', 'REBALANCING']);
   });
 
+  it('ordina per deficit anche quando il deficit contraddice la domanda attesa', async () => {
+    /**
+     * Il caso in cui i due ordinamenti **divergono**, che è il solo modo di dimostrare la D12.
+     *
+     * - `duomo`: domanda attesa 3 con 2 veicoli fermi → deficit **+1**, e niente da cedere;
+     * - `san-siro`: domanda attesa 3 con nessun veicolo → deficit **+3**;
+     * - `navigli`: domanda attesa 0 con un veicolo fermo → deficit −1, un veicolo da cedere.
+     *
+     * Per domanda attesa `duomo` viene **prima** di `san-siro` (pari merito, pareggio rotto
+     * sull'identificatore crescente); per deficit viene dopo. C'è un solo veicolo da mandare: se il
+     * ciclo ordinasse per domanda attesa finirebbe al Duomo, che ha già due veicoli, invece che a
+     * San Siro, che non ne ha nessuno. Con i dataset in cui i due ordini coincidono la differenza
+     * non è osservabile, ed è per questo che serve questo caso.
+     */
+    await givenBaseDemand(DUOMO.id, 3);
+    await givenBaseDemand(SAN_SIRO.id, 3);
+    await givenBaseDemand(NAVIGLI.id, 0);
+    await givenIdleRobotaxi('RT-01', 0);
+    await givenIdleRobotaxi('RT-02', 0.005);
+    // Il solo veicolo cedibile, ai Navigli.
+    await harness.persistence.create('robotaxi', {
+      id: 'RT-03',
+      state: 'AVAILABLE',
+      lat: NAVIGLI.lat,
+      lon: NAVIGLI.lon,
+      zoneId: NAVIGLI.id,
+    });
+
+    const { zones } = await harness.rebalancing.analyzeDemand();
+    expect(zones.map((zone) => zone.zoneId)).toEqual(['duomo', 'san-siro', 'navigli']);
+
+    const plan = await harness.rebalancing.rebalance();
+
+    expect(plan.dispatched).toEqual([
+      { robotaxiId: 'RT-03', targetZoneId: 'san-siro', fromZoneId: 'navigli' },
+    ]);
+  });
+
+  it('una zona trattiene i veicoli che le servono, arrotondando per eccesso', async () => {
+    /**
+     * La D12 dice che una zona cede il **surplus**, ma la domanda attesa è frazionaria e quanto una
+     * zona trattenga dipende da come si arrotonda. Con `1,2` corse attese e due veicoli fermi,
+     * arrotondando per eccesso la zona ne trattiene due e non cede nulla; per difetto ne
+     * trattenerebbe uno e cederebbe l'altro — scoprendo una zona per riempirne un'altra, che è lo
+     * scambio che il riposizionamento dovrebbe evitare.
+     *
+     * In tutti i dataset in cui la domanda attesa è intera i due arrotondamenti coincidono, quindi
+     * senza un valore frazionario la decisione non è verificata.
+     */
+    await givenBaseDemand(DUOMO.id, 1.2);
+    await givenBaseDemand(SAN_SIRO.id, 4);
+    await givenIdleRobotaxi('RT-01', 0);
+    await givenIdleRobotaxi('RT-02', 0.005);
+
+    const plan = await harness.rebalancing.rebalance();
+
+    expect(plan.dispatched).toEqual([]);
+    expect(await stateOf('RT-01')).toBe('AVAILABLE');
+    expect(await stateOf('RT-02')).toBe('AVAILABLE');
+  });
+
   it('a parità di distanza vince il robotaxi con l identificatore minore', async () => {
     await givenBaseDemand(SAN_SIRO.id, 4);
     await givenBaseDemand(DUOMO.id, 0);
@@ -283,6 +354,41 @@ describe('[R11][G9] Proactive Fleet Rebalancing', () => {
     // Senza questa regola l'esito dipenderebbe dall'ordine con cui il database ha restituito le
     // righe, e il test fallirebbe una volta ogni tanto senza che nulla sia rotto.
     expect(plan.dispatched.map((one) => one.robotaxiId)).toEqual(['RT-02']);
+  });
+
+  it('a parità di distanza vince l identificatore minore anche fra zone diverse', async () => {
+    /**
+     * Il pareggio che il raggruppamento per zona può rovinare, e la ragione per cui i candidati si
+     * ordinano per `id` prima di cercare il minimo.
+     *
+     * I veicoli inattivi arrivano già in ordine di `id`, ma vengono **raggruppati per zona**: la
+     * mappa che ne risulta ha le chiavi nell'ordine in cui le zone sono state incontrate, non in
+     * quello degli `id`. Qui `RT-01` e `RT-03` stanno nella stessa zona a ovest e `RT-02` in quella
+     * a est: la zona ovest entra per prima nella mappa (la incontra `RT-01`), quindi scorrendo la
+     * mappa `RT-03` viene visitato **prima** di `RT-02`, pur avendo l'identificatore maggiore.
+     * Senza l'ordinamento esplicito a vincere sarebbe `RT-03`.
+     *
+     * Le tre longitudini non sono scelte a caso: `9.068` e `9.132` distano da `9.100` esattamente
+     * lo stesso numero in virgola mobile, quindi il pareggio è un vero pareggio e non due valori
+     * che si somigliano.
+     */
+    const TARGET = { id: 'zona-obiettivo', name: 'Zona obiettivo', lat: 45.4781, lon: 9.1 };
+    const OVEST = { id: 'zona-ovest', name: 'Zona ovest', lat: 45.4781, lon: 9.066 };
+    const EST = { id: 'zona-est', name: 'Zona est', lat: 45.4781, lon: 9.134 };
+    for (const zone of [TARGET, OVEST, EST]) await harness.persistence.create('zone', zone);
+
+    await givenBaseDemand(TARGET.id, 5);
+
+    // `RT-01` sta a ovest ed è lontano: serve solo a far entrare la zona ovest nella mappa per prima.
+    await givenIdleRobotaxiAt('RT-01', 45.4781, 9.04);
+    await givenIdleRobotaxiAt('RT-02', 45.4781, 9.132);
+    await givenIdleRobotaxiAt('RT-03', 45.4781, 9.068);
+
+    const plan = await harness.rebalancing.rebalance();
+
+    expect(plan.dispatched).toEqual([
+      { robotaxiId: 'RT-02', targetZoneId: TARGET.id, fromZoneId: EST.id },
+    ]);
   });
 
   it('un veicolo che non è inattivo non viene mai scelto', async () => {
@@ -329,16 +435,25 @@ describe('[R11][G9] Proactive Fleet Rebalancing', () => {
     expect(await stateOf('RT-01')).toBe('AVAILABLE');
   });
 
-  it('è deterministico: due cicli sullo stesso stato scelgono gli stessi veicoli', async () => {
+  it("l'esito non dipende dall'ordine in cui le righe sono state scritte", async () => {
     await givenUnbalancedCity();
-
     const first = await harness.rebalancing.rebalance();
 
-    // Si riporta la città allo stato di partenza e si ripete: l'esito dev'essere identico, o
-    // nessun test su questo componente sarebbe stabile.
+    /**
+     * Il secondo giro ricostruisce lo stesso stato **inserendo i veicoli in ordine inverso**.
+     *
+     * Ripetere l'inserimento nello stesso ordine avrebbe confrontato due esecuzioni della stessa
+     * funzione sugli stessi ingressi, cioè una cosa vera per costruzione. Ciò che vale la pena
+     * verificare è l'indipendenza dall'ordine delle righe: è da lì che l'instabilità arriverebbe,
+     * perché nulla obbliga il database a restituirle sempre come le ha ricevute.
+     */
     await harness.reset();
     await givenZones();
-    await givenUnbalancedCity();
+    await givenMatchAtSanSiro();
+    await givenIdleRobotaxi('RT-03', -0.005);
+    await givenIdleRobotaxi('RT-02', 0.005);
+    await givenIdleRobotaxi('RT-01', 0);
+
     const second = await harness.rebalancing.rebalance();
 
     expect(second.dispatched).toEqual(first.dispatched);

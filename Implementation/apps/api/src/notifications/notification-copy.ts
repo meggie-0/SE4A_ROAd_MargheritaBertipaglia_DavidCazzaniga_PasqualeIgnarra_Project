@@ -128,6 +128,21 @@ function strategyMessage(
 }
 
 /**
+ * Il testo di un cambio di **modo** a strategia invariata.
+ *
+ * Dice esplicitamente che la strategia **resta** quella che era, ed è tutto il punto di questo
+ * messaggio: è il caso in cui l'operatore rientra in Auto con il traffico nella banda morta, e ciò
+ * che deve leggere è «il sistema è automatico e continua con questa politica» — non «ho commutato»,
+ * che sarebbe falso.
+ */
+function modeMessage(mode: ControlMode, strategy: StrategyName): string {
+  const label = STRATEGY_LABEL[strategy];
+  return mode === 'AUTO'
+    ? `Il sistema è tornato in modo Auto: resta attiva la strategia ${label}.`
+    : `Il sistema è passato in modo Manual: resta attiva la strategia ${label}.`;
+}
+
+/**
  * Ciò che ogni notifica ha comunque: nessun campo, salvo l'istante e il testo.
  *
  * Serve a una cosa sola, ed è quella che rende questo file manutenibile: un evento nuovo dichiara
@@ -205,6 +220,16 @@ export function describeEvent(event: DomainEvent): NotificationDelivery {
       return {
         ...NOTHING,
         message: strategyMessage(event.strategy, event.source, event.mode),
+        occurredAt: event.occurredAt,
+        strategy: event.strategy,
+        mode: event.mode,
+        trafficLevel: event.trafficLevel,
+      };
+
+    case 'MODE_CHANGED':
+      return {
+        ...NOTHING,
+        message: modeMessage(event.mode, event.strategy),
         occurredAt: event.occurredAt,
         strategy: event.strategy,
         mode: event.mode,

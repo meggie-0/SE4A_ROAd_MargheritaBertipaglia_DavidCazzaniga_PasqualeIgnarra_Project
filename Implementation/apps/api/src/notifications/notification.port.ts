@@ -83,6 +83,12 @@ export interface RideStatusChangedEvent {
  * `trafficLevel` è il livello che ha provocato lo switch, e per un cambio manuale è l'ultimo noto:
  * è ciò che rende leggibile il pannello alert del DD §3.2 — «passato a MinimumETA perché il traffico
  * è alto» dice all'operatore qualcosa che il solo nome della strategia non dice.
+ *
+ * **Si emette solo quando la strategia attiva cambia davvero.** Il rientro in modo Auto che *non*
+ * commuta — perché il traffico è nella banda morta, o perché la strategia che gli compete è già
+ * attiva — è `ModeChangedEvent`, non questo: un evento che dicesse «strategia commutata» dove nulla
+ * è stato commutato metterebbe nel pannello dell'operatore una notizia falsa proprio nel caso in cui
+ * R13 prescrive di **tenere** la strategia attiva.
  */
 export interface StrategyChangedEvent {
   readonly kind: 'STRATEGY_CHANGED';
@@ -90,6 +96,29 @@ export interface StrategyChangedEvent {
   readonly strategy: StrategyName;
   readonly mode: ControlMode;
   readonly source: 'auto' | 'manual';
+  readonly trafficLevel: TrafficLevel | null;
+}
+
+/**
+ * Il modo di controllo è cambiato e la strategia attiva **no**.
+ *
+ * Un caso solo lo produce: `enableAuto()` che rientra in Auto senza commutare. Accade ogni volta
+ * che l'ultimo livello noto è `MEDIUM` — dove la banda morta prescrive di tenere la strategia
+ * corrente (RASD R13) — e ogni volta che la strategia che compete al livello è già quella attiva.
+ *
+ * Esiste separato da `StrategyChangedEvent` perché sono due notizie diverse per l'operatore, e la
+ * seconda non implica la prima: il pannello di controllo del DD §3.2 mostra **due** indicatori, e
+ * qui se ne muove uno solo. Le dashboard già connesse hanno comunque bisogno di saperlo, o
+ * continuerebbero a mostrare `MANUAL` per un sistema che è tornato automatico — cioè l'indicatore
+ * che NFR10 vuole «always visible» direbbe il falso fino al prossimo ricaricamento.
+ *
+ * `strategy` è quella che **resta** attiva, non una che sia stata scelta adesso.
+ */
+export interface ModeChangedEvent {
+  readonly kind: 'MODE_CHANGED';
+  readonly occurredAt: Date;
+  readonly mode: ControlMode;
+  readonly strategy: StrategyName;
   readonly trafficLevel: TrafficLevel | null;
 }
 
@@ -142,6 +171,7 @@ export type DomainEvent =
   | RobotaxiStateChangedEvent
   | RideStatusChangedEvent
   | StrategyChangedEvent
+  | ModeChangedEvent
   | TrafficAlertEvent
   | RebalancingStartedEvent;
 

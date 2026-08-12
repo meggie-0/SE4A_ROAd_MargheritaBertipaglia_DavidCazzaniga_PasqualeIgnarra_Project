@@ -418,6 +418,9 @@
               }
             }
           },
+          "400": {
+            "description": "Il corpo non è `{ \"mode\": \"AUTO\" }`. In particolare `MANUAL` viene rifiutato: in modo Manual ci si porta scegliendo una strategia su PUT /allocation/strategy (R13)."
+          },
           "401": {
             "description": "Token assente, scaduto o non valido."
           },

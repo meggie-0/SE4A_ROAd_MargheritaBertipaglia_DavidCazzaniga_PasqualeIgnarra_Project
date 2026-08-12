@@ -49,7 +49,7 @@ afterEach(async () => {
 
 describe('Il livello di traffico dei servizi esterni', () => {
   it('è alto nelle ore di punta di un giorno feriale', async () => {
-    // Mercoledì 7 gennaio 2026, 08:00 UTC = 09:00 a Milano: ancora punta del mattino.
+    // Mercoledì 7 gennaio 2026, 07:00 UTC = 08:00 a Milano: punta del mattino.
     expect(await trafficAt('2026-01-07T07:00:00.000Z')).toBe('HIGH');
     // 17:00 UTC = 18:00 a Milano: punta della sera.
     expect(await trafficAt('2026-01-07T17:00:00.000Z')).toBe('HIGH');
@@ -81,11 +81,26 @@ describe('Il livello di traffico dei servizi esterni', () => {
     expect(await trafficAt('2026-07-08T05:30:00.000Z')).toBe('HIGH');
   });
 
-  it('è deterministico: due letture nello stesso istante danno lo stesso livello', async () => {
-    clock.setNow(new Date('2026-01-07T17:00:00.000Z'));
+  /**
+   * Il determinismo che CLAUDE.md Regola 3 pretende, in forma falsificabile.
+   *
+   * «Due letture uguali danno lo stesso valore» sarebbe vero anche per una funzione costante: non
+   * asserisce nulla. Ciò che va dimostrato è che l'orologio è **l'unico** ingresso — quindi tornando
+   * indietro nel tempo si ritrova esattamente il livello di prima, e ogni istante ha una risposta
+   * sola. Se l'adapter leggesse `Date.now()`, o tenesse uno stato fra le chiamate, la seconda visita
+   * allo stesso istante darebbe un valore diverso.
+   */
+  it("è deterministico: l'orologio è l'unico ingresso", async () => {
+    const mattina = '2026-01-07T07:00:00.000Z';
+    const notte = '2026-01-07T02:00:00.000Z';
 
-    const [first, second] = await Promise.all([external.getTraffic(), external.getTraffic()]);
+    const prima = await trafficAt(mattina);
+    await trafficAt(notte);
+    const ancora = await trafficAt(mattina);
 
-    expect(first).toBe(second);
+    expect(prima).toBe('HIGH');
+    expect(ancora).toBe(prima);
+    // E l'istante intermedio ha dato una risposta sua, non un residuo del precedente.
+    expect(await trafficAt(notte)).toBe('LOW');
   });
 });

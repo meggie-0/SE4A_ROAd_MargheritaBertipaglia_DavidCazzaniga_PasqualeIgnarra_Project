@@ -168,11 +168,22 @@ describe('[M6] Cancello: ModeController e RebalancingManager', () => {
         'NEAREST_AVAILABLE', // Low: solo qui torna al default
       ]);
 
-      // «Esattamente due volte»: gli annunci di cambio strategia sono due, non tre e non uno.
-      const switches = dashboard.received.filter((one) => one.mode !== null);
-      expect(switches.map((one) => [one.trafficLevel, one.strategy])).toEqual([
-        ['HIGH', 'MINIMUM_ETA'],
-        ['LOW', 'NEAREST_AVAILABLE'],
+      /**
+       * «Esattamente due volte», verificato sull'elenco **completo** di ciò che l'operatore ha
+       * ricevuto e non su un sottoinsieme filtrato.
+       *
+       * La differenza non è stilistica. Contare gli switch con un filtro — «le consegne che portano
+       * un modo» — è un *proxy*: regge finché nessun altro evento porta un modo, e il giorno in cui
+       * ne nasce uno l'asserzione continuerebbe a passare senza più dimostrare NFR9. Asserendo la
+       * sequenza intera, qualunque evento in più o in meno rompe l'uguaglianza.
+       *
+       * Quattro consegne: due alert (uno per ciascun attraversamento di `MEDIUM`) e due switch.
+       */
+      expect(dashboard.received.map((one) => [one.trafficLevel, one.strategy, one.mode])).toEqual([
+        ['MEDIUM', 'MINIMUM_ETA', null], // alert: suggerisce, non commuta
+        ['HIGH', 'MINIMUM_ETA', 'AUTO'], // primo switch
+        ['MEDIUM', 'MINIMUM_ETA', null], // alert di nuovo, scendendo: ancora nessun cambio
+        ['LOW', 'NEAREST_AVAILABLE', 'AUTO'], // secondo e ultimo switch
       ]);
     });
 
@@ -221,6 +232,25 @@ describe('[M6] Cancello: ModeController e RebalancingManager', () => {
 
       // Decisione D11: senza la rivalutazione il sistema resterebbe sulla scelta manuale
       // dichiarandosi automatico, e R12 sarebbe violato per un tempo che nessuno può limitare.
+      expect(await control()).toEqual({ mode: 'AUTO', strategy: 'MINIMUM_ETA' });
+    });
+
+    it('e rivaluta il traffico osservato **durante** il modo Manual', async () => {
+      /**
+       * La decisione D20 è la premessa della D11, e questo è il caso che le tiene insieme.
+       *
+       * Le letture di traffico che avvengono in modo Manual non commutano nulla, ma **lasciano
+       * traccia**: se non lo facessero, `enableAuto()` rivaluterebbe il livello di prima della
+       * scelta manuale — qui `LOW` — e il sistema resterebbe su `NearestAvailable` con il traffico
+       * alto da un pezzo, cioè dichiarandosi automatico mentre ignora la condizione corrente.
+       */
+      await mode.onTrafficLevel('LOW');
+      await mode.setManual('NEAREST_AVAILABLE');
+      await mode.onTrafficLevel('HIGH');
+      expect(await control()).toEqual({ mode: 'MANUAL', strategy: 'NEAREST_AVAILABLE' });
+
+      await mode.enableAuto();
+
       expect(await control()).toEqual({ mode: 'AUTO', strategy: 'MINIMUM_ETA' });
     });
 

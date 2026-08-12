@@ -1,6 +1,7 @@
 import type { StrategyName, TrafficLevel } from '@road/shared';
 
-import { recordOperator } from '../../support/notifications';
+import { StaleRecordError } from '../../../src/persistence/persistence.port';
+import { recordOperator, recordPassenger } from '../../support/notifications';
 import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
 /**
@@ -19,6 +20,15 @@ import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
 const HOOK_TIMEOUT_MS = 180_000;
 const NOW = new Date('2026-05-04T09:00:00.000Z');
+
+/**
+ * Un passeggero qualsiasi, per il caso che verifica che gli eventi di modo **non** lo raggiungano.
+ *
+ * Non serve registrarlo davvero: il filtro della sessione confronta l'identificatore con il
+ * destinatario dell'evento, e nessuno di questi eventi ne ha uno. Un utente vero renderebbe il
+ * caso più lento senza renderlo più severo.
+ */
+const PASSEGGERO_ID = '00000000-0000-4000-8000-000000000001';
 
 let harness: ApiHarness;
 
@@ -110,21 +120,37 @@ describe('[R13][NFR10] Manual Mode: la precedenza dell intervento umano', () => 
     expect(await control()).toEqual({ mode: 'MANUAL', strategy: 'NEAREST_AVAILABLE' });
   });
 
-  it('un cambio automatico deciso mentre si passa in Manual non sovrascrive la scelta umana', async () => {
+  it('un cambio automatico non può atterrare dopo che il modo è passato a Manual', async () => {
     /**
-     * La corsa fra i due scrittori, costruita a mano.
+     * La corsa fra i due scrittori, **senza dipendere dalla tempistica**.
      *
-     * Il `ModeController` legge il record — modo Auto, strategia di default — e decide di
-     * commutare. Prima che scriva, l'operatore sceglie a mano. Senza la condizione sulla
-     * scrittura, il cambio automatico atterrerebbe dopo e disferebbe la scelta dell'operatore,
-     * che è precisamente il modo in cui il DD §4.3 falsifica NFR10.
+     * Lo scenario da falsificare è questo: il `ModeController` legge il record — modo Auto — e
+     * decide di commutare; prima che la scrittura arrivi al database, l'operatore sceglie a mano;
+     * il cambio automatico atterra dopo e disfa la scelta dell'essere umano. È precisamente il modo
+     * in cui il DD §4.3 falsifica NFR10.
      *
-     * `setActiveStrategy(name, 'auto')` scrive condizionatamente al modo Auto, quindi qui non
-     * atterra: `applySwitch()` assorbe lo `StaleRecordError` e non commuta.
+     * Costruirlo lasciando interlacciare due promesse funzionerebbe, ma l'esito dipenderebbe da
+     * quale delle due andate e ritorni verso il database finisce prima. Qui invece si esegue
+     * l'ultimo passo *a mano*, nell'ordine peggiore possibile: prima la scelta manuale, poi la
+     * scrittura automatica che il controller avrebbe fatto. La scrittura è condizionata al modo
+     * Auto, quindi non avviene e solleva — che è l'unica cosa che il test deve dimostrare.
      */
-    const automatico = harness.mode.onTrafficLevel('HIGH');
     await harness.mode.setManual('NEAREST_AVAILABLE');
-    await automatico;
+
+    await expect(
+      harness.allocation.setActiveStrategy('MINIMUM_ETA', 'auto'),
+    ).rejects.toBeInstanceOf(StaleRecordError);
+
+    expect(await control()).toEqual({ mode: 'MANUAL', strategy: 'NEAREST_AVAILABLE' });
+  });
+
+  it('e il controller assorbe quel rifiuto invece di far fallire la lettura periodica', async () => {
+    await harness.mode.setManual('NEAREST_AVAILABLE');
+
+    // Un'esecuzione periodica non ha nessuno a cui riferire un errore: se `applySwitch()`
+    // propagasse lo `StaleRecordError`, una decisione umana perfettamente legittima farebbe
+    // fallire il `TrafficMonitor` e lo scheduler lo registrerebbe come guasto.
+    await expect(harness.mode.onTrafficLevel('HIGH')).resolves.toBeUndefined();
 
     expect(await control()).toEqual({ mode: 'MANUAL', strategy: 'NEAREST_AVAILABLE' });
   });
@@ -151,6 +177,27 @@ describe('[R13][R12] Il rientro in Auto rivaluta subito il traffico', () => {
 
     // RASD R13: «should the level be Medium […] the strategy active at that instant is kept».
     // La banda morta non commuta, nemmeno al rientro.
+    expect(await control()).toEqual({ mode: 'AUTO', strategy: 'MINIMUM_ETA' });
+  });
+
+  it('rivaluta il traffico letto **durante** il modo Manual, non quello di prima', async () => {
+    /**
+     * La decisione D20 messa alla prova: le letture di traffico che avvengono in modo Manual
+     * lasciano traccia, pur non provocando nessun cambio.
+     *
+     * È la premessa della D11. Se `onTrafficLevel()` uscisse subito quando il modo è Manual senza
+     * scrivere `lastTrafficLevel`, `enableAuto()` rivaluterebbe il livello di *prima* della scelta
+     * manuale — qui `LOW` — e il sistema resterebbe su `NearestAvailable` mentre il traffico è alto
+     * da un pezzo. Nessuna delle altre asserzioni di questo file se ne accorgerebbe.
+     */
+    await observe('LOW');
+    await harness.mode.setManual('NEAREST_AVAILABLE');
+
+    await observe('HIGH');
+    expect(await control()).toEqual({ mode: 'MANUAL', strategy: 'NEAREST_AVAILABLE' });
+
+    await harness.mode.enableAuto();
+
     expect(await control()).toEqual({ mode: 'AUTO', strategy: 'MINIMUM_ETA' });
   });
 
@@ -220,6 +267,61 @@ describe('[R12][R13] Che cosa vede l operatore sul pannello di controllo', () =>
     // È l'`ManualOverrideEvent` della Figura 2.6: le altre dashboard connesse devono sapere che
     // il sistema non è più automatico, o mostrerebbero un modo che non è quello vero.
     expect(dashboard.received[0]).toMatchObject({ strategy: 'MINIMUM_ETA', mode: 'MANUAL' });
+  });
+
+  it('il rientro in Auto senza commutazione non annuncia una commutazione', async () => {
+    await observe('MEDIUM');
+    await harness.mode.setManual('MINIMUM_ETA');
+    const dashboard = recordOperator(harness.notificationSessions);
+
+    await harness.mode.enableAuto();
+
+    /**
+     * Su `MEDIUM` la banda morta prescrive di **tenere** la strategia attiva (RASD R13), quindi qui
+     * non c'è nessuno switch da annunciare — ma il modo è cambiato, e le dashboard già connesse
+     * devono saperlo o continuerebbero a mostrare `MANUAL` per un sistema automatico.
+     *
+     * Il messaggio è la parte che conta: dire «strategia commutata automaticamente» dove nulla è
+     * stato commutato metterebbe una notizia falsa nel pannello che il DD §3.2 dedica proprio agli
+     * switch automatici.
+     */
+    expect(dashboard.received).toHaveLength(1);
+    expect(dashboard.received[0]).toMatchObject({ mode: 'AUTO', strategy: 'MINIMUM_ETA' });
+    expect(dashboard.received[0]?.message).toContain('resta attiva');
+    expect(dashboard.received[0]?.message).not.toContain('commutata');
+  });
+
+  it('il rientro in Auto che commuta annuncia la commutazione, e una volta sola', async () => {
+    await observe('HIGH');
+    await harness.mode.setManual('NEAREST_AVAILABLE');
+    const dashboard = recordOperator(harness.notificationSessions);
+
+    await harness.mode.enableAuto();
+
+    // Qui la strategia cambia davvero, quindi il messaggio della commutazione è vero. Un solo
+    // evento: annunciare anche il cambio di modo raddoppierebbe la riga per un fatto solo.
+    expect(dashboard.received).toHaveLength(1);
+    expect(dashboard.received[0]).toMatchObject({ mode: 'AUTO', strategy: 'MINIMUM_ETA' });
+    expect(dashboard.received[0]?.message).toContain('commutata');
+  });
+
+  it('nessuno di questi eventi raggiunge un passeggero', async () => {
+    const passeggero = recordPassenger(harness.notificationSessions, PASSEGGERO_ID);
+    const dashboard = recordOperator(harness.notificationSessions);
+
+    await observe('MEDIUM', 'HIGH');
+    await harness.mode.setManual('NEAREST_AVAILABLE');
+    await harness.mode.enableAuto();
+
+    /**
+     * L'instradamento verso l'operatore è scritto per **esclusione** — gli arriva tutto ciò che non
+     * è un evento di corsa — e una regola negata non protegge da sola: il giorno in cui nascesse un
+     * evento con una categoria del RASD e senza passeggero, la consegna sbagliata non farebbe
+     * fallire niente. Questo caso è il contrappeso, e verifica il criterio di M5 («nessun evento
+     * relativo a corse altrui») sugli eventi nati in M6.
+     */
+    expect(passeggero.received).toEqual([]);
+    expect(dashboard.received.length).toBeGreaterThan(0);
   });
 
   it('nessuno di questi eventi lascia una riga nello storico delle notifiche', async () => {

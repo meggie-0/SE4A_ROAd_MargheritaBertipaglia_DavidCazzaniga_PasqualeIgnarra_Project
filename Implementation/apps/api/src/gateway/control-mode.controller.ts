@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
   ApiForbiddenResponse,
@@ -83,6 +84,11 @@ export class ControlModeController {
   })
   @ApiBody({ type: EnableAutoModeRequestDto })
   @ApiOkResponse({ type: ModeResponseDto })
+  @ApiBadRequestResponse({
+    description:
+      'Il corpo non è `{ "mode": "AUTO" }`. In particolare `MANUAL` viene rifiutato: in modo ' +
+      'Manual ci si porta scegliendo una strategia su PUT /allocation/strategy (R13).',
+  })
   @ApiUnauthorizedResponse({ description: 'Token assente, scaduto o non valido.' })
   @ApiForbiddenResponse({ description: 'Serve un account operatore.' })
   async enableAuto(
@@ -96,12 +102,29 @@ export class ControlModeController {
     return this.currentMode();
   }
 
-  /** Modo e strategia insieme: la coppia che il pannello di controllo mostra (DD §3.2). */
+  /**
+   * Modo e strategia insieme: la coppia che il pannello di controllo mostra (DD §3.2).
+   *
+   * **Le due letture sono in sequenza, e il modo si legge per ultimo.** Sono due operazioni su due
+   * porte diverse — il DD §2.2.1 assegna `getActiveStrategy()` all'`AllocationManager` e `getMode()`
+   * al `ModeController` — quindi arrivano al record `system_mode` con due `SELECT` distinte, e fra le
+   * due può committare una `setManual`. L'ordine decide quale disallineamento è possibile:
+   *
+   * - leggendo il modo per primo, la risposta potrebbe dire `AUTO` con la strategia appena scelta a
+   *   mano: annuncerebbe all'operatore che il sistema è automatico un istante dopo che ha preso il
+   *   controllo, che è la falsificazione di NFR10 nella §4.3 («an interleaving leaves Manual mode and
+   *   the manual strategy out of step») mostrata a schermo;
+   * - leggendo il modo per ultimo, il peggio che può capitare è `MANUAL` con la strategia
+   *   precedente — cioè un modo già aggiornato e una strategia vecchia di un istante, che la
+   *   richiesta successiva corregge.
+   *
+   * Fra i due errori possibili si sceglie quello che non nega mai un intervento umano già avvenuto.
+   * L'alternativa esatta sarebbe una singola operazione che restituisce entrambi i valori, ma
+   * nessuno dei due componenti a cui il DD affida le due letture ha titolo per esporla.
+   */
   private async currentMode(): Promise<ModeResponseDto> {
-    const [mode, activeStrategy] = await Promise.all([
-      this.mode.getMode(),
-      this.allocation.getActiveStrategy(),
-    ]);
+    const activeStrategy = await this.allocation.getActiveStrategy();
+    const mode = await this.mode.getMode();
     return { mode, activeStrategy };
   }
 }

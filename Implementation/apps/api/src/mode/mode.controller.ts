@@ -114,10 +114,24 @@ export class ModeController extends ModePort {
         ? false
         : await this.applySwitch(before.lastTrafficLevel, before.activeStrategy);
 
-    // Se la rivalutazione ha commutato, l'annuncio l'ha già fatto `applySwitch()`. Altrimenti c'è
-    // comunque una cosa che le altre dashboard devono sapere: il sistema è tornato in Auto.
+    /**
+     * Se la rivalutazione ha commutato, l'annuncio l'ha già fatto `applySwitch()`. Altrimenti resta
+     * una cosa che le altre dashboard devono sapere — il sistema è tornato in Auto — e si annuncia
+     * con un evento **diverso**.
+     *
+     * La distinzione non è formale. `StrategyChangedEvent` porta il messaggio «strategia commutata
+     * automaticamente a X», e su `MEDIUM` sarebbe falso: la banda morta prescrive di *tenere* la
+     * strategia attiva (RASD R13), quindi l'operatore leggerebbe l'opposto di ciò che è accaduto,
+     * proprio nel pannello che il DD §3.2 dedica agli switch automatici.
+     */
     if (!switched && before.mode !== 'AUTO') {
-      await this.announce(before.activeStrategy, 'AUTO', 'auto', before.lastTrafficLevel);
+      await this.notifications.update({
+        kind: 'MODE_CHANGED',
+        occurredAt: this.clock.now(),
+        mode: 'AUTO',
+        strategy: before.activeStrategy,
+        trafficLevel: before.lastTrafficLevel,
+      });
     }
   }
 

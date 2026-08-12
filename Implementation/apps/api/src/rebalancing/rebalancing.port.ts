@@ -27,8 +27,16 @@ import type { ZoneDemand } from '@road/shared';
 export interface RebalancingDispatch {
   readonly robotaxiId: string;
   readonly targetZoneId: string;
-  /** La zona da cui il veicolo è stato preso: una in surplus. `null` se non era in nessuna zona. */
-  readonly fromZoneId: string | null;
+  /**
+   * La zona da cui il veicolo è stato preso: sempre una in surplus, mai nulla.
+   *
+   * Non è annullabile, e non per ottimismo: un veicolo può essere scelto **solo** se è stato trovato
+   * in una zona, perché è l'appartenenza a una zona in surplus a renderlo eleggibile. Le zone sono
+   * una partizione di Voronoi (decisione D10), quindi un veicolo senza zona esisterebbe solo con
+   * l'elenco delle zone vuoto — e allora non ci sarebbe nemmeno una destinazione dove mandarlo.
+   * Dichiararlo annullabile avrebbe costretto la dashboard di M8 a gestire un caso impossibile.
+   */
+  readonly fromZoneId: string;
 }
 
 /**

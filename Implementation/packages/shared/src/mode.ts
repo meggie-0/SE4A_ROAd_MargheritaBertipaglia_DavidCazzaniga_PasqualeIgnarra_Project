@@ -10,8 +10,16 @@ import { CONTROL_MODES, STRATEGY_NAMES } from './domain.js';
  * visible on the dashboard», e NFR6 che modo **e** strategia attiva si vedano «on the dashboard's
  * first render, without navigating». Per questo la risposta porta entrambi i valori: sono i due
  * campi del pannello strategia del DD §3.2, e separarli su due chiamate obbligherebbe la dashboard
- * a mostrarne uno prima dell'altro — cioè a rendere osservabile uno stato intermedio che nel
- * database non esiste, visto che il record `system_mode` li tiene su una riga sola (decisione D6).
+ * a mostrarne uno prima dell'altro, con due giri di rete fra i due.
+ *
+ * **Che cosa la risposta garantisce, con precisione.** Non è uno *snapshot* transazionale: il DD
+ * §2.2.1 affida le due letture a due componenti diversi — `AllocationManager` per la strategia,
+ * `ModeController` per il modo — quindi il backend le esegue con due interrogazioni distinte sullo
+ * stesso record, e una scelta manuale può committare fra le due. Ciò che è garantito è l'unica cosa
+ * che conta per NFR10: **il modo non è mai più vecchio della strategia**, perché è letto per ultimo.
+ * Un intervento umano già avvenuto non può quindi essere mostrato come modo Auto; il caso opposto —
+ * modo `MANUAL` con la strategia di un istante prima — è possibile e si corregge alla richiesta
+ * successiva.
  */
 
 /**
