@@ -122,6 +122,47 @@ describe('[R6][G7] La telemetria fa avanzare la corsa', () => {
     expect(harness.fleet.stateOf('RT-01')).toBe('IN_RIDE');
   });
 
+  it('un veicolo in avvicinamento che ha perso la rotta la riceve di nuovo', async () => {
+    await givenAcceptedRide();
+    await harness.fleetTelemetry.runOnce();
+    expect(harness.fleet.stateOf('RT-01')).toBe('ARRIVING');
+
+    /**
+     * La rotta sparisce dalla flotta mentre lo stato `ARRIVING` resta in colonna.
+     *
+     * Non è un caso di laboratorio: lo stato del veicolo è persistito, il mondo del simulatore vive
+     * in memoria, quindi **basta un riavvio del processo**. Senza il ramo di recupero la corsa
+     * resterebbe ferma per sempre — nessun tick la muoverebbe e nessun giro se ne accorgerebbe.
+     */
+    await harness.external.commandRoute('RT-01', null);
+    harness.external.routeCommands.length = 0;
+
+    const cycle = await harness.fleetTelemetry.runOnce();
+
+    expect(cycle.advanced).toEqual([]);
+    expect(harness.fleet.stateOf('RT-01')).toBe('ARRIVING');
+    expect(harness.external.routeCommands).toEqual([{ robotaxiId: 'RT-01', destination: DUOMO }]);
+
+    // E da lì la corsa riprende normalmente.
+    harness.external.arrive('RT-01');
+    const resumed = await harness.fleetTelemetry.runOnce();
+    expect(resumed.advanced).toEqual([expect.objectContaining({ step: 'PICKUP_REACHED' })]);
+  });
+
+  it('un veicolo che sta già viaggiando verso il ritiro non riceve comandi inutili', async () => {
+    await givenAcceptedRide();
+    await harness.fleetTelemetry.runOnce();
+    harness.external.routeCommands.length = 0;
+
+    await harness.fleetTelemetry.runOnce();
+    await harness.fleetTelemetry.runOnce();
+
+    // Il recupero scatta sull'assenza di una rotta verso il ritiro, non a ogni giro: ricomandarla
+    // continuamente ricalcolerebbe lo stesso percorso e, con OSRM configurato, sarebbe una
+    // richiesta di rete per ogni veicolo per ogni giro.
+    expect(harness.external.routeCommands).toEqual([]);
+  });
+
   it('le posizioni osservate finiscono in tabella, anche per chi non sta servendo nessuno', async () => {
     await givenAcceptedRide();
     await harness.fleetTelemetry.runOnce();

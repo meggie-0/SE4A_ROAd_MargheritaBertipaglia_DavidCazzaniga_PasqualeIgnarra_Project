@@ -383,24 +383,28 @@ describe('[M4] Cancello: RideRequestManager', () => {
      * Postgres: la corsa avanza fino all'avvicinamento passando dalla macchina a stati, e poi viene
      * annullata.
      */
-    it('annulla anche con il veicolo già in avvicinamento, e la finestra torna prenotabile', async () => {
-      await givenRobotaxi('RT-01', 0.01);
-      const outcome = await rides.submitImmediate(immediateDraft());
-      // Transizione 4: il veicolo si è mosso verso il punto di ritiro.
-      await rideLifecycle.startPickupNavigation(outcome.request.id);
-      expect(await persistedState('RT-01')).toBe('ARRIVING');
+    it.each([['ARRIVING', 12] as const, ['ARRIVED', 13] as const])(
+      'annulla anche con il veicolo in %s (transizione %d), e la finestra torna prenotabile',
+      async (state, _transition) => {
+        await givenRobotaxi('RT-01', 0.01);
+        const outcome = await rides.submitImmediate(immediateDraft());
 
-      const cancellation = await rides.cancel(outcome.request.id, passengerId);
+        // Le transizioni 4 e 5, percorse davvero: il veicolo si muove verso il ritiro e ci arriva.
+        await rideLifecycle.startPickupNavigation(outcome.request.id);
+        if (state === 'ARRIVED') await rideLifecycle.pickupReached(outcome.request.id);
+        expect(await persistedState('RT-01')).toBe(state);
 
-      // Transizione 12 della Figura 2.10: il veicolo torna disponibile perché la sua rotta è stata
-      // revocata prima (decisione D59).
-      expect(cancellation.request.status).toBe('CANCELLED');
-      expect(cancellation.releasedRobotaxiId).toBe('RT-01');
-      expect(await persistedState('RT-01')).toBe('AVAILABLE');
+        const cancellation = await rides.cancel(outcome.request.id, passengerId);
 
-      const again = await rides.submitImmediate(immediateDraft());
-      expect(again.accepted && again.robotaxiId).toBe('RT-01');
-    });
+        // Il veicolo torna disponibile perché la sua rotta è stata revocata prima (decisione D59).
+        expect(cancellation.request.status).toBe('CANCELLED');
+        expect(cancellation.releasedRobotaxiId).toBe('RT-01');
+        expect(await persistedState('RT-01')).toBe('AVAILABLE');
+
+        const again = await rides.submitImmediate(immediateDraft());
+        expect(again.accepted && again.robotaxiId).toBe('RT-01');
+      },
+    );
 
     it('ma non con il passeggero già a bordo: lì la corsa è cominciata davvero', async () => {
       await givenRobotaxi('RT-01', 0.01);

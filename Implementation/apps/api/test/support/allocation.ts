@@ -184,7 +184,6 @@ export class EtaTableDouble extends ExternalServicesPort {
   commandRoute(robotaxiId: string, route: RouteRequest | null): Promise<RouteCommandOutcome> {
     return Promise.resolve({
       robotaxiId,
-      accepted: true,
       etaMinutes: null,
       distanceKm: route === null ? null : 0,
     });

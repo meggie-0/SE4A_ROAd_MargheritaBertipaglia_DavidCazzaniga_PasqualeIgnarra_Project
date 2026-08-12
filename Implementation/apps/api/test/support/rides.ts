@@ -527,7 +527,6 @@ export class TravelTimeDouble extends ExternalServicesPort {
 
     return Promise.resolve({
       robotaxiId,
-      accepted: true,
       etaMinutes: route === null ? null : 0,
       distanceKm: route === null ? null : 0,
     });

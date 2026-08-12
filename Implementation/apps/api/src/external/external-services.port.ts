@@ -64,21 +64,22 @@ export interface EtaEstimate {
 }
 
 /**
- * L'esito di un comando di rotta: il `commandAccepted` della Figura 2.7.
+ * L'esito di un comando di rotta: il `commandAccepted` della Figura 2.7, cioè il fatto che la
+ * chiamata sia tornata, più quello che la flotta ha da dire del percorso.
  *
- * `accepted` è falso quando la flotta non ha preso in carico il comando — il veicolo non risponde,
- * il fornitore rifiuta. Chi comanda deve poterlo sapere senza intercettare eccezioni: un veicolo
- * che non accetta la rotta non è un guasto del sistema, è un veicolo che non si muoverà, e il
- * riposizionamento passa al successivo esattamente come fa con una transizione rifiutata.
+ * **Non c'è un campo `accepted`**, ed è una rinuncia consapevole. La prima stesura di M7 ce l'aveva,
+ * per aderire al nome del messaggio nella figura: nessuno dei due adapter poteva renderlo falso e
+ * nessuno dei tre chiamanti lo leggeva, quindi era comportamento *descritto* e non implementato —
+ * esattamente ciò che questa porta rimprovera alle operazioni dichiarate prima di avere un uso. Il
+ * giorno in cui un fornitore saprà rifiutare un comando, il campo tornerà insieme al chiamante che
+ * lo tratta; fino ad allora un comando che non si può eseguire è un errore, non un esito.
  *
- * `etaMinutes` è annullabile perché una **revoca** non ha un tempo di arrivo: il veicolo non sta
- * più andando da nessuna parte.
+ * I due numeri sono annullabili perché una **revoca** non ha né un tempo di arrivo né una
+ * lunghezza: il veicolo non sta più andando da nessuna parte.
  */
 export interface RouteCommandOutcome {
   readonly robotaxiId: string;
-  readonly accepted: boolean;
   readonly etaMinutes: number | null;
-  /** La lunghezza del percorso comandato, in chilometri; `null` per una revoca. */
   readonly distanceKm: number | null;
 }
 

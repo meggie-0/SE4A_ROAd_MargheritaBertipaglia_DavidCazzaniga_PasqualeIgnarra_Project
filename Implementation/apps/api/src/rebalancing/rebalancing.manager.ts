@@ -157,12 +157,20 @@ export class RebalancingManager extends RebalancingPort {
         await this.fleet.completeRebalancing(reading.robotaxiId);
       } catch (error) {
         if (error instanceof IllegalTransitionError || error instanceof ConcurrentTransitionError) {
-          // Il veicolo ha preso una corsa mentre si riposizionava (transizione 10): il
-          // riposizionamento è stato interrotto, non completato. La riga resta aperta e il ciclo
-          // successivo la ritroverà con il veicolo in un altro stato.
+          /**
+           * Il veicolo ha preso una corsa mentre si riposizionava (transizione 10): il
+           * riposizionamento è stato **interrotto**, non completato, e la riga si chiude come tale.
+           *
+           * `RebalancingStatus` ha `CANCELLED` esattamente per questo caso. Lasciarla `TRIGGERED`
+           * sarebbe peggio che inutile: nessun ciclo futuro potrebbe più chiuderla — la transizione
+           * 9 è ammessa solo da `REBALANCING`, e da lì il veicolo se n'è andato — quindi il
+           * giornale accumulerebbe azioni che dichiarano uno spostamento in corso che non esiste, e
+           * ogni giro riproverebbe a chiuderle.
+           */
           this.logger.log(
-            `Il robotaxi ${reading.robotaxiId} non è più in riposizionamento: l'azione resta aperta.`,
+            `Il robotaxi ${reading.robotaxiId} non è più in riposizionamento: l'azione si chiude come annullata.`,
           );
+          await this.persistence.update('rebalancing_action', action.id, { status: 'CANCELLED' });
           continue;
         }
         throw error;

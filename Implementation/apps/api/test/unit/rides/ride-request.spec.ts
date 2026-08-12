@@ -410,6 +410,16 @@ describe('[R14] Ride Cancellation', () => {
       refusal: 'RIDE_ALREADY_UNDER_WAY',
     });
 
+    /**
+     * **Nessun comando è arrivato alla flotta**, ed è la parte che conta di questo caso.
+     *
+     * Revocare la rotta non è una scrittura che si possa disfare: ferma un veicolo in strada. Farlo
+     * prima di sapere se la transizione sarà accettata significherebbe fermare il veicolo di un
+     * passeggero **già a bordo** e poi rispondere «non ho fatto niente» — che è esattamente ciò che
+     * questo test dichiara nel titolo. Asserire solo le righe di database lo lascerebbe passare.
+     */
+    expect(harness.external.routeCommands).toEqual([]);
+
     // **Il veicolo si libera prima della riserva**, quindi un rifiuto lascia tutto com'era: la
     // finestra resta impegnata e la richiesta accettata, che è ciò che deve essere se la corsa
     // sta comunque per avvenire.

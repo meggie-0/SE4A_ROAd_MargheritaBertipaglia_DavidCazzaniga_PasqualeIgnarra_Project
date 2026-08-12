@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { ExternalServicesPort } from '../external/external-services.port';
 import { FleetMonitorPort } from '../fleet/fleet-monitor.port';
-import { ConcurrentTransitionError, IllegalTransitionError } from '../fleet/robotaxi.port';
+import {
+  CANCELLABLE_STATES,
+  ConcurrentTransitionError,
+  IllegalTransitionError,
+} from '../fleet/robotaxi.port';
 import {
   PersistencePort,
   activationDueAt,
@@ -270,9 +274,36 @@ export class RideRequestManager extends RideRequestPort {
    *   lo era più quando si è scritto. Ripetere ha senso, ed è la differenza che il passeggero deve
    *   poter vedere. Senza questo ramo l'errore uscirebbe grezzo dal manager e diventerebbe un 500:
    *   un guasto annunciato per una corsa che nel frattempo è semplicemente partita.
+   *
+   * Entrambi restano possibili anche dopo il controllo preventivo qui sotto — fra la lettura dello
+   * stato e la scrittura, la telemetria può far salire il passeggero — ma allora sono davvero una
+   * corsa persa e non il caso ordinario. Il veicolo a cui in quella finestra è stata revocata la
+   * rotta la riceve di nuovo al giro di telemetria successivo, che ricomanda la destinazione
+   * proprio per questo (`FleetTelemetry`, ramo `IN_RIDE`).
    */
   private async releaseVehicle(request: RideRequestRecord): Promise<string | null> {
     if (request.assignedRobotaxiId === null) return null;
+
+    /**
+     * **Prima si guarda se l'annullamento è ammesso, poi si tocca la flotta.**
+     *
+     * La revoca della rotta non è una scrittura che si possa disfare: ferma un veicolo in strada.
+     * Farla prima di sapere se la transizione sarà accettata significherebbe fermare il veicolo di
+     * un passeggero **già a bordo** per poi rifiutare l'annullamento — l'esito peggiore possibile,
+     * e per giunta con la chiamata che risponde «non ho fatto niente». La promessa della porta è
+     * che un rifiuto non lasci nulla dietro di sé, e vale per il mondo fisico prima ancora che per
+     * il database.
+     *
+     * Lo stato lo dà `fleet`, che è chi lo possiede: qui non si decide se la transizione è legale
+     * — quello lo fa la classe di stato un istante dopo — si decide se vale la pena **comandare
+     * qualcosa alla flotta**. La finestra fra questa lettura e la scrittura resta possibile ed è
+     * gestita sotto, dove è sempre stata.
+     */
+    const { robotaxis } = await this.fleet.getFleetStatus();
+    const vehicle = robotaxis.find((one) => one.id === request.assignedRobotaxiId);
+    if (vehicle !== undefined && !CANCELLABLE_STATES.includes(vehicle.state)) {
+      throw new RideNotCancellableError(request.id, 'RIDE_ALREADY_UNDER_WAY', vehicle.state);
+    }
 
     try {
       /**
@@ -287,7 +318,7 @@ export class RideRequestManager extends RideRequestPort {
        *
        * La revoca è **innocua** se il veicolo non si era mosso — il caso `ASSIGNED`, l'unico
        * ammesso fino a M6 — perché nessuna rotta gli era stata comandata e la flotta non ha niente
-       * da revocare. Farla in ogni caso evita di dedurre dallo stato ciò che il comando sa già.
+       * da revocare.
        */
       await this.external.commandRoute(request.assignedRobotaxiId, null);
 

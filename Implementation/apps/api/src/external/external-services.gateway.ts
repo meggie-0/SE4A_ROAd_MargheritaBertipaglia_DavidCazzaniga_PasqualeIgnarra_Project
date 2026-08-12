@@ -52,18 +52,13 @@ export class ExternalServicesGateway extends ExternalServicesPort {
     // che non deve più andare da nessuna parte (R14, decisione D27).
     if (route === null) {
       this.fleet.revoke(robotaxiId);
-      return { robotaxiId, accepted: true, etaMinutes: null, distanceKm: null };
+      return { robotaxiId, etaMinutes: null, distanceKm: null };
     }
 
     const leg = await this.maps.route(route.from, route.to);
     this.fleet.follow(robotaxiId, route, leg);
 
-    return {
-      robotaxiId,
-      accepted: true,
-      etaMinutes: leg.durationMinutes,
-      distanceKm: leg.distanceKm,
-    };
+    return { robotaxiId, etaMinutes: leg.durationMinutes, distanceKm: leg.distanceKm };
   }
 
   readTelemetry(): Promise<readonly VehicleTelemetry[]> {

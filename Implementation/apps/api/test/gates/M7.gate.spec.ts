@@ -39,6 +39,26 @@ const HOOK_TIMEOUT_MS = 180_000;
 const DUOMO = { id: 'duomo', name: 'Duomo / Centro', lat: 45.4642, lon: 9.19 };
 const SAN_SIRO = { id: 'san-siro', name: 'San Siro', lat: 45.4781, lon: 9.124 };
 const CENTRALE = { lat: 45.4863, lon: 9.205 };
+/**
+ * Le coordinate dei casi «fornitore giù», **diverse da quelle di ogni altro caso del file**.
+ *
+ * La cache dell'adapter OSRM vive quanto il modulo, che si compone una volta per file, e il
+ * `FakeClock` non avanza mai: con TTL di 60 secondi nessuna voce scade. Riusare le coordinate degli
+ * altri casi significherebbe farsi rispondere dalla cache invece che dal ripiego — il cancello
+ * passerebbe senza aver mai verificato ciò che dichiara, e per giunta l'esito dipenderebbe
+ * dall'ordine dei casi nel file (HARNESS.md §2).
+ */
+const LAMBRATE = { lat: 45.485, lon: 9.238 };
+const BICOCCA = { lat: 45.515, lon: 9.211 };
+
+/**
+ * Quanti minuti risponde il fornitore finto, per qualunque tragitto.
+ *
+ * Serve come **contro-prova**: se un ETA vale esattamente questo, viene da OSRM o dalla sua cache;
+ * se ne differisce, viene dalla stima lineare. È così che i casi qui sotto dimostrano il ripiego
+ * invece di limitarsi a non fallire.
+ */
+const PROVIDER_ETA_MINUTES = 10;
 
 /**
  * I parametri del simulatore per questo cancello: **un chilometro esatto per tick**.
@@ -190,6 +210,12 @@ beforeAll(async () => {
 afterAll(async () => {
   await harness?.stop();
   await stopOsrm();
+
+  // L'ambiente torna com'era: i file di cancello condividono un worker Jest, e lasciare
+  // `OSRM_BASE_URL` puntata a un server ormai chiuso accoppierebbe questo file ai successivi.
+  delete process.env.OSRM_BASE_URL;
+  delete process.env.SIMULATOR_SPEED_KMH;
+  delete process.env.SIMULATOR_TICK_MINUTES;
 }, HOOK_TIMEOUT_MS);
 
 beforeEach(async () => {
@@ -203,7 +229,7 @@ beforeEach(async () => {
 });
 
 describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
-  describe('[NFR8] Con gli adapter reali il sistema funziona senza mock', () => {
+  describe('[NFR8][R7][G8] Con gli adapter reali il sistema funziona senza mock', () => {
     it('una corsa attraversa tutto il ciclo, mossa dalla telemetria e da nessun altro', async () => {
       await givenRobotaxi('RT-01', { lat: DUOMO.lat + 0.01, lon: DUOMO.lon });
 
@@ -265,7 +291,7 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       expect(ride?.endedAt).not.toBeNull();
     });
 
-    it('la posizione dei veicoli in movimento finisce in tabella (R7, G8)', async () => {
+    it('la posizione dei veicoli in movimento finisce in tabella', async () => {
       const start = { lat: DUOMO.lat + 0.02, lon: DUOMO.lon };
       await givenRobotaxi('RT-01', start);
       await rides.submitImmediate({ passengerId, pickup: DUOMO, destination: CENTRALE });
@@ -332,22 +358,21 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
     }
 
     it('la richiesta di corsa viene servita lo stesso, con un ETA stimato', async () => {
-      await givenRobotaxi('RT-01', { lat: DUOMO.lat + 0.01, lon: DUOMO.lon });
+      await givenRobotaxi('RT-01', BICOCCA);
 
       await withProviderDown(async () => {
-        const estimates = await external.getETA(
-          [{ id: 'RT-01', position: { lat: DUOMO.lat + 0.01, lon: DUOMO.lon } }],
-          DUOMO,
-        );
+        const estimates = await external.getETA([{ id: 'RT-01', position: BICOCCA }], LAMBRATE);
         // Il ripiego risponde per **tutti**: un'origine che sparisse sarebbe un veicolo dichiarato
         // inidoneo per un guasto altrui.
         expect(estimates).toHaveLength(1);
         expect(estimates[0]?.etaMinutes).toBeGreaterThan(0);
+        // E la risposta è **calcolata**, non ricordata: il fornitore avrebbe detto dieci minuti.
+        expect(estimates[0]?.etaMinutes).not.toBeCloseTo(PROVIDER_ETA_MINUTES, 6);
 
         const outcome = await rides.submitImmediate({
           passengerId,
-          pickup: DUOMO,
-          destination: CENTRALE,
+          pickup: LAMBRATE,
+          destination: BICOCCA,
         });
 
         // Nessuna richiesta persa: la corsa è assegnata e la riserva scritta, come con il
@@ -362,21 +387,23 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
     });
 
     it('e il veicolo arriva comunque: senza percorso vero resta il segmento', async () => {
-      const start = { lat: DUOMO.lat + 0.01, lon: DUOMO.lon };
-      await givenRobotaxi('RT-01', start);
+      await givenRobotaxi('RT-01', BICOCCA);
 
       await withProviderDown(async () => {
         const outcome = await rides.submitImmediate({
           passengerId,
-          pickup: DUOMO,
-          destination: CENTRALE,
+          pickup: LAMBRATE,
+          destination: BICOCCA,
         });
         expect(outcome.accepted).toBe(true);
 
         await telemetry.runOnce();
         expect(await stateOf('RT-01')).toBe('ARRIVING');
 
-        simulation.tick(ticksBetween(start, DUOMO));
+        // Il percorso è il **segmento** fra i due punti — nessuno l'ha calcolato — quindi i tick
+        // che servono sono quelli della distanza in linea d'aria, senza il tratto in più che la
+        // geometria di un fornitore aggiungerebbe.
+        simulation.tick(ticksBetween(BICOCCA, LAMBRATE));
         await telemetry.runOnce();
 
         expect(await stateOf('RT-01')).toBe('ARRIVED');
@@ -437,6 +464,44 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       const arrived = await positionOf('RT-01');
       expect(haversineKm(arrived, SAN_SIRO)).toBeLessThan(haversineKm(arrived, DUOMO));
     });
+
+    it('un riposizionamento interrotto da una corsa chiude la propria riga come annullato', async () => {
+      await persistence.create('zone', SAN_SIRO);
+      const slot = { dayOfWeek: 1, hourOfDay: 11 };
+      await persistence.create('demand_sample', { zoneId: DUOMO.id, ...slot, baseDemand: 0 });
+      await persistence.create('demand_sample', { zoneId: SAN_SIRO.id, ...slot, baseDemand: 5 });
+      await givenRobotaxi('RT-01', DUOMO);
+
+      await rebalancing.rebalance();
+      expect(await stateOf('RT-01')).toBe('REBALANCING');
+
+      // Transizione 10: un veicolo che si riposiziona **è allocabile**, ed è il punto della
+      // funzione. Il riposizionamento non arriverà mai a destinazione.
+      const outcome = await rides.submitImmediate({
+        passengerId,
+        pickup: DUOMO,
+        destination: CENTRALE,
+      });
+      expect(outcome.accepted && outcome.robotaxiId).toBe('RT-01');
+
+      // Il veicolo arriva sì da qualche parte, ma per una corsa: il ciclo di riposizionamento non
+      // può più chiudere la sua azione con la transizione 9.
+      // Il ritiro è dove il veicolo già si trova: pochi tick bastano ad arrivarci.
+      await telemetry.runOnce();
+      simulation.tick(5);
+      await telemetry.runOnce();
+
+      const plan = await rebalancing.rebalance();
+
+      expect(plan.completed).toEqual([]);
+      const [action] = await persistence.find('rebalancing_action', {
+        where: { robotaxiId: 'RT-01' },
+        limit: 1,
+      });
+      // `TRIGGERED` per sempre sarebbe un giornale che dichiara uno spostamento inesistente, e che
+      // nessun ciclo futuro potrebbe più chiudere.
+      expect(action?.status).toBe('CANCELLED');
+    });
   });
 
   describe('[NFR8] Nessun componente fuori dal gateway conosce un fornitore', () => {
@@ -446,7 +511,7 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       // La formulazione operativa di NFR8 (DD §4.3) vista dall'altro lato: il resto del sistema
       // parla di punti, minuti e identificatori — mai di polyline, URL o codici di risposta.
       const outcome = await external.commandRoute('RT-01', { from: DUOMO, to: SAN_SIRO });
-      expect(outcome.accepted).toBe(true);
+      expect(outcome.robotaxiId).toBe('RT-01');
       expect(outcome.etaMinutes).toBeGreaterThan(0);
 
       const [reading] = await external.readTelemetry();

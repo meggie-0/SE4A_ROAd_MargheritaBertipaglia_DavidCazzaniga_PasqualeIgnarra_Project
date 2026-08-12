@@ -14,10 +14,11 @@ import { FleetMonitorPort } from './fleet-monitor.port';
  * veicolo che il DD §2.3.2 dichiara pubblico. `FleetMonitor` e le sette classi di stato concrete
  * restano dentro.
  *
- * La Figura 2.1 dà al `FleetMonitor` anche l'arco verso `IExternalServices`, che qui non c'è:
- * quell'arco serve alla telemetria e ai comandi di rotta (`readTelemetry`, `commandRoute`), cioè al
- * simulatore di M7. Dichiarare adesso una dipendenza da un modulo che non esiste significherebbe
- * scrivere un import verso il nulla; l'arco si aggiunge quando `external` arriva.
+ * La Figura 2.1 dà al `FleetMonitor` anche l'arco verso `IExternalServices`, che qui **non c'è e non
+ * ci sarà**. Con M7 la telemetria esiste, ma a leggerla non è questo modulo: la legge `rides`, che
+ * la usa per far avanzare le corse, e ne consegna a `fleet` la sola parte che gli compete — dove
+ * sono i veicoli — chiamando `recordPositions()` (decisione D61). L'arco della figura resta quindi
+ * non realizzato, e il verso è quello giusto: `fleet` non deve conoscere né i fornitori né le corse.
  */
 /*
  * `notifications` entra con M5: ogni `Robotaxi` che `FleetMonitor` costruisce è un `Subject` del

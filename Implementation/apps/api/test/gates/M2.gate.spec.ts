@@ -19,7 +19,7 @@ import { startApiHarness, type ApiHarness } from '../support/postgres';
  * Criterio di completamento, tradotto in test:
  *   - copertura **esaustiva** della FSM a sette stati del DD §2.6.3, Figura 2.10: le tredici
  *     transizioni legali riescono e portano dove la figura dice, e **tutte** le altre
- *     (7 stati × 10 metodi − 11 = 59) sollevano `IllegalTransitionError`;
+ *     (7 stati × 10 metodi − 13 = 57) sollevano `IllegalTransitionError`;
  *   - lo stato sopravvive a un giro di persistenza e ricostruzione;
  *   - un veicolo in manutenzione è escluso dai candidati, uno in rebalancing no.
  *

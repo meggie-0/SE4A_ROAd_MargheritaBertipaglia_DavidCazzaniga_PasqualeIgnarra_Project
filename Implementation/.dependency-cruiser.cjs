@@ -82,6 +82,17 @@ module.exports = {
       to: { path: '^tools/simulator/' },
     },
     {
+      name: 'simulation-port-is-not-for-the-domain',
+      comment:
+        'FleetSimulationPort fa avanzare il mondo simulato: la iniettano lo scheduler di external ' +
+        'e i test, nessun altro. Un manager di dominio che comandasse al mondo di muoversi non ' +
+        'starebbe gestendo una flotta, e il giorno in cui i veicoli fossero veri quella porta ' +
+        'sparirebbe insieme al simulatore (DD, decisione D64).',
+      severity: 'error',
+      from: { pathNot: '^(apps/api/src/external/|apps/api/test/)' },
+      to: { path: '^apps/api/src/external/fleet-simulation\\.port\\.ts$' },
+    },
+    {
       name: 'no-circular',
       comment: 'Nessuna dipendenza circolare fra moduli.',
       severity: 'error',

@@ -228,12 +228,7 @@ describe('[NFR8] Il gateway dei servizi esterni parla con i fornitori veri', () 
 
     const outcome = await harness.external.commandRoute('RT-01', { from: DUOMO, to: GARIBALDI });
 
-    expect(outcome).toEqual({
-      robotaxiId: 'RT-01',
-      accepted: true,
-      etaMinutes: 10,
-      distanceKm: 2,
-    });
+    expect(outcome).toEqual({ robotaxiId: 'RT-01', etaMinutes: 10, distanceKm: 2 });
     expect(requests.some((url) => url.startsWith('/route/v1/driving/'))).toBe(true);
 
     // Prima di qualunque tick il veicolo è fermo dov'era, e la telemetria lo dice.
@@ -259,12 +254,7 @@ describe('[NFR8] Il gateway dei servizi esterni parla con i fornitori veri', () 
     const [moved] = await harness.external.readTelemetry();
     const revoked = await harness.external.commandRoute('RT-01', null);
 
-    expect(revoked).toEqual({
-      robotaxiId: 'RT-01',
-      accepted: true,
-      etaMinutes: null,
-      distanceKm: null,
-    });
+    expect(revoked).toEqual({ robotaxiId: 'RT-01', etaMinutes: null, distanceKm: null });
 
     const [stopped] = await harness.external.readTelemetry();
     expect(stopped?.position).toEqual(moved?.position);
@@ -273,7 +263,8 @@ describe('[NFR8] Il gateway dei servizi esterni parla con i fornitori veri', () 
 
     // R14: chi annulla non deve prima scoprire se il veicolo si fosse mosso.
     await expect(harness.external.commandRoute('RT-99', null)).resolves.toMatchObject({
-      accepted: true,
+      robotaxiId: 'RT-99',
+      etaMinutes: null,
     });
   });
 
@@ -285,7 +276,6 @@ describe('[NFR8] Il gateway dei servizi esterni parla con i fornitori veri', () 
     const outcome = await harness.external.commandRoute('RT-01', { from: DUOMO, to: GARIBALDI });
 
     expect(estimates).toHaveLength(1);
-    expect(outcome.accepted).toBe(true);
     expect(outcome.distanceKm).toBeGreaterThan(0);
     expect(requests).toEqual([]);
 

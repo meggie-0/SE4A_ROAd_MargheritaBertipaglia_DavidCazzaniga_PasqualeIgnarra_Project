@@ -13,8 +13,7 @@ import {
   type TelemetryProgress,
   type TelemetryStep,
 } from './fleet-telemetry.port';
-import { RideLifecyclePort } from './ride-lifecycle.port';
-import { RideNotInProgressError } from './ride-lifecycle.port';
+import { RideLifecyclePort, RideNotInProgressError } from './ride-lifecycle.port';
 
 /**
  * Chi guarda la flotta e fa avanzare le corse (M7).
@@ -100,15 +99,24 @@ export class FleetTelemetry extends FleetTelemetryPort {
   /**
    * Il passo che compete a questo veicolo adesso, o `null` se non è successo niente.
    *
+   * **La transizione viene prima del comando alla flotta**, sempre, ed è la stessa regola che il DD
+   * §2.4 Figura 2.7 fissa per il riposizionamento: `requestRebalancing()` e poi `commandRoute()`.
+   * La ragione è che la transizione è l'unico passo che può *rifiutare*, e rifiuta senza scrivere
+   * niente: comandare per primo manderebbe in giro un veicolo che la macchina a stati potrebbe poi
+   * non far muovere. L'ordine opposto sembrava necessario per non lasciare un veicolo in `ARRIVING`
+   * senza rotta — ma quel caso lo chiude il ramo `ARRIVING` stesso, che la rotta la ricomanda.
+   *
    * I quattro rami sono le quattro transizioni della corsa, ciascuna innescata dal fatto che la
    * rende vera:
    *
-   * - `ASSIGNED` — il veicolo ha una corsa e non si è ancora mosso: gli si comanda la rotta verso il
-   *   punto di ritiro e lo si dichiara in avvicinamento. La rotta **prima** della transizione,
-   *   perché un veicolo in `ARRIVING` senza rotta non arriverebbe mai da nessuna parte.
+   * - `ASSIGNED` — il veicolo ha una corsa e non si è ancora mosso: lo si dichiara in avvicinamento
+   *   e gli si comanda la rotta verso il punto di ritiro.
    * - `ARRIVING` — arriva quando la telemetria dice che ha raggiunto **il punto di ritiro**, e non
    *   un punto qualsiasi: il confronto con la destinazione comandata è ciò che impedisce di
-   *   scambiare l'arrivo al ritiro con quello a destinazione.
+   *   scambiare l'arrivo al ritiro con quello a destinazione. Se invece di una rotta verso il ritiro
+   *   non ce n'è nessuna, gliela si ricomanda: è il caso di un comando perso, o di un processo
+   *   riavviato — lo stato `ARRIVING` è persistito, il mondo del simulatore vive in memoria, e senza
+   *   questo ramo la corsa resterebbe ferma per sempre.
    * - `ARRIVED` — il passeggero sale e si parte. La guardia `isPassengerOnBoard()` della Figura 2.10
    *   è l'unica che **nessun sensore risolve**: né il simulatore né una flotta vera sanno dire se
    *   qualcuno è salito. Il prototipo assume che il passeggero salga al giro successivo all'arrivo,
@@ -130,13 +138,23 @@ export class FleetTelemetry extends FleetTelemetryPort {
 
     try {
       if (state === 'ASSIGNED') {
-        await this.external.commandRoute(robotaxiId, { from, to: pickup });
         await this.lifecycle.startPickupNavigation(request.id);
+        await this.external.commandRoute(robotaxiId, { from, to: pickup });
         return 'PICKUP_NAVIGATION_STARTED';
       }
 
       if (state === 'ARRIVING') {
-        if (!hasReached(reading, pickup)) return null;
+        if (!hasReached(reading, pickup)) {
+          // Nessuna rotta verso il ritiro: il comando del passo precedente non è arrivato, oppure
+          // il processo è ripartito e il mondo del simulatore è ricominciato vuoto mentre lo stato
+          // `ARRIVING` era già in colonna. Si ricomanda, invece di lasciare la corsa ferma per
+          // sempre. Se il veicolo sta già viaggiando verso il ritiro, qui non succede nulla.
+          if (!isSamePoint(reading?.destination ?? null, pickup)) {
+            await this.external.commandRoute(robotaxiId, { from, to: pickup });
+          }
+          return null;
+        }
+
         await this.lifecycle.pickupReached(request.id);
         return 'PICKUP_REACHED';
       }
@@ -149,11 +167,10 @@ export class FleetTelemetry extends FleetTelemetryPort {
 
       if (state === 'IN_RIDE') {
         if (!hasReached(reading, destination)) {
-          // La corsa è cominciata ma il veicolo non sta andando a destinazione: il comando di rotta
-          // del passo precedente non è arrivato. Si ripete, invece di lasciare fermo un passeggero
-          // a bordo. Se invece sta viaggiando, il comando ripetuto ricalcola la stessa rotta dalla
-          // posizione corrente, che è un'operazione innocua.
-          if (reading === undefined || !isSamePoint(reading.destination, destination)) {
+          // Stesso recupero del ramo `ARRIVING`, dall'altro capo della corsa: se il veicolo non sta
+          // andando a destinazione, il comando del passo precedente non è arrivato e si ripete —
+          // invece di lasciare fermo un passeggero a bordo.
+          if (!isSamePoint(reading?.destination ?? null, destination)) {
             await this.external.commandRoute(robotaxiId, { from, to: destination });
           }
           return null;
