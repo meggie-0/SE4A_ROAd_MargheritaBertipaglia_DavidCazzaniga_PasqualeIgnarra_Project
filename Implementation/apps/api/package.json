@@ -21,6 +21,7 @@
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/websockets": "^11.1.29",
     "@road/shared": "workspace:*",
+    "@road/simulator": "workspace:*",
     "bcrypt": "^6.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

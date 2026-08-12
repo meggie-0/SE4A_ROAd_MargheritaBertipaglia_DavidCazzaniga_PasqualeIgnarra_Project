@@ -6,9 +6,9 @@
 // Playwright avvia da solo i tre servizi (vedi `webServer` in playwright.config.ts); qui ci si
 // limita a ricompilare `packages/shared`, perché è ciò che i client caricano.
 
-import { run, buildShared, colors } from '../lib/run.mjs';
+import { run, buildPackages, colors } from '../lib/run.mjs';
 
-if (buildShared() !== 0) process.exit(1);
+if (buildPackages() !== 0) process.exit(1);
 
 console.log(
   colors.dim(

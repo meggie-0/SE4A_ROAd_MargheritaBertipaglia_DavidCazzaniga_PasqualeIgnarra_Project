@@ -128,6 +128,8 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.2 | August 11, 2026 | **[v1.2]** Decisions taken while implementing the ride request flows (M4), and the resolution of two contradictions the document carried: R14 required a cancelled ride to free an already assigned vehicle while Figure 2.10 gave `ASSIGNED` no exit towards `AVAILABLE` (transition 11 added), and Figures 2.5 and the activation diagram disagreed on the order of `reserve()` and `assign()`. Also: the `RideRequestManager` arcs missing from Figure 2.1, the sixth `FleetMonitor` operation, the nominal filtering window of Figure 2.8, and the meaning of "still eligible" at activation. See decisions D27–D33 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.3 | August 12, 2026 | **[v1.3]** Decisions taken while implementing the notification channel (M5), and the resolution of the gap the document carried on its second subject: Section 2.3.3 draws `Ride` as a `Subject` with a `RideStatus`, but no table, no component operation and no flow ever created one — the entity existed in the RASD and nowhere in this design. Also: the four lifecycle transitions that had no way of being triggered, the two ports of `notifications`, the three arcs Figure 2.1 was missing, token verification outside the HTTP path, and the ordering rule between persisting a transition and notifying it. See decisions D36–D46 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
+| 1.5 | August 12, 2026 | **[v1.5]** Decisions taken while connecting the real external providers and the fleet simulator (M7), and the completion of R14: `commandRoute()` now exists, so transitions 12 and 13 close the gap that v1.2 had documented and left open — cancellation is legal until the passenger boards. Also: the two `FleetMonitor` operations that telemetry makes possible (transition 9 had no trigger at all), the fourth port of `rides` that reads telemetry, the second port of `external` that advances the simulated world, and `getDemandData()` staying out of the port for the reason D47 gave rather than for the milestone it named. See decisions D59–D64 in [Appendice A](#appendice-a--registro-delle-decisioni). |
+
 ## 1.4 Document Structure
 
 - **Chapter 1 — Introduction**: Purpose, terminology, revision history, structure.
@@ -304,7 +306,10 @@ The main components and the operations they export are:
   `startRide()`, `completeRide()`), advances an assigned ride to its destination, moving the vehicle
   and the `Ride` together — the vehicle first (decision D38). It owns the `ride` table and is the
   only writer of `RideStatus` (decision D36), and it reaches `INotificationService`, since `Ride` is
-  the second `Subject` of Section 2.3.3.
+  the second `Subject` of Section 2.3.3. **[v1.5]** A **fourth port**, `IFleetTelemetryService`
+  (`runOnce()`), reads the fleet telemetry, hands the observed positions to
+  `FleetMonitor.recordPositions()` and triggers those same four transitions when the vehicle has
+  actually arrived — which is what the guards of Figure 2.10 were waiting for (decision D61).
 - **AllocationManager**: `allocate(request, candidates)`, `setActiveStrategy()`. Selects the
   robotaxi to assign by delegating to the active allocation strategy (R5, R8). This is the context
   of the Strategy pattern.
@@ -330,6 +335,12 @@ The main components and the operations they export are:
   an argument of `requestRebalancing()`, so without it the destination would be written nowhere. Its
   arc to `IExternalServices` is not yet realised: in this prototype the demand source is the
   `demand_sample` / `demand_event` pair, read through `IPersistenceService` (decision D47).
+  **[v1.5]** M7 adds the two operations that telemetry makes possible: `completeRebalancing()`,
+  transition 9 of Figure 2.10, which until then no component could trigger because its guard
+  `hasReachedTargetArea()` depends on where the vehicle actually is (decision D60); and
+  `recordPositions()`, which is **not** a transition — it writes where the fleet has been observed,
+  because the robotaxi row belongs to this component and to no other (decision D61).
+
 - **MaintenanceManager**: `requestMaintenance()`, `completeMaintenance()`. Marks robotaxis in/out of
   maintenance and prevents their assignment (R9). **[v1.3]** It is the second component that writes
   the state column, so it is also the second that notifies: a vehicle leaving the fleet disappears
@@ -352,7 +363,13 @@ The main components and the operations they export are:
   robotaxi fleet), with one adapter per provider (NFR8). **[v1.4]** The facade/adapter split becomes
   real here, with the second operation: one class delegates, one adapter per provider implements
   (decision D54). Operations enter the port with the milestone that puts them to use — `getETA()` in
-  M3, `getTraffic()` in M6, the remaining three in M7.
+  M3, `getTraffic()` in M6, `commandRoute()` and `readTelemetry()` in M7 together with the fleet
+  simulator that realises them. **[v1.5]** `getDemandData()` does **not** enter in M7: the D47
+  reasoning did not expire with the milestone, and no connectable real demand provider for Milan
+  exists, so the operation stays out until one does (decision D62). The component also publishes a
+  **second port**, `FleetSimulationPort`, which advances the simulated world: it is the one thing
+  that says out loud what the service port hides, and it disappears together with the simulator the
+  day the vehicles are real (decision D64).
 
 ### 2.2.1 Realisation notes **[v1.1]**
 
@@ -1070,7 +1087,9 @@ end
 
 #### Cancellation **[v1.1]**
 
-`RideRequestManager.cancel()` realises **R14**: it sets the request to `CANCELLED`, releases the
+**[v1.5]** Cancellation now countermands the route (`commandRoute(robotaxiID, null)`) **before**
+releasing the vehicle, which is what makes it legal from `ARRIVING` and `ARRIVED` as well
+(decision D59). `RideRequestManager.cancel()` realises **R14**: it sets the request to `CANCELLED`, releases the
 reservation, and returns the robotaxi to `AVAILABLE` if it had already been assigned. Releasing the
 reservation makes the window bookable again, which is the observable effect the tests assert.
 
@@ -1247,6 +1266,8 @@ The figure is a drawn image; the transitions are transcribed below.
 | 9 | `REBALANCING` | `completeRebalancing()` `[hasReachedTargetArea()]` / `setAvailable()` | `AVAILABLE` |
 | 10 | `REBALANCING` | `assignRide(request)` `[hasReceivedRideRequest()]` / `interruptRebalancing()` | `ASSIGNED` |
 | 11 **[v1.2]** | `ASSIGNED` | `cancelRide()` `[hasAssignedRide()]` / `releaseRobotaxi()` | `AVAILABLE` |
+| 12 **[v1.5]** | `ARRIVING` | `cancelRide()` `[hasAssignedRide()]` / `releaseRobotaxi()` | `AVAILABLE` |
+| 13 **[v1.5]** | `ARRIVED` | `cancelRide()` `[hasAssignedRide()]` / `releaseRobotaxi()` | `AVAILABLE` |
 
 States: `AVAILABLE`, `ASSIGNED`, `ARRIVING`, `ARRIVED`, `IN RIDE`, `REBALANCING`, `MAINTENANCE`.
 Every transition not listed above raises `IllegalTransitionError`.
@@ -1261,12 +1282,22 @@ written rather than worked around in a service, which is what the State pattern 
 - The action is `releaseRobotaxi()`, the same as transition 7: the vehicle lets go of the ride it
   was holding and becomes available again. What differs is who originates it — the passenger rather
   than the arrival at the destination.
-- Cancellation is legal **only from `ASSIGNED`**. R14 speaks of cancelling "before the ride begins",
-  which would also cover `ARRIVING` and `ARRIVED`, but a vehicle already moving towards the pickup
-  point is executing a physical manoeuvre: declaring it available while it is still on the road
-  requires countermanding its route (`commandRoute()`, M7), which is a command to the fleet and not
-  a lifecycle transition. Until that command exists, cancellation stops where the vehicle is still
-  stationary, and a passenger who cancels later is refused with the vehicle's current state.
+- Cancellation was legal **only from `ASSIGNED`** until v1.4. R14 speaks of cancelling "before the
+  ride begins", which also covers `ARRIVING` and `ARRIVED`, but a vehicle already moving towards the
+  pickup point is executing a physical manoeuvre: declaring it available while it is still on the
+  road requires countermanding its route (`commandRoute()`), which is a command to the fleet and not
+  a lifecycle transition. Until that command existed, cancellation stopped where the vehicle was
+  still stationary, and a passenger who cancelled later was refused with the vehicle's current
+  state.
+
+**[v1.5]** With M7 the command exists, so **transitions 12 and 13 complete R14** (decision D59). The
+boundary moves to where the requirement puts it: cancellation is accepted while the passenger is not
+yet on board, and refused from `IN_RIDE` onwards — the ride begins when the passenger boards (RASD
+§1.2.2), not when the vehicle departs. The three cancellable states share one action,
+`releaseRobotaxi()`, and one obligation on the caller: **the route is countermanded before the
+transition is requested**, so a vehicle is never declared available while still driving towards a
+passenger who has cancelled. The exhaustive test of the machine therefore enumerates 13 legal rows
+and 7 × 10 − 13 = 57 illegal ones.
 
 **[v1.1]** This seven-state machine — not the six-state one of RASD §3.2 — is the machine the system
 implements, and the one the tests enumerate exhaustively. The RASD machine remains correct as the
@@ -1361,11 +1392,11 @@ supports it.
 | R7 | Real-time fleet monitoring | FleetMonitor; Operator Dashboard |
 | R8 | Runtime strategy selection | ModeController; AllocationManager + Strategy |
 | R9 | Maintenance management | MaintenanceManager; FleetMonitor + *State* |
-| R10 | Demand analysis | RebalancingManager; ExternalServicesGateway **[v1.4]** *(the demand source is realised as `demand_sample` / `demand_event` read through PersistenceManager — decision D47; the gateway takes over in M7)* |
-| R11 | Proactive fleet rebalancing | RebalancingManager; FleetMonitor |
+| R10 | Demand analysis | RebalancingManager; PersistenceManager **[v1.5]** *(the demand source is realised as `demand_sample` / `demand_event`; `getDemandData()` stays out of the gateway until a real provider exists — decisions D47 and D62)* |
+| R11 | Proactive fleet rebalancing | RebalancingManager; FleetMonitor + *State* (transitions 8 and 9); ExternalServicesGateway (`commandRoute`, `readTelemetry`) **[v1.5]** |
 | R12 | Auto Mode (traffic-driven switching) | ModeController; ExternalServicesGateway |
 | R13 | Manual Mode (override) | ModeController; Operator Dashboard |
-| R14 **[v1.1]** | Ride cancellation | RideRequestManager (`cancel`); PersistenceManager (reservation release); FleetMonitor + *State* |
+| R14 **[v1.1]** | Ride cancellation | RideRequestManager (`cancel`); PersistenceManager (reservation release); FleetMonitor + *State* (transitions 11, 12, 13); ExternalServicesGateway (`commandRoute`, route revocation) **[v1.5]** |
 
 ## 4.2 Non-functional requirements
 
@@ -1444,8 +1475,9 @@ and connected through the `ExternalServicesGateway` later.
 5. **NotificationManager (Observer) + API Gateway push**: wire events to clients.
 6. **ModeController + RebalancingManager**: the higher-level control logic, including the traffic
    monitor that feeds `onTrafficLevel()` **[v1.1]**.
-7. **ExternalServicesGateway adapters**: replace the mocks with the real mapping and demand
-   services.
+7. **ExternalServicesGateway adapters**: replace the mocks with the real mapping service (OSRM, with
+   cache and linear fallback) and connect the fleet provider — in this prototype the simulator
+   **[v1.5]**. The demand source stays where it is, for the reason decision D62 gives.
 8. **Clients**: Passenger App and Operator Dashboard against the stable API.
 
 ## 5.3 Testing strategy
@@ -1572,7 +1604,14 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D57 | `GET /mode` **non** è uno snapshot transazionale: legge la strategia e poi il modo, in quest'ordine | §2.2.1; NFR10 | I due valori stanno su una riga sola (D6) ma le due letture appartengono a due componenti diversi, quindi arrivano al database separate e una scelta manuale può committare fra le due. Non essendoci un componente con titolo per esporre una lettura unica, si sceglie **quale disallineamento è possibile**: leggendo il modo per ultimo, la risposta non può mai dire `AUTO` dopo che un operatore ha preso il controllo — che è la falsificazione di NFR10 nella §4.3 mostrata a schermo. Il caso residuo, modo `MANUAL` con la strategia di un istante prima, si corregge alla richiesta successiva e non nega nessun intervento umano |
 | D58 | `Zone.demandLevel` e l'enum `DemandLevel` del RASD non sono realizzati | RASD §2.2.3, Fig. 2.2 | Il RASD attribuisce a `Zone` un livello di domanda discreto (`LOW`, `MEDIUM`, `HIGH`). La decisione D12 lo sostituisce con una domanda attesa **continua**, calcolata a ogni analisi da base storica e moltiplicatori: una colonna con tre valori sarebbe una discretizzazione di quel numero, e per di più persistita — cioè una seconda verità da riscrivere a ogni cambio di fascia oraria e a ogni evento che comincia o finisce. `analyzeDemand()` restituisce il numero e l'ordinamento, che è ciò di cui R10 e R11 hanno bisogno; se la dashboard vorrà tre colori userà tre soglie sue |
 
+| D59 | **Transizioni 12 e 13**: `cancelRide()` è legale anche da `ARRIVING` e da `ARRIVED`, e chi annulla **revoca la rotta prima** di chiedere la transizione | §2.6.3, Fig. 2.10; RASD R14 | La D27 aveva limitato l'annullamento ad `ASSIGNED` per una ragione dichiaratamente temporanea: fermare un veicolo in movimento richiede `commandRoute()`, che non esisteva. Con M7 esiste, quindi la limitazione cade e il confine torna dove R14 lo mette — «before the ride begins», e la corsa comincia quando il passeggero sale (RASD §1.2.2), non quando il veicolo parte. Da `IN_RIDE` l'annullamento resta rifiutato, ed è l'unico rifiuto che sopravvive. L'ordine fra revoca e transizione non è un dettaglio di implementazione: senza, un veicolo verrebbe dichiarato disponibile — quindi assegnabile a un altro passeggero — mentre continua a percorrere la rotta di una corsa annullata |
+| D60 | `FleetMonitor` espone la **transizione 9**, `completeRebalancing(robotaxiID)`, e a innescarla è il `RebalancingManager` all'inizio del proprio ciclo | §2.2, §2.6.3, Fig. 2.10 | La transizione è nella figura dal v1.0 e `RebalancingState` la implementa dal M2, ma **nessuna operazione di componente la provocava**: la sua guardia `hasReachedTargetArea()` dipende da dove il veicolo si trova davvero, e la telemetria nasce con M7. L'effetto era che un veicolo mandato a riposizionarsi restava in `REBALANCING` finché una corsa non lo interrompeva — allocabile, ma mai più contato fra gli inattivi e quindi mai più spostabile. È la stessa lacuna che la D37 aveva colmato per le transizioni 4-7, lasciata aperta sulla 9 perché allora nessuno sapeva dire *quando*. A chiudere è chi ha mandato il veicolo: è lui a sapere dove doveva arrivare, ed è sua la riga di `rebalancing_action` che passa a `COMPLETED` |
+| D61 | `rides` espone una **quarta porta**, `FleetTelemetryPort.runOnce()`, che legge la telemetria, consegna le posizioni a `FleetMonitor.recordPositions()` e innesca le transizioni 4-7 | §2.2, §2.2.1; decisione D37 | La D37 scriveva che «da M7 le transizioni le innescherà la telemetria del simulatore» senza dire quale componente la legge. Sta in `rides` per la stessa ragione per cui ci sta `RideLifecycle` (M5): ogni passo muove insieme lo stato del veicolo e quello della corsa, e il componente che coordina due moduli è il `RideRequestManager` — metterlo in `fleet` avrebbe costretto quel modulo a conoscere le corse, invertendo un arco della Figura 2.1. Le **posizioni** però le scrive `fleet`, perché la riga del veicolo è sua (D28): chi osserva consegna, chi possiede registra. `recordPositions()` non è una transizione e non notifica — una posizione cambia a ogni tick, e spingerne una per veicolo per tick inonderebbe il canale che M5 ha costruito per gli eventi della corsa |
+| D62 | `getDemandData()` **non entra in M7**: la D47 resta valida oltre la milestone che aveva nominato | §2.2, §2.4 Fig. 2.7 | La D47 rimandava l'operazione a «M7 insieme a un fornitore vero», e il calendario è arrivato mentre il fornitore no: di sorgenti di domanda per Milano collegabili non ce n'è nessuna, e la domanda di questo prototipo continua a stare in `demand_sample` e `demand_event`. Aggiungerla adesso significherebbe mettere `external` sopra `persistence` per rileggere righe che il `RebalancingManager` legge da sé — l'argomento della D47, che non è scaduto. L'arco `RebalancingManager --( IExternalServices` **viene realizzato lo stesso**, ma per le altre due operazioni: comandare la rotta verso la zona (Fig. 2.7) e leggere la telemetria per sapere chi è arrivato |
+| D63 | La guardia `isPassengerOnBoard()` è risolta assumendo che il passeggero salga al giro successivo all'arrivo | §2.6.3, Fig. 2.10 | Delle guardie della figura è l'unica che **nessun sensore risolve**: né un simulatore né una flotta vera sanno dire se qualcuno è salito. Le alternative erano due, entrambe peggiori: non far partire mai la corsa da sola, cioè lasciare `ARRIVED` come stato terminale di fatto, oppure introdurre un'azione del passeggero sull'app — che nessun requisito di ROAd prevede e che allargherebbe il RASD invece di realizzarlo. È un'assunzione dichiarata del prototipo, come la velocità media della stima lineare |
+| D64 | `external` espone una **seconda porta**, `FleetSimulationPort` (`tick()`, `reset()`), che nessun componente di dominio inietta | §2.2; MILESTONES.md §M7; CLAUDE.md Regola 1 | MILESTONES.md chiede che il simulatore «sotto test avanzi solo su `tick()` esplicito», e CLAUDE.md Regola 1 dice che i test raggiungono un modulo solo dalle sue porte. Le due regole insieme lasciano una forma sola: il tick è un'operazione pubblica del modulo. Tenerla separata da `IExternalServices` è ciò che le permette di sparire insieme al simulatore il giorno in cui i veicoli fossero veri — la porta dei servizi continuerebbe a dire le stesse quattro cose. `reset()` sta lì per una ragione scoperta scrivendo il cancello: il simulatore *è* la flotta, quindi le posizioni dei veicoli sopravvivono a un `TRUNCATE`, e senza un modo di svuotarlo la suite dipenderebbe dall'ordine di esecuzione (HARNESS.md §2) |
+
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
-D38, D39, D40, D41, D47, D49 e D54 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
+D38, D39, D40, D41, D47, D49, D54 e D64 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
 `HARNESS.md`, `docs/requirements.json`), che sono stati allineati nella stessa occasione. Il DD
 resta la fonte: se in futuro divergono, è il file operativo a doversi adeguare.

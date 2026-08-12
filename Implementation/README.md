@@ -10,12 +10,16 @@ pattern, determinismo, tracciabilità — stanno in `CLAUDE.md`.
 
 ## Stato
 
-Milestone corrente: **M1 — PersistenceManager e schema**. Sopra il walking skeleton di M0 ci sono
-ora lo schema del database, il modulo `persistence` con la sua porta e i dati di partenza (le 16
-zone di Milano, 20 robotaxi, una settimana di domanda simulata). L'invariante centrale — due
-riserve dello stesso veicolo non si sovrappongono mai — è garantita da un vincolo di esclusione di
-PostgreSQL, non dal codice applicativo. I manager di dominio arrivano da M1b in poi, nell'ordine di
-integrazione bottom-up del DD §5.2.
+Milestone corrente: **M7 — ExternalServicesGateway reale e simulatore**. Il backend è completo nei
+suoi manager (M1–M6) e da questa milestone parla con fornitori veri invece che con mock: OSRM per
+percorsi e tempi di arrivo — con cache e ripiego sulla stima lineare quando non risponde — e un
+**simulatore di flotta** che guida i veicoli lungo la rotta comandata e ne pubblica la telemetria.
+È la telemetria a far avanzare le corse: il veicolo arriva al punto di ritiro, il passeggero sale,
+la corsa si chiude. Con `commandRoute()` disponibile si completa anche R14, l'annullamento, che ora
+è ammesso finché il passeggero non è a bordo. Restano i client (M8) e i test di sistema (M9).
+
+Il sistema funziona **senza rete**: se `OSRM_BASE_URL` è vuota o il fornitore non risponde, i
+percorsi si stimano in linea d'aria e nessuna richiesta di corsa va persa.
 
 ## Struttura
 
@@ -29,7 +33,10 @@ Implementation/
 │  └─ shared/       tipi e schemi condivisi. È una foglia: non dipende da apps/
 ├─ contracts/
 │  └─ openapi.json  contratto pubblicato, generato e committato (HARNESS.md §4)
-├─ tools/           harness di verifica: verify, trace, gate, dev, db, e2e
+├─ tools/
+│  ├─ simulator/    simulatore di flotta (M7): un pacchetto, non un modulo dell'API — sta
+│  │                dall'altra parte della porta, come OSRM, ed è sostituibile da veicoli veri
+│  └─ ...           harness di verifica: verify, trace, gate, dev, db, e2e
 ├─ docker/          inizializzazione del database di sviluppo
 └─ docs/            RASD, DD e docs/requirements.json (sorgente di `pnpm trace`)
 ```
@@ -141,6 +148,13 @@ un'eccezione fuori da `apps/api/src/platform/`.
 
 I client non importano niente da `apps/api`: conoscono il backend solo attraverso
 `contracts/openapi.json` e i tipi di `packages/shared`.
+
+Ciò che ROAd non controlla — mappe, traffico, flotta — sta dietro `ExternalServicesPort`, con un
+adapter per fornitore. Nessun altro file cita un URL, un protocollo o un SDK, ed è la formulazione
+verificabile di NFR8 (DD §4.3): il giorno in cui i robotaxi fossero veri, cambierebbe un adapter e
+nessun manager. Il simulatore avanza solo quando qualcuno gli dice di avanzare — un `@Cron` in
+esecuzione normale, i test un tick alla volta — perché il tempo del mondo simulato non è
+l'orologio di sistema (CLAUDE.md Regola 3).
 
 ## Contribuire
 

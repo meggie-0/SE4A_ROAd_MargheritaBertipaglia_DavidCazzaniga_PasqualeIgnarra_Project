@@ -16,6 +16,9 @@ const depcruise = run('npx', [
   'err',
   'apps',
   'packages',
+  // Il simulatore di flotta (M7) vive in tools/ ma è codice del prodotto: la regola che lo tiene
+  // dietro la porta non avrebbe niente da esaminare se il grafo si fermasse ad apps/ e packages/.
+  'tools/simulator/src',
 ]);
 
 if (depcruise !== 0) {

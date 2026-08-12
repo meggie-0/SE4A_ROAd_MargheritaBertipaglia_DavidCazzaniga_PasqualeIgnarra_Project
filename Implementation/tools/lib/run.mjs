@@ -47,9 +47,17 @@ export function jest(project, extraArgs = [], options = {}) {
   return run('npx', ['jest', '--selectProjects', project, ...extraArgs], options);
 }
 
-/** Ricompila packages/shared nei due formati: i suoi artefatti servono a typecheck, Jest e Vite. */
-export function buildShared() {
-  return run('pnpm', ['--filter', '@road/shared', 'build']);
+/**
+ * Ricompila i pacchetti di libreria del monorepo: i loro artefatti servono a typecheck, Jest e Vite.
+ *
+ * Sono due da M7. `@road/shared` esce nei due formati che i suoi consumatori sanno leggere;
+ * `@road/simulator` solo in CommonJS, perché l'unico a caricarlo è `apps/api`. L'ordine conta: il
+ * secondo dipende dal primo.
+ */
+export function buildPackages() {
+  const shared = run('pnpm', ['--filter', '@road/shared', 'build']);
+  if (shared !== 0) return shared;
+  return run('pnpm', ['--filter', '@road/simulator', 'build']);
 }
 
 // Colori ANSI. La sequenza di escape si costruisce a runtime invece di incollare il byte 0x1b

@@ -85,15 +85,15 @@ confine, stai sbagliando qualcosa.
 | Modulo | Porta | Operazioni (DD §2.2) |
 |---|---|---|
 | `auth` | `AuthPort`, `access-control.port.ts` (`TokenVerifierPort`) | `register`, `authenticate`, `updateProfile`; `verify` |
-| `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort`, `RideLifecyclePort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce`; `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide` |
+| `rides` | `RideRequestPort`, `AdvanceBookingActivatorPort`, `RideLifecyclePort`, `FleetTelemetryPort` | `submitImmediate`, `submitAdvance`, `cancel`; `runOnce`; `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`; `runOnce` |
 | `allocation` | `AllocationPort` | `allocate`, `setActiveStrategy`, `getActiveStrategy` |
 | `mode` | `ModePort`, `traffic-monitor.port.ts` (`TrafficMonitorPort`) | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode`; `runOnce` |
-| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`, `releaseAssignment`, `requestRebalancing` |
+| `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`, `releaseAssignment`, `requestRebalancing`, `completeRebalancing`, `recordPositions` |
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
 | `notifications` | `NotificationPort`, `session.port.ts` (`NotificationSessionPort`) | `update`; `registerSession`, `removeSession`, `registeredSessions` |
 | `persistence` | `PersistencePort` | `create`, `update`, `find`, `filterAvailable`, `reserve` |
-| `external` | `ExternalServicesPort` | `getETA`, `getTraffic`; `getDemandData`, `commandRoute`, `readTelemetry` arrivano con M7 |
+| `external` | `ExternalServicesPort`, `fleet-simulation.port.ts` (`FleetSimulationPort`) | `getETA`, `getTraffic`, `commandRoute`, `readTelemetry`; `tick`, `reset`. `getDemandData` **non** è realizzata: la sorgente di domanda resta il database (DD, decisioni D47 e D62) |
 | `platform` | `ClockPort`, `RandomPort` | `now`, `next` |
 | `gateway` | — | Controller REST e WebSocket. Importa solo porte. |
 
@@ -112,7 +112,8 @@ registrazione (NFR7).
 
 **State** — una classe per stato: `AvailableState`, `AssignedState`, `ArrivingState`,
 `ArrivedState`, `InRideState`, `RebalancingState`, `MaintenanceState`. Sono **sette**: la macchina
-autorevole è quella del **DD §2.6.3, Figura 2.10**, non quella a sei stati del RASD §3.2. Ogni
+autorevole è quella del **DD §2.6.3, Figura 2.10**, non quella a sei stati del RASD §3.2. Le
+transizioni legali sono **tredici** da M7, quando le 12 e 13 hanno completato R14 (decisione D59). Ogni
 classe espone i propri metodi di transizione e solleva `IllegalTransitionError` per quelle non
 ammesse (NFR5). Lo stato si persiste come colonna enum e l'oggetto si ricostruisce via
 `RobotaxiStateFactory`. **Vietato** implementare la macchina a stati con `switch` sparsi nei service.

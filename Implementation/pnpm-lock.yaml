@@ -80,6 +80,9 @@ importers:
       '@road/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@road/simulator':
+        specifier: workspace:*
+        version: link:../../tools/simulator
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
@@ -188,6 +191,12 @@ importers:
       zod:
         specifier: ^4.1.13
         version: 4.4.3
+
+  tools/simulator:
+    dependencies:
+      '@road/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
 
 packages:
 

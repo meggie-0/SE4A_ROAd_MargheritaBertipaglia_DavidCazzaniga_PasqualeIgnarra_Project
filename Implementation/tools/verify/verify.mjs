@@ -4,13 +4,13 @@
 // così l'errore che arriva è quello più vicino alla causa. La CI esegue esattamente questo
 // comando, non una lista parallela: ogni divergenza fra locale e CI sarebbe un bug dell'harness.
 
-import { run, buildShared, colors } from '../lib/run.mjs';
+import { run, buildPackages, colors } from '../lib/run.mjs';
 
 const steps = [
   {
-    name: 'shared',
-    what: 'compila packages/shared (i suoi tipi servono a tutto il resto)',
-    execute: () => buildShared(),
+    name: 'packages',
+    what: 'compila @road/shared e @road/simulator (i loro tipi servono a tutto il resto)',
+    execute: () => buildPackages(),
   },
   {
     name: 'typecheck',

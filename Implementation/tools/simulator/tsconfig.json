@@ -1,0 +1,9 @@
+{
+  "$comment": "Progetto usato da `pnpm typecheck` (--noEmit) e dagli editor. La compilazione vera passa da tsconfig.build.json.",
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "incremental": false
+  }
+}

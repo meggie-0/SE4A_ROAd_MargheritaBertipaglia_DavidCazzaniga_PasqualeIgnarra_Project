@@ -702,14 +702,18 @@ functions are designed to satisfy the project goals.
   `RideStatus` (§2.2.3), ma nessun requisito lo enunciava, quindi restava fuori dalla tracciabilità.
   È numerato R14 per non rinumerare R1–R13, ampiamente citati altrove.
 
-  *Copertura attuale [v1.2]:* «before the ride begins» comprende, alla lettera, anche i momenti in
-  cui il veicolo si è già mosso verso il punto di ritiro — la corsa comincia con la partenza del
-  passeggero, non con quella del veicolo. Il sistema oggi **annulla fino al veicolo assegnato e
-  fermo**; da `ARRIVING` in poi l'annullamento viene rifiutato con un conflitto esplicito. La
-  ragione è nel DD §2.6.3 (transizione 11, decisione D27): riportare fra i disponibili un veicolo in
-  movimento richiede di revocarne la rotta, che è un comando alla flotta — `commandRoute()` — e non
-  una transizione del ciclo di vita. Il comando esiste da **M7**, ed è lì che R14 si completa; fino
-  ad allora la copertura del requisito è parziale, e la parte mancante è questa e solo questa.
+  *Copertura [v1.3]:* **il requisito è coperto per intero da M7.** «Before the ride begins»
+  comprende, alla lettera, anche i momenti in cui il veicolo si è già mosso verso il punto di ritiro
+  — la corsa comincia con la salita del passeggero, non con la partenza del veicolo — e il sistema
+  ora annulla anche da lì: le transizioni 12 e 13 del DD §2.6.3 (decisione D59) riportano ad
+  `AVAILABLE` un veicolo in avvicinamento o fermo al ritiro, dopo avergli **revocato la rotta** con
+  `commandRoute()`. L'ordine conta: senza la revoca, un veicolo verrebbe dichiarato disponibile
+  mentre continua a percorrere la rotta di una corsa annullata.
+
+  Il solo rifiuto che resta è da `IN_RIDE`, ed è il confine che il requisito stesso pone: lì il
+  passeggero è a bordo e la corsa è cominciata (§1.2.2). Fino a M6 il rifiuto arrivava molto prima —
+  bastava che il veicolo si fosse mosso — perché `commandRoute()` non esisteva ancora (DD §2.6.3,
+  decisione D27), e la copertura era dichiaratamente parziale.
 
 ### Fleet Supervision and Control
 
@@ -1051,6 +1055,7 @@ not listed above is not admissible at requirements level.
 | 1 | Aggiunto **[R14] Ride Cancellation** | §2.4 | L'annullamento era già un fenomeno condiviso (§1.2.2) e uno stato del dominio (`CANCELLED`), ma nessun requisito lo enunciava: restava fuori dalla tracciabilità |
 | 2 | Aggiunto a **[R13]** il comportamento al rientro in Auto Mode | §2.4 | Il v1.0 diceva quando si esce dal Manual Mode, non che cosa vale subito dopo; senza la precisazione R12 resterebbe violato per un tempo arbitrario |
 | 3 | Chiarito il rapporto fra la FSM del §3.2 e quella a sette stati del DD | §3.2 | Le due macchine differiscono e il documento non diceva quale valesse per l'implementazione |
+| 4 **[v1.3]** | Aggiornata la nota di copertura di **[R14]**: il requisito è ora coperto per intero | §2.4 | La nota dichiarava parziale la copertura e ne indicava la causa — l'assenza di `commandRoute()`, che impediva di fermare un veicolo già in movimento. Il comando esiste da M7 e le transizioni 12 e 13 del DD §2.6.3 completano il requisito (decisione D59): la nota descriveva uno stato dei lavori, e lasciarla ferma la renderebbe falsa |
 
 Nient'altro del RASD è cambiato: i goal G1–G10, i requisiti R1–R13, gli NFR1–NFR10, le assunzioni
 D1–D3, i vincoli C1–C2, gli scenari e il modello di dominio sono quelli del PDF v1.0. Le decisioni

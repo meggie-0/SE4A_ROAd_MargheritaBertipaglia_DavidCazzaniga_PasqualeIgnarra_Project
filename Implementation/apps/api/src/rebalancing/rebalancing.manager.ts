@@ -7,6 +7,7 @@ import {
   type ZoneCentroid,
 } from '@road/shared';
 
+import { ExternalServicesPort } from '../external/external-services.port';
 import { FleetMonitorPort } from '../fleet/fleet-monitor.port';
 import {
   ConcurrentTransitionError,
@@ -54,6 +55,15 @@ export class RebalancingManager extends RebalancingPort {
     private readonly fleet: FleetMonitorPort,
     private readonly notifications: NotificationPort,
     private readonly clock: ClockPort,
+    /**
+     * Il quarto arco che la Figura 2.1 dà a questo componente, realizzato con M7.
+     *
+     * Serve a due cose e non a una terza: comandare la rotta verso la zona di destinazione (Figura
+     * 2.7) e leggere la telemetria per sapere chi è arrivato. **Non** serve a leggere la domanda —
+     * `getDemandData()` resta fuori dalla porta, e la sorgente restano `demand_sample` e
+     * `demand_event` (decisioni D47 e D62).
+     */
+    private readonly external: ExternalServicesPort,
   ) {
     super();
   }
@@ -65,6 +75,13 @@ export class RebalancingManager extends RebalancingPort {
 
   async rebalance(): Promise<RebalancingPlan> {
     const analyzedAt = this.clock.now();
+
+    // Prima si chiude ciò che è finito, poi si decide cosa cominciare: un veicolo arrivato a
+    // destinazione torna `AVAILABLE` e rientra fra quelli che questo stesso ciclo può contare come
+    // copertura della zona in cui si trova. Nell'ordine opposto resterebbe invisibile per un giro,
+    // e il ciclo manderebbe un secondo veicolo dove uno è appena arrivato.
+    const completed = await this.completeArrivedRebalancing();
+
     const { zones, idleByZone, zoneById } = await this.analyse(analyzedAt);
 
     /**
@@ -103,7 +120,66 @@ export class RebalancingManager extends RebalancingPort {
       if (dispatch !== null) dispatched.push(dispatch);
     }
 
-    return { analyzedAt, zones, dispatched };
+    return { analyzedAt, zones, dispatched, completed };
+  }
+
+  /**
+   * Chiude il riposizionamento dei veicoli che hanno raggiunto la zona verso cui erano stati mandati
+   * (transizione 9 della Figura 2.10, M7).
+   *
+   * Fino a M6 quella transizione non aveva nessuno che la innescasse: la sua guardia,
+   * `hasReachedTargetArea()`, dipende da dove il veicolo si trova davvero, e la telemetria nasce
+   * qui. Un veicolo restava in `REBALANCING` finché una corsa non lo interrompeva — allocabile, ma
+   * mai contato fra gli inattivi, quindi mai più spostabile (decisione D60).
+   *
+   * A chiudere è questo componente e non chi legge la telemetria per le corse: chi ha mandato il
+   * veicolo è chi sa dove doveva arrivare, e la riga di `rebalancing_action` che passa a `COMPLETED`
+   * è sua. La revoca della rotta è ciò che impedisce al veicolo, ora disponibile, di continuare a
+   * dichiararsi arrivato a una destinazione che non ha più.
+   */
+  private async completeArrivedRebalancing(): Promise<readonly string[]> {
+    const telemetry = await this.external.readTelemetry();
+    const arrived = telemetry.filter((reading) => reading.hasArrived);
+    if (arrived.length === 0) return [];
+
+    const completed: string[] = [];
+    for (const reading of arrived) {
+      const [action] = await this.persistence.find('rebalancing_action', {
+        where: { robotaxiId: reading.robotaxiId, status: 'TRIGGERED' },
+        orderBy: [{ field: 'createdAt', direction: 'desc' }, { field: 'id' }],
+        limit: 1,
+      });
+      // Nessuna azione aperta: quel veicolo si sta muovendo per una corsa, non per un
+      // riposizionamento, e non è affare di questo ciclo.
+      if (action === undefined) continue;
+
+      try {
+        await this.fleet.completeRebalancing(reading.robotaxiId);
+      } catch (error) {
+        if (error instanceof IllegalTransitionError || error instanceof ConcurrentTransitionError) {
+          // Il veicolo ha preso una corsa mentre si riposizionava (transizione 10): il
+          // riposizionamento è stato interrotto, non completato. La riga resta aperta e il ciclo
+          // successivo la ritroverà con il veicolo in un altro stato.
+          this.logger.log(
+            `Il robotaxi ${reading.robotaxiId} non è più in riposizionamento: l'azione resta aperta.`,
+          );
+          continue;
+        }
+        throw error;
+      }
+
+      /**
+       * L'azione passa a `COMPLETED` e **non prende una marca di chiusura**: `RebalancingAction`
+       * nel RASD §2.2.3 ha tre campi — identificatore, stato e istante di creazione — e nessun
+       * istante di completamento. Aggiungerne uno qui vorrebbe dire allargare il modello di dominio
+       * per un dato che nessun requisito chiede e nessuna vista mostra.
+       */
+      await this.persistence.update('rebalancing_action', action.id, { status: 'COMPLETED' });
+      await this.external.commandRoute(reading.robotaxiId, null);
+      completed.push(reading.robotaxiId);
+    }
+
+    return completed;
   }
 
   /**
@@ -167,6 +243,19 @@ export class RebalancingManager extends RebalancingPort {
         targetZoneId: target.id,
         status: 'TRIGGERED',
         createdAt: analyzedAt,
+      });
+
+      /**
+       * Il comando di rotta della Figura 2.7, subito dopo la transizione 8.
+       *
+       * L'ordine è quello del diagramma — `requestRebalancing()` e poi `commandRoute()` — e ha la
+       * stessa ragione dell'ordine fra transizione e giornale: ciò che rende vero «questo veicolo si
+       * sta riposizionando» è la colonna di stato. Comandare la rotta per prima manderebbe in giro
+       * un veicolo che la macchina a stati potrebbe poi rifiutare di spostare.
+       */
+      await this.external.commandRoute(candidate.robotaxi.id, {
+        from: { lat: candidate.robotaxi.lat, lon: candidate.robotaxi.lon },
+        to: { lat: target.lat, lon: target.lon },
       });
 
       await this.notifications.update({

@@ -15,7 +15,10 @@ import {
 import {
   ExternalServicesPort,
   type EtaEstimate,
+  type RouteCommandOutcome,
+  type RouteRequest,
   type EtaOrigin,
+  type VehicleTelemetry,
 } from '../../src/external/external-services.port';
 import {
   PersistencePort,
@@ -169,6 +172,26 @@ export class EtaTableDouble extends ExternalServicesPort {
   /** Cambia la tabella fra un caso e l'altro senza ricomporre il modulo. */
   setEta(minutesById: Readonly<Record<string, number>>): void {
     this.minutesById = minutesById;
+  }
+
+  /**
+   * L'allocazione **non comanda rotte e non legge telemetria**: sceglie un veicolo e lo restituisce
+   * a chi glielo ha chiesto. Le due operazioni entrano nella porta con M7 e i loro chiamanti sono
+   * `rides` e `rebalancing`; qui esistono solo perché il doppio realizza la porta per intero, e
+   * rispondono nel modo che rende evidente un uso inatteso — un comando accettato che non muove
+   * nulla, e una flotta ferma.
+   */
+  commandRoute(robotaxiId: string, route: RouteRequest | null): Promise<RouteCommandOutcome> {
+    return Promise.resolve({
+      robotaxiId,
+      accepted: true,
+      etaMinutes: null,
+      distanceKm: route === null ? null : 0,
+    });
+  }
+
+  readTelemetry(): Promise<readonly VehicleTelemetry[]> {
+    return Promise.resolve([]);
   }
 
   getETA(origins: readonly EtaOrigin[], destination: GeoPoint): Promise<readonly EtaEstimate[]> {

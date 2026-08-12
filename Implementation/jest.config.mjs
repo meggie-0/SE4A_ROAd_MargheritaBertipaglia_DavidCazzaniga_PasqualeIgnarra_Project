@@ -36,6 +36,9 @@ export default {
       testMatch: [
         '<rootDir>/apps/api/test/unit/**/*.spec.ts',
         '<rootDir>/packages/*/test/**/*.spec.ts',
+        // Il simulatore di flotta (M7) è un pacchetto, non un modulo dell'API: i suoi test lo
+        // costruiscono direttamente, come quelli di @road/shared, e non attraversano nessuna porta.
+        '<rootDir>/tools/*/test/**/*.spec.ts',
       ],
     },
     {

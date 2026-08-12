@@ -50,8 +50,14 @@ Implementazione di test: `FakeClock` con `setNow()` e `advance(duration)`.
 **`RandomPort`** in `src/platform/random.port.ts`. Produzione: PRNG con seed da configurazione.
 Test: sequenza fissa.
 
-**Scheduler.** `RebalancingScheduler` e il ciclo del simulatore espongono `runOnce()` pubblico. In
-produzione lo chiama `@Cron`; nei test lo chiamano i test. Nessun `setInterval` nel dominio.
+**Scheduler.** `RebalancingScheduler`, `AdvanceBookingActivator`, `TrafficMonitor` e
+`FleetTelemetry` espongono `runOnce()` pubblico; il simulatore espone `tick()` sulla propria porta.
+In produzione li chiama `@Cron`; nei test li chiamano i test. Nessun `setInterval` nel dominio.
+
+**Il mondo simulato non è nel database.** Da M7 le posizioni dei veicoli vivono nella memoria del
+simulatore, che *è* la flotta: un `TRUNCATE` non le tocca. Per questo `ApiHarness.reset()` svuota
+anche il simulatore — senza, un test troverebbe i veicoli dove li ha lasciati il precedente, e la
+suite dipenderebbe dall'ordine di esecuzione.
 
 **Database.** Ogni test di integrazione parte da un container Postgres pulito con migrazioni
 applicate e seed a valori fissi. Nessun test dipende dall'ordine di esecuzione degli altri.
@@ -129,6 +135,15 @@ Servono altre due regole che lo snippet qui sopra non copre, e la cui assenza si
   fuori da `src/<modulo>/`» — i test non fanno eccezione. Un test che inietta `AllocationManager`
   invece di `AllocationPort` smette di dimostrare che il modulo è sostituibile (§9). L'unica deroga
   è `platform`: `FakeClock` e `FixedRandom` *sono* i doppi che i test devono poter costruire.
+
+**Il simulatore di flotta (M7) è dietro la stessa disciplina.** `tools/simulator` è un pacchetto del
+workspace, e `@road/simulator` può essere importato **solo** da `apps/api/src/external/`: se un
+manager di dominio potesse importarlo saprebbe che la flotta è simulata, cioè saprebbe una cosa che
+con veicoli veri sarebbe falsa (NFR8). La regola ha un dettaglio che vale la pena scrivere, perché è
+lo stesso difetto di cui sopra: un pacchetto si risolve al proprio artefatto compilato, quindi con
+`dist/` escluso dal grafo la regola non avrebbe niente da vedere e passerebbe **sempre**. L'esclusione
+è perciò limitata a `apps/*/dist` e `packages/*/dist`, e la regola è stata verificata nei due versi —
+con un import proibito fallisce, senza passa.
 
 Un test aggiuntivo (`test/arch/exports.spec.ts`) analizza i file `*.module.ts` e fallisce se un
 array `exports` contiene una classe il cui nome non finisce in `Port`. Controlla **tutti** gli

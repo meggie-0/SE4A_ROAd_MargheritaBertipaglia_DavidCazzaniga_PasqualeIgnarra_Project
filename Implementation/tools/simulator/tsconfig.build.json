@@ -1,0 +1,13 @@
+{
+  "$comment": "Compila il pacchetto in CommonJS: l'unico consumatore è apps/api, che gira su Node con Nest e Jest. A differenza di @road/shared non serve la seconda uscita ES module, perché nessun client lo carica nel browser — e un formato che nessuno legge è solo un artefatto in più da tenere allineato.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"]
+}
