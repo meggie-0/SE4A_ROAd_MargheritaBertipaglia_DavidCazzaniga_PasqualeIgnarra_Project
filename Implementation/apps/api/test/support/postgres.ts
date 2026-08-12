@@ -14,7 +14,10 @@ import { PersistenceModule } from '../../src/persistence/persistence.module';
 import { PersistencePort, type TimeWindow } from '../../src/persistence/persistence.port';
 import { ClockPort } from '../../src/platform/clock.port';
 import { FakeClock } from '../../src/platform/fake-clock';
+import { NotificationsModule } from '../../src/notifications/notifications.module';
+import { NotificationSessionPort } from '../../src/notifications/session.port';
 import { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
+import { RideLifecyclePort } from '../../src/rides/ride-lifecycle.port';
 import { RidesModule } from '../../src/rides/rides.module';
 import { RideRequestPort } from '../../src/rides/rides.port';
 
@@ -49,6 +52,15 @@ export interface ApiHarness {
    * prenotazioni si attivano solo quando un test chiama `runOnce()`, con l'istante che decide lui.
    */
   readonly advanceBooking: AdvanceBookingActivatorPort;
+  /**
+   * L'avanzamento di una corsa assegnata (M5): le transizioni 4-7 della Figura 2.10.
+   *
+   * Come `runOnce()`, in produzione la chiamerà qualcun altro — la telemetria del simulatore, da
+   * M7 — e nei test la chiama il test, che decide lui quando un veicolo arriva.
+   */
+  readonly rideLifecycle: RideLifecyclePort;
+  /** Il registro delle sessioni push, per registrare e deregistrare subscriber nei test (M5). */
+  readonly notificationSessions: NotificationSessionPort;
   /** L'orologio del modulo, sotto il controllo del test (CLAUDE.md Regola 3). */
   readonly clock: FakeClock;
   readonly databaseUrl: string;
@@ -70,6 +82,7 @@ export interface ApiHarness {
 /** L'ordine conta: le figlie prima delle madri, o le chiavi esterne si oppongono. */
 const DOMAIN_TABLES = [
   'notification',
+  'ride',
   'booking',
   'robotaxi_reservation',
   'ride_request',
@@ -125,6 +138,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
       FleetModule,
       MaintenanceModule,
       AllocationModule,
+      NotificationsModule,
       RidesModule,
     ],
   })
@@ -139,6 +153,8 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
   const allocation = moduleRef.get(AllocationPort);
   const rides = moduleRef.get(RideRequestPort);
   const advanceBooking = moduleRef.get(AdvanceBookingActivatorPort);
+  const rideLifecycle = moduleRef.get(RideLifecyclePort);
+  const notificationSessions = moduleRef.get(NotificationSessionPort);
 
   // La connessione del modulo è pigra e porta con sé le migrazioni: la prima operazione vera è
   // ciò che crea lo schema. Va fatta qui, o il `reset()` del primo test troverebbe un database
@@ -163,6 +179,8 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     allocation,
     rides,
     advanceBooking,
+    rideLifecycle,
+    notificationSessions,
     clock,
     databaseUrl,
 

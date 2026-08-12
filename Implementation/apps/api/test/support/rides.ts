@@ -10,6 +10,7 @@ import {
   IllegalTransitionError,
   type RideAssignment,
   type RobotaxiSnapshot,
+  type RobotaxiTransition,
 } from '../../src/fleet/robotaxi.port';
 import {
   PersistencePort,
@@ -27,7 +28,9 @@ import {
 } from '../../src/persistence/persistence.port';
 import { ClockPort } from '../../src/platform/clock.port';
 import { FakeClock } from '../../src/platform/fake-clock';
+import { NotificationSessionPort } from '../../src/notifications/session.port';
 import { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
+import { RideLifecyclePort } from '../../src/rides/ride-lifecycle.port';
 import { RidesModule } from '../../src/rides/rides.module';
 import { RideRequestPort } from '../../src/rides/rides.port';
 
@@ -315,6 +318,43 @@ export class FleetDouble extends FleetMonitorPort {
     return Promise.resolve(this.moveTo(robotaxiId, 'AVAILABLE'));
   }
 
+  /**
+   * Le quattro transizioni con cui una corsa avanza (M5, transizioni 4–7 della Figura 2.10).
+   *
+   * Come le altre, il doppio riproduce **solo la condizione di ingresso**: da quale stato il passo
+   * è ammesso. La macchina a stati vera resta di `fleet` e il cancello di M2 la verifica in modo
+   * esaustivo; qui serve che un passo fuori tempo fallisca come fallirebbe davvero, perché è su
+   * quello che `RideLifecycle` costruisce la propria garanzia — il veicolo prima, la corsa poi.
+   */
+  startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.advance(robotaxiId, 'ASSIGNED', 'ARRIVING', 'startPickupNavigation');
+  }
+
+  pickupReached(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.advance(robotaxiId, 'ARRIVING', 'ARRIVED', 'pickupReached');
+  }
+
+  startRide(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.advance(robotaxiId, 'ARRIVED', 'IN_RIDE', 'startRide');
+  }
+
+  completeRide(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.advance(robotaxiId, 'IN_RIDE', 'AVAILABLE', 'completeRide');
+  }
+
+  private advance(
+    robotaxiId: string,
+    from: RobotaxiSnapshot['state'],
+    to: RobotaxiSnapshot['state'],
+    transition: RobotaxiTransition,
+  ): Promise<RobotaxiSnapshot> {
+    const vehicle = this.require(robotaxiId);
+    if (vehicle.state !== from) {
+      return Promise.reject(new IllegalTransitionError(robotaxiId, vehicle.state, transition));
+    }
+    return Promise.resolve(this.moveTo(robotaxiId, to));
+  }
+
   requestRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot> {
     return Promise.resolve(this.moveTo(robotaxiId, 'REBALANCING'));
   }
@@ -384,6 +424,16 @@ export class TravelTimeDouble extends ExternalServicesPort {
 export interface RidesHarness {
   readonly rides: RideRequestPort;
   readonly advanceBooking: AdvanceBookingActivatorPort;
+  /** L'avanzamento di una corsa assegnata (M5): transizioni 4-7 della Figura 2.10. */
+  readonly rideLifecycle: RideLifecyclePort;
+  /**
+   * Il registro delle sessioni push (M5).
+   *
+   * `NotificationsModule` non è sostituito da un doppio: il `NotificationManager` che gira qui è
+   * quello vero, e con lui le classi di sessione e la regola su chi riceve cosa. A essere finto è
+   * solo il trasporto — vedi `support/notifications.ts`.
+   */
+  readonly notificationSessions: NotificationSessionPort;
   readonly persistence: RidesPersistenceDouble;
   readonly fleet: FleetDouble;
   readonly external: TravelTimeDouble;
@@ -417,6 +467,8 @@ export async function composeRides(options: ComposeRidesOptions = {}): Promise<R
   return {
     rides: moduleRef.get(RideRequestPort),
     advanceBooking: moduleRef.get(AdvanceBookingActivatorPort),
+    rideLifecycle: moduleRef.get(RideLifecyclePort),
+    notificationSessions: moduleRef.get(NotificationSessionPort),
     persistence,
     fleet,
     external,

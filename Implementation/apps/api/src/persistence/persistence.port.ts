@@ -4,6 +4,7 @@ import type {
   NotificationType,
   RideRequestKind,
   RideRequestStatus,
+  RideStatus,
   RobotaxiState,
   StrategyName,
   TrafficLevel,
@@ -179,6 +180,34 @@ export interface RideRequestRecord {
 }
 
 /**
+ * Una **corsa**: il servizio di trasporto che una richiesta accettata genera (RASD §2.2.3, M5).
+ *
+ * Non è un doppione di `RideRequestRecord`, ed è il RASD §2.2.1 a tenerle separate: la richiesta è
+ * la domanda («An accepted Ride Request can generate one Ride»), la corsa è il viaggio. `status`
+ * qui è `RideStatus` e là è `RideRequestStatus`; una richiesta resta `ACCEPTED` mentre la sua corsa
+ * attraversa `SCHEDULED → WAITING_FOR_PICKUP → IN_PROGRESS → COMPLETED`, che è esattamente la
+ * progressione che R6 chiede di notificare al passeggero.
+ *
+ * Punto di ritiro e destinazione sono copiati dalla richiesta al momento della creazione: sono
+ * immutabili per la corsa, e la copia congela l'itinerario concordato invece di lasciarlo dipendere
+ * da una riga che qualcuno potrebbe correggere dopo.
+ */
+export interface RideRecord {
+  readonly id: string;
+  readonly rideRequestId: string;
+  readonly passengerId: string;
+  readonly robotaxiId: string | null;
+  readonly status: RideStatus;
+  readonly pickupLat: number;
+  readonly pickupLon: number;
+  readonly destinationLat: number;
+  readonly destinationLon: number;
+  readonly startedAt: Date | null;
+  readonly endedAt: Date | null;
+  readonly createdAt: Date;
+}
+
+/**
  * Il dato specifico di una prenotazione anticipata.
  *
  * `activationDueAt` è `scheduledPickup − activationLead` calcolato al momento della prenotazione:
@@ -316,6 +345,7 @@ export interface PersistedRecords {
   readonly zone: ZoneRecord;
   readonly robotaxi: RobotaxiRecord;
   readonly ride_request: RideRequestRecord;
+  readonly ride: RideRecord;
   readonly booking: BookingRecord;
   readonly robotaxi_reservation: ReservationRecord;
   readonly demand_sample: DemandSampleRecord;
@@ -341,6 +371,7 @@ export type PersistedRecord<K extends EntityKind> = PersistedRecords[K];
 export type GeneratedIdKind =
   | 'user'
   | 'ride_request'
+  | 'ride'
   | 'booking'
   | 'robotaxi_reservation'
   | 'demand_sample'

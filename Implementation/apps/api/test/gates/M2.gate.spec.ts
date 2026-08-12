@@ -62,7 +62,17 @@ const ILLEGAL_TRANSITIONS: ReadonlyArray<readonly [RobotaxiStateName, RobotaxiTr
 
 const NOW = new Date('2026-05-04T09:00:00.000Z');
 const DUOMO = { lat: 45.4642, lon: 9.19 };
-const RIDE = { rideRequestId: 'ride-1' };
+/**
+ * L'identificatore è un **uuid vero** anche se nessuna riga di `ride_request` gli corrisponde.
+ *
+ * Da M5 ogni transizione notifica, e il `NotificationManager` risale al passeggero cercando la
+ * richiesta per identificatore: un valore che uuid non è fa rifiutare la query dal database. La
+ * notifica non fallisce — `update()` non solleva mai, per non disfare una transizione riuscita — ma
+ * ogni transizione di questo cancello lascerebbe uno stack trace nel registro, e un cancello verde
+ * che stampa errori è un cancello che nessuno legge più. Che la richiesta non esista è invece
+ * corretto e voluto: qui si prova la macchina a stati, non la catena delle corse.
+ */
+const RIDE = { rideRequestId: '00000000-0000-4000-8000-000000000001' };
 
 const HOOK_TIMEOUT_MS = 180_000;
 

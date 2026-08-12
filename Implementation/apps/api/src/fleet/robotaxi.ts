@@ -1,5 +1,6 @@
 import type { RobotaxiState as RobotaxiStateName } from '@road/shared';
 
+import type { DomainEvent, Observer, Subject } from '../notifications/notification.port';
 import type { PersistedRecord } from '../persistence/persistence.port';
 
 import type { RideAssignment } from './ride-assignment';
@@ -38,9 +39,20 @@ export interface RobotaxiSnapshot {
  * `PersistenceManager.reserve()`: qui `assignedRideRequestId` è la memoria di breve durata che
  * l'azione `storeRide()` richiede, non una seconda copia autorevole di quel legame.
  */
-export class Robotaxi implements RobotaxiContext {
+export class Robotaxi implements RobotaxiContext, Subject {
   private state: RobotaxiState;
   private rideRequestId: string | null;
+
+  /**
+   * Gli observer registrati su questo veicolo (DD §2.3.3, Figura 2.4).
+   *
+   * La lista vive quanto **l'operazione**, non quanto il veicolo: l'oggetto viene ricostruito dal
+   * record a ogni lettura, quindi non può portarsi dietro subscriber durevoli. In pratica contiene
+   * sempre un solo elemento, il `NotificationManager`, che `FleetMonitor` ci registra appena
+   * costruito il veicolo. Non è una scorciatoia: è la conseguenza diretta del fatto che lo stato si
+   * persiste come colonna enum e l'oggetto si ricostruisce via `RobotaxiStateFactory` (§2.6.3).
+   */
+  private readonly observers: Observer[] = [];
 
   constructor(
     private readonly vehicle: RobotaxiSnapshot,
@@ -105,6 +117,34 @@ export class Robotaxi implements RobotaxiContext {
 
   cancelRide(): void {
     this.state.cancelRide(this);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // `Subject` (DD §2.3.3, Figura 2.4)
+  // -------------------------------------------------------------------------------------------
+
+  registerObserver(observer: Observer): void {
+    if (!this.observers.includes(observer)) this.observers.push(observer);
+  }
+
+  removeObserver(observer: Observer): void {
+    const at = this.observers.indexOf(observer);
+    if (at !== -1) this.observers.splice(at, 1);
+  }
+
+  /**
+   * Notifica gli observer registrati.
+   *
+   * **Chi la chiama non è la classe di stato, è `FleetMonitor`, e solo dopo che la transizione è
+   * stata scritta.** L'azione `notifyPassenger()` della Figura 2.10 si realizza così, e l'ordine è
+   * la parte che conta: una transizione può essere legale al momento della lettura e non esserlo
+   * più al momento della scrittura — è il caso che `ConcurrentTransitionError` descrive — e
+   * notificare da dentro la classe di stato manderebbe al passeggero l'annuncio di un'assegnazione
+   * che il database ha poi rifiutato. Si notifica ciò che è successo davvero, non ciò che si stava
+   * per fare.
+   */
+  async notifyObservers(event: DomainEvent): Promise<void> {
+    for (const observer of this.observers) await observer.update(event);
   }
 
   // -------------------------------------------------------------------------------------------

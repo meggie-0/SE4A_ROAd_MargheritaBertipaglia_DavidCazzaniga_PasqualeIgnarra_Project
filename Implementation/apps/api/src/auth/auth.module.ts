@@ -5,20 +5,24 @@ import { PassportModule } from '@nestjs/passport';
 
 import { PersistenceModule } from '../persistence/persistence.module';
 
+import { TokenVerifierPort } from './access-control.port';
 import { AuthManager } from './auth.manager';
 import { AuthPort } from './auth.port';
 import { readJwtSecret } from './jwt.config';
 import { JwtStrategy } from './jwt.strategy';
 import { PasswordHasher } from './password-hasher';
 import { TokenIssuer } from './token-issuer';
+import { TokenVerifier } from './token-verifier';
 
 /**
  * Il modulo `auth` (DD §2.2, CLAUDE.md Regola 1).
  *
- * Negli `exports` c'è **solo** `AuthPort`: `AuthManager`, `PasswordHasher`, `TokenIssuer` e
- * `JwtStrategy` restano dentro. I guard e i decoratori che il `gateway` applica alle rotte non
- * sono provider e non passano da qui — li pubblica `access-control.port.ts`, e Nest li istanzia
- * nel contesto del modulo che dichiara il controller.
+ * Negli `exports` ci sono **solo** `AuthPort` e, da M5, `TokenVerifierPort`: `AuthManager`,
+ * `PasswordHasher`, `TokenIssuer`, `TokenVerifier` e `JwtStrategy` restano dentro. I guard e i
+ * decoratori che il `gateway` applica alle rotte non sono provider e non passano da qui — li
+ * pubblica `access-control.port.ts`, e Nest li istanzia nel contesto del modulo che dichiara il
+ * controller. `TokenVerifierPort` invece va iniettato, perché l'handshake di una WebSocket non è
+ * una richiesta HTTP e non passa dai guard.
  *
  * `PlatformModule` non compare fra gli `imports`, a differenza degli altri moduli di dominio: le
  * uniche marche temporali che questo modulo scrive sono `user.createdAt`, che `PersistenceManager`
@@ -44,7 +48,8 @@ import { TokenIssuer } from './token-issuer';
     TokenIssuer,
     JwtStrategy,
     { provide: AuthPort, useClass: AuthManager },
+    { provide: TokenVerifierPort, useClass: TokenVerifier },
   ],
-  exports: [AuthPort], // SOLO la porta
+  exports: [AuthPort, TokenVerifierPort], // SOLO le porte
 })
 export class AuthModule {}

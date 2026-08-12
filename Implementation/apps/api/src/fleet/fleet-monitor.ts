@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ROBOTAXI_STATES, type RobotaxiState as RobotaxiStateName } from '@road/shared';
 
+import { NotificationPort } from '../notifications/notification.port';
 import { PersistencePort, StaleRecordError } from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
 
@@ -28,6 +29,14 @@ export class FleetMonitor extends FleetMonitorPort {
   constructor(
     private readonly persistence: PersistencePort,
     private readonly clock: ClockPort,
+    /**
+     * L'unico observer registrato su ogni `Robotaxi` che questo componente costruisce (DD §2.3.3).
+     *
+     * `fleet` dipende da `notifications` e non viceversa: il soggetto conosce l'observer, l'observer
+     * non conosce i soggetti. È ciò che permette di riscrivere il canale di notifica senza toccare
+     * la macchina a stati, e di provare la macchina a stati senza alzare una socket.
+     */
+    private readonly notifications: NotificationPort,
   ) {
     super();
   }
@@ -76,9 +85,34 @@ export class FleetMonitor extends FleetMonitorPort {
   }
 
   async assign(robotaxiId: string, request: RideAssignment): Promise<RobotaxiSnapshot> {
-    return this.applyTransition(robotaxiId, 'assignRide', (robotaxi) =>
-      robotaxi.assignRide(request),
+    return this.applyTransition(
+      robotaxiId,
+      'assignRide',
+      (robotaxi) => robotaxi.assignRide(request),
+      // La corsa la sappiamo già: è l'argomento. Cercarla in tabella sarebbe una lettura per
+      // scoprire ciò che il chiamante ci ha appena detto.
+      request.rideRequestId,
     );
+  }
+
+  async startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'startPickupNavigation', (robotaxi) =>
+      robotaxi.startPickupNavigation(),
+    );
+  }
+
+  async pickupReached(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'pickupReached', (robotaxi) =>
+      robotaxi.pickupReached(),
+    );
+  }
+
+  async startRide(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'startRide', (robotaxi) => robotaxi.startRide());
+  }
+
+  async completeRide(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'completeRide', (robotaxi) => robotaxi.completeRide());
   }
 
   async releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot> {
@@ -108,6 +142,7 @@ export class FleetMonitor extends FleetMonitorPort {
     robotaxiId: string,
     transition: RobotaxiTransition,
     apply: (robotaxi: Robotaxi) => void,
+    knownRideRequestId?: string,
   ): Promise<RobotaxiSnapshot> {
     const [record] = await this.persistence.find('robotaxi', {
       where: { id: robotaxiId },
@@ -115,22 +150,62 @@ export class FleetMonitor extends FleetMonitorPort {
     });
     if (record === undefined) throw new UnknownRobotaxiError(robotaxiId);
 
-    const robotaxi = new Robotaxi(robotaxiSnapshotOf(record));
+    // La corsa in carico si legge **prima** della transizione: `completeRide()` e `cancelRide()`
+    // chiamano `releaseRide()`, e dopo di quelle il veicolo non saprebbe più dire a chi la notifica
+    // andava consegnata — cioè proprio i due eventi che chiudono la corsa non arriverebbero.
+    const rideRequestId = knownRideRequestId ?? (await this.activeRideRequestOf(robotaxiId));
+
+    const robotaxi = new Robotaxi(robotaxiSnapshotOf(record), rideRequestId ?? null);
+    // L'unico observer, registrato dal modulo che possiede il soggetto (DD §2.3.3).
+    robotaxi.registerObserver(this.notifications);
     apply(robotaxi);
 
+    const observedAt = this.clock.now();
+    let updated;
     try {
-      const updated = await this.persistence.update(
+      updated = await this.persistence.update(
         'robotaxi',
         robotaxiId,
-        { state: robotaxi.currentState, updatedAt: this.clock.now() },
+        { state: robotaxi.currentState, updatedAt: observedAt },
         { state: record.state },
       );
-      return robotaxiSnapshotOf(updated);
     } catch (error) {
       if (error instanceof StaleRecordError) {
         throw new ConcurrentTransitionError(robotaxiId, record.state, transition);
       }
       throw error;
     }
+
+    // **Dopo** la scrittura, e solo se è riuscita: si notifica ciò che è accaduto (R6, G7).
+    await robotaxi.notifyObservers({
+      kind: 'ROBOTAXI_STATE_CHANGED',
+      occurredAt: observedAt,
+      robotaxiId,
+      from: record.state,
+      to: updated.state,
+      rideRequestId: rideRequestId ?? null,
+    });
+
+    return robotaxiSnapshotOf(updated);
+  }
+
+  /**
+   * La richiesta di corsa che questo veicolo sta servendo, se ce n'è una.
+   *
+   * È l'azione `storeRide()` della Figura 2.10 ricostruita dalla sorgente autorevole invece che
+   * ricordata: il legame vive su `ride_request.assignedRobotaxiId`, che `PersistenceManager.reserve()`
+   * scrive nella stessa transazione della riserva (decisione D35). Una richiesta annullata o
+   * rifiutata azzera quella colonna, quindi un veicolo ha al più una richiesta `ACCEPTED` addosso.
+   *
+   * Serve solo a instradare la notifica: senza, il manager saprebbe che un veicolo si è mosso ma non
+   * a quale passeggero la cosa interessa.
+   */
+  private async activeRideRequestOf(robotaxiId: string): Promise<string | undefined> {
+    const [request] = await this.persistence.find('ride_request', {
+      where: { assignedRobotaxiId: robotaxiId, status: 'ACCEPTED' },
+      orderBy: [{ field: 'createdAt', direction: 'desc' }, { field: 'id' }],
+      limit: 1,
+    });
+    return request?.id;
   }
 }

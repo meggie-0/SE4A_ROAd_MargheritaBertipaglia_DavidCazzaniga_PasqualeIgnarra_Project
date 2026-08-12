@@ -126,6 +126,7 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.0 | July 11, 2026 | Initial release of the Design Document |
 | 1.1 | August 10, 2026 | **[v1.1]** Realisation decisions taken before implementation: port signatures aligned with the code contract, Observer realisation, `IllegalTransitionError` naming, reservation timeline for immediate rides, advance-booking activation, zone membership rule, `enableAuto()` re-evaluation, demand ranking, operational definitions for NFR3/NFR6/NFR8, R14. See [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.2 | August 11, 2026 | **[v1.2]** Decisions taken while implementing the ride request flows (M4), and the resolution of two contradictions the document carried: R14 required a cancelled ride to free an already assigned vehicle while Figure 2.10 gave `ASSIGNED` no exit towards `AVAILABLE` (transition 11 added), and Figures 2.5 and the activation diagram disagreed on the order of `reserve()` and `assign()`. Also: the `RideRequestManager` arcs missing from Figure 2.1, the sixth `FleetMonitor` operation, the nominal filtering window of Figure 2.8, and the meaning of "still eligible" at activation. See decisions D27–D33 in [Appendice A](#appendice-a--registro-delle-decisioni). |
+| 1.3 | August 12, 2026 | **[v1.3]** Decisions taken while implementing the notification channel (M5), and the resolution of the gap the document carried on its second subject: Section 2.3.3 draws `Ride` as a `Subject` with a `RideStatus`, but no table, no component operation and no flow ever created one — the entity existed in the RASD and nowhere in this design. Also: the four lifecycle transitions that had no way of being triggered, the two ports of `notifications`, the three arcs Figure 2.1 was missing, token verification outside the HTTP path, and the ordering rule between persisting a transition and notifying it. See decisions D36–D46 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
 ## 1.4 Document Structure
 
@@ -223,6 +224,7 @@ package "Backend" {
 
     component "Notification Manager" as NotificationManager
     () "INotificationService"
+    () "INotificationSessionService"
 
     component "Rebalancing Manager" as RebalancingManager
 }
@@ -241,6 +243,7 @@ APIGateway --( IRideRequestService
 APIGateway --( IFleetMonitorService
 APIGateway --( IModeControlService
 APIGateway --( IMaintenanceService
+APIGateway --( INotificationSessionService
 
 AuthenticationManager -up- IAuthenticationService
 RideRequestManager   -up- IRideRequestService
@@ -251,6 +254,7 @@ AllocationManager    -up- IAllocationService
 PersistenceManager   -up- IPersistenceService
 ExternalServicesGateway -up- IExternalServices
 NotificationManager  -up- INotificationService
+NotificationManager  -up- INotificationSessionService
 
 RideRequestManager --( IPersistenceService
 RideRequestManager --( IAllocationService
@@ -262,6 +266,9 @@ AllocationManager --( IExternalServices
 
 FleetMonitor --( IPersistenceService
 FleetMonitor --( IExternalServices
+FleetMonitor --( INotificationService
+
+NotificationManager --( IPersistenceService
 
 ModeController --( IAllocationService
 ModeController --( INotificationService
@@ -292,7 +299,12 @@ The main components and the operations they export are:
   coordinates advance reservations and drives the request lifecycle (R3, R4, R14). **[v1.2]** It
   also owns `AdvanceBookingActivator.runOnce()`, published as a second port of the component
   (decision D33), and it reaches `IFleetMonitorService` and `IExternalServices` — two arcs the v1.1
-  Figure 2.1 omitted although Figure 2.9 and Figure 2.5 both used them (decision D29).
+  Figure 2.1 omitted although Figure 2.9 and Figure 2.5 both used them (decision D29). **[v1.3]** A
+  **third port**, `IRideLifecycleService` (`startPickupNavigation()`, `pickupReached()`,
+  `startRide()`, `completeRide()`), advances an assigned ride to its destination, moving the vehicle
+  and the `Ride` together — the vehicle first (decision D38). It owns the `ride` table and is the
+  only writer of `RideStatus` (decision D36), and it reaches `INotificationService`, since `Ride` is
+  the second `Subject` of Section 2.3.3.
 - **AllocationManager**: `allocate(request, candidates)`, `setActiveStrategy()`. Selects the
   robotaxi to assign by delegating to the active allocation strategy (R5, R8). This is the context
   of the Strategy pattern.
@@ -301,7 +313,10 @@ The main components and the operations they export are:
   NFR9, NFR10).
 - **FleetMonitor**: `getCandidates()`, `getBookableRobotaxis()` **[v1.2]**,
   `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
-  `releaseAssignment()` **[v1.2]**, `requestRebalancing()`. Keeps the real-time picture of every
+  `startPickupNavigation()`, `pickupReached()`, `startRide()`, `completeRide()` **[v1.3]**,
+  `releaseAssignment()` **[v1.2]**, `requestRebalancing()`. The four operations added in v1.3 are
+  transitions 4-7 of Figure 2.10, which the figure defined from v1.0 and no component operation could
+  trigger (decision D37). Keeps the real-time picture of every
   robotaxi (position, state) and coordinates vehicle lifecycle updates (R7, G6, G8). Each Robotaxi
   manages its own lifecycle through the State pattern. `releaseAssignment()` drives transition 11 and
   is what makes R14 realisable: `RideRequestManager` owns the cancellation, but the state column is
@@ -309,9 +324,16 @@ The main components and the operations they export are:
 - **RebalancingManager**: `analyzeDemand()`, `rebalance()`. Identifies high-demand zones and
   repositions available robotaxis (R10, R11, G9).
 - **MaintenanceManager**: `requestMaintenance()`, `completeMaintenance()`. Marks robotaxis in/out of
-  maintenance and prevents their assignment (R9).
-- **NotificationManager**: `update(event)`. Receives domain events and dispatches notifications to
-  the interested clients (R6, G7). Concrete observer of the Observer pattern.
+  maintenance and prevents their assignment (R9). **[v1.3]** It is the second component that writes
+  the state column, so it is also the second that notifies: a vehicle leaving the fleet disappears
+  from the operator's map exactly as one that departs on a ride, and the dashboard must learn it
+  without reloading (decision D42).
+- **NotificationManager**: `update(event)`; `registerSession(session)`, `removeSession(session)`,
+  `registeredSessions()` **[v1.3]**. Receives domain events and dispatches notifications to
+  the interested clients (R6, G7). Concrete observer of the Observer pattern. The three session
+  operations are published by a **second port** of the component: Section 2.3.3 already requires the
+  manager to register and deregister sessions at connection and disconnection, but v1.2 listed only
+  `update()` among its exported operations (decision D40).
 - **PersistenceManager**: `create()`, `update()`, `find()` **[v1.1]**, `filterAvailable()`,
   `reserve()`. The only component that talks to the database; it filters candidates according to
   their availability timelines and atomically stores each advance booking together with the
@@ -684,6 +706,22 @@ while the domain objects stay free of any knowledge of transport or connections.
 the runtime provides may carry the messages, but it does not replace the observer classes: `Subject`,
 `Observer`, `NotificationManager` and the two session classes exist as named classes in the code.
 
+**When a subject notifies [v1.3].** `notifyObservers(event)` is called **after** the transition has
+been persisted, by the component that wrote it — `FleetMonitor` for `Robotaxi`, the ride journal that the
+`RideRequestManager` component owns, and which its activation and lifecycle flows share, for `Ride` — and not from inside the state class. Figure 2.10 places
+`notifyPassenger()` among the actions of a transition, but a transition that is legal when the row
+is read can be illegal when it is written: that is precisely what `ConcurrentTransitionError`
+reports, and it follows from the conditional write that Section 2.6.3 requires. Notifying from
+inside the state class would announce to the passenger an assignment the database then refused, and
+a write can be undone while a notification cannot. The structure of the pattern is unchanged — the
+observer is registered on the subject at construction, and it is always the single
+`NotificationManager` (decision D39).
+
+**The second subject exists [v1.3].** `Ride` is backed by a `ride` table, added in M5: v1.2 drew it
+here as a `Subject` carrying a `RideStatus` while no table, no component operation and no flow in
+Section 2.4 ever created one, so half of this diagram was not implementable. See decision D36, and
+Section 2.2 for the operations that now own it.
+
 ## 2.4 Runtime view
 
 The sequence diagrams below refine, at component level, the requirement-level scenarios of the RASD.
@@ -732,7 +770,9 @@ PM --> RRM : reservationConfirmed
 RRM --> API : rideConfirmed(rideId, robotaxi, ETA)
 API --> P : ride confirmation
 
-RRM ->> NM : update(RideAssignedEvent)
+' [v1.3] Il soggetto notifica, non il manager, e solo dopo che la transizione e' stata scritta:
+' l'evento nasce dentro assign(), dal Robotaxi verso il suo unico observer (decisione D39).
+FM ->> NM : update(RobotaxiStateChangedEvent)
 NM ->> API : push(RideAssignedEvent)
 API ->> P : push(RideAssignedEvent)
 ```
@@ -908,7 +948,9 @@ alt feasible robotaxi found
     alt reservation committed
         RRM --> API : advanceBookingConfirmed(bookingId)
         API --> P : booking confirmation
-        RRM ->> NM : update(BookingConfirmedEvent)
+        ' [v1.3] Il soggetto e' la Ride che la richiesta accettata genera, in stato SCHEDULED:
+        ' nessun veicolo e' ancora assegnato, quindi non c'e' un Robotaxi che abbia da dire nulla.
+        RRM ->> NM : update(RideStatusChangedEvent)
         NM ->> API : push(BookingConfirmedEvent)
         API ->> P : push(BookingConfirmedEvent)
     else concurrent reservation conflict
@@ -999,11 +1041,12 @@ loop for each due booking
             FM --> RRM : assignmentConfirmed
         else no feasible robotaxi
             RRM -> PM : update(request, REJECTED)
-            RRM ->> NM : update(BookingRejectedEvent)
+            ' [v1.3] La corsa e' l'altro soggetto: e' lei a dire al passeggero che e' finita.
+            RRM ->> NM : update(RideStatusChangedEvent)
         end
     end
 
-    RRM ->> NM : update(RideAssignedEvent)
+    ' [v1.3] L'assegnazione l'ha gia' notificata il Robotaxi dentro assign() (decisione D39).
 end
 ```
 
@@ -1296,7 +1339,7 @@ supports it.
 | R3 | Immediate ride request | RideRequestManager; AllocationManager; Passenger App |
 | R4 | Advance booking (no conflicts) | RideRequestManager; FleetMonitor; AllocationManager + Strategy; PersistenceManager (filterAvailable/reserve) |
 | R5 | Automated vehicle allocation | AllocationManager + *Strategy*; FleetMonitor |
-| R6 | Ride status notifications | NotificationManager + *Observer*; API Gateway (push) |
+| R6 | Ride status notifications | NotificationManager + *Observer*; Robotaxi and Ride as `Subject`; RideRequestManager (`IRideLifecycleService`); API Gateway (WebSocket push) |
 | R7 | Real-time fleet monitoring | FleetMonitor; Operator Dashboard |
 | R8 | Runtime strategy selection | ModeController; AllocationManager + Strategy |
 | R9 | Maintenance management | MaintenanceManager; FleetMonitor + *State* |
@@ -1487,8 +1530,19 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D33 | `AdvanceBookingActivator` è pubblicato da una **seconda porta** del modulo `rides` | §2.2, §2.2.1 | `runOnce()` non è una delle tre operazioni di `IRideRequestService`, e il §2.2.1 pretende che sia pubblico e chiamabile dai test senza passare da uno scheduler. È la stessa divisione fra porta di servizio e porta di meccanismo già adottata per `fleet` (D21) |
 | D34 | Una prenotazione anticipata parte da `FleetMonitor.getBookableRobotaxis()` — **tutti i veicoli tranne quelli in manutenzione** — e non da `getCandidates()` | §2.2, §2.4, Fig. 2.8 | La Fig. 2.8 riusava `getCandidates(pickup)`, cioè «chi può prendere una corsa **adesso**», per rispondere a «chi potrà servirne una **fra due ore**». Sono domande diverse, e confonderle rendeva R4 quasi inutile: con la flotta impegnata ogni prenotazione futura veniva rifiutata, anche per un orario in cui la flotta sarà tutta libera. R4 chiede di riservare la disponibilità «for the required time interval», e a dire chi è occupato in quella finestra è la timeline — `filterAvailable()` — che esiste ed è precisa proprio perché ogni riserva è limitata (D8). `MAINTENANCE` resta escluso: un intervento non ha una data di fine prevista, quindi prenotare quel veicolo prometterebbe una corsa su un'ipotesi (R9) |
 | D35 | `PersistenceManager.reserve()` scrive anche il legame richiesta↔veicolo, nella **stessa transazione** | §2.2, §2.4, Fig. 2.5 | È l'`updateAssignment(request, selectedRobotaxi)` che la Fig. 2.5 disegna già dentro `reserve()`, e che l'implementazione aveva lasciato fuori. Fuori transazione lascia una finestra in cui la riserva esiste e nessuna richiesta la rivendica: da lì il veicolo non è più recuperabile, perché `cancel()` cerca il veicolo proprio su `ride_request.assignedRobotaxiId` e lo troverebbe nullo — un robotaxi bloccato in `ASSIGNED` per sempre. Per la stessa ragione l'attivazione scrive il legame **prima** di `assign()`: la finestra che resta — legame scritto, veicolo ancora libero — è quella che l'annullamento sa assorbire, trattando un veicolo già `AVAILABLE` come lavoro già fatto |
+| D36 | La tabella **`ride`** esiste, e con lei l'entità `Ride` con il suo `RideStatus` | §2.3.3, Fig. 2.4; RASD §2.2.3 | La §2.3.3 disegna `Ride` come uno dei due `Subject` dell'Observer, con `status: RideStatus` e `updateStatus()`, ma nessuna tabella la sosteneva, nessuna operazione di componente la creava e nessun flusso del §2.4 la nominava: metà del pattern non era implementabile. Non è un doppione di `ride_request`, ed è il RASD §2.2.1 a tenerle separate («An accepted Ride Request can generate one Ride»): la richiesta è la domanda, la corsa è il viaggio. Una richiesta resta `ACCEPTED` mentre la sua corsa attraversa `SCHEDULED → WAITING_FOR_PICKUP → IN_PROGRESS → COMPLETED`, che è esattamente la progressione che R6 chiede di notificare — schiacciate in una colonna, «il sistema ha trovato un veicolo» e «il passeggero è a bordo» diventerebbero indistinguibili |
+| D37 | `FleetMonitor` espone le **transizioni 4, 5, 6 e 7** — `startPickupNavigation()`, `pickupReached()`, `startRide()`, `completeRide()` | §2.2, §2.6.3, Fig. 2.10 | La Fig. 2.10 le definisce dal v1.0 e le classi di stato le implementano dal M2, ma nessuna operazione di componente le innescava: `assign()` e `releaseAssignment()` aprivano e chiudevano il ciclo di vita senza che nulla lo attraversasse. R6 chiede di notificare «vehicle assignment, ETA, arrival at the pickup point, and ride completion», cioè proprio i passi intermedi, quindi senza un modo di provocarli il canale di questa milestone non avrebbe avuto niente da trasportare. Non nasce comportamento nuovo: si pubblica il modo di innescare quello che la figura già prescriveva. Da M7 le innescherà la telemetria del simulatore, che è ciò che risolve le guardie `hasReachedPickup()` e `hasReachedDestination()` |
+| D38 | Le quattro transizioni si guidano da una **terza porta** di `rides`, `IRideLifecycleService`, che muove insieme veicolo e corsa — **il veicolo prima, la corsa poi** | §2.2, §2.4 | Ogni passo tocca due moduli: la colonna di stato la scrive solo `fleet` (D28) e la tabella `ride` solo `rides`. Il componente che coordina due moduli è per il §2.2 il `RideRequestManager`, che già raggiunge `IFleetMonitorService`; metterlo in `fleet` avrebbe invertito un arco della Fig. 2.1 e costretto quel modulo a conoscere le corse. L'ordine è la parte che conta: la transizione del veicolo è l'unico passo che può *rifiutare*, e rifiuta senza scrivere nulla (NFR5), quindi metterla per prima fa sì che un passo fuori tempo lasci la corsa intatta. Nell'ordine opposto la corsa risulterebbe avanzata su un veicolo fermo, e il passeggero avrebbe già ricevuto la notifica di un fatto mai accaduto |
+| D39 | Un soggetto notifica **dopo** che la transizione è stata persistita, e a chiamare `notifyObservers()` è il componente che ha scritto — non la classe di stato | §2.3.3, §2.6.3, Fig. 2.10 | L'azione `notifyPassenger()` della Fig. 2.10 sta dentro una transizione, ma una transizione può essere legale al momento della lettura e non esserlo più al momento della scrittura: è il caso che `ConcurrentTransitionError` descrive, e nasce dalla scrittura condizionata che D28 e la §2.6.3 richiedono. Notificando da dentro la classe di stato, il passeggero riceverebbe l'annuncio di un'assegnazione che il database ha poi rifiutato — e una scrittura si disfa, una notifica no. La struttura del pattern resta quella della Fig. 2.4: `Robotaxi` e `Ride` implementano `Subject`, l'observer è registrato alla costruzione dell'oggetto ed è sempre il solo `NotificationManager` |
+| D40 | Il modulo `notifications` espone **due porte**: `INotificationService` (`update`) verso i soggetti e `INotificationSessionService` (`registerSession`, `removeSession`, `registeredSessions`) verso l'API Gateway | §2.2, §2.3.3 | La §2.3.3 descrive due relazioni con vite diverse (D7) e affida al `NotificationManager` la registrazione e la deregistrazione delle sessioni, ma il §2.2 gli attribuiva la sola `update(event)`: l'operazione che il testo pretende non compariva fra quelle esportate. I due lati hanno chiamanti disgiunti, e tenerli in una porta sola darebbe a `fleet` la possibilità di registrare sessioni e al gateway quella di inventare eventi di dominio. `registeredSessions()` esiste perché il criterio di completamento («non restano riferimenti») è un'affermazione sul registro, e senza un modo di leggerlo sarebbe inverificabile. È la stessa divisione fra porta di servizio e porta di meccanismo già adottata per `fleet` (D21) e per `rides` (D33) |
+| D41 | `AuthenticationManager` pubblica `verify(accessToken)` sulla propria porta di meccanismo | §2.2.1, D21 | D21 realizza la verifica del token con dei guard applicati alle rotte, e copre tutto finché ciò che si protegge è una richiesta HTTP. L'handshake di una WebSocket non lo è — aprendo una socket il browser non può impostare l'header `Authorization`, quindi il token viaggia nel campo `auth` dell'handshake — e senza questa operazione il gateway dovrebbe verificarlo da sé, conoscendo la chiave di firma e il formato del payload di un altro modulo. Restituisce `null` invece di sollevare: un token scaduto mentre l'app è aperta è un esito ordinario del canale, non un guasto |
+| D42 | Sul canale push il campo `type` è **annullabile**, e un evento di flotta che nessuna corsa riguarda non lascia una riga in `notification` | §2.3.3; RASD §2.2.3, Fig. 2.2 | L'enum `NotificationType` del RASD ha cinque valori pensati per il passeggero, e la `Notification` del RASD è indirizzata a un passeggero (`Notification "0..*" --> "1" Passenger : sent to`). Un veicolo che entra in manutenzione o comincia a riposizionarsi non ha un destinatario: raggiunge la dashboard dell'operatore, che sorveglia la flotta (R7, G8), ma non è una `Notification` e non ne esiste una categoria. Le alternative erano inventare un valore fuori dall'enum — facendo divergere codice e documento — o attribuire all'evento una categoria che non gli appartiene. Per la stessa ragione anche `MaintenanceManager` notifica, pur non essendo `FleetMonitor`: la §1.3 dice che l'Observer serve a segnalare «when the state of a vehicle changes», senza distinguere da quale componente la transizione sia stata innescata, e questo è il secondo componente che scrive quella colonna |
+| D43 | La Figura 2.1 acquisisce **tre archi**: `FleetMonitor --( INotificationService`, `NotificationManager --( IPersistenceService`, `APIGateway --( INotificationSessionService` | §2.2, Fig. 2.1 | Stessa omissione che D29 ha corretto per il `RideRequestManager`, su un componente diverso. La §2.3.3 pretende che ogni cambiamento di stato di un `Robotaxi` raggiunga il `NotificationManager`, ma la figura dava al `FleetMonitor` due soli archi e nessuno dei due era quello: il componente che *produce* gli eventi non aveva modo di consegnarli. Il secondo arco è la conseguenza di due cose che la figura già chiede — la tabella `notification` (RASD §2.2.3) va scritta da qualcuno, e l'evento di un veicolo porta al più l'identificatore della richiesta, quindi risalire al passeggero è una lettura. Il terzo è la realizzazione di D40: le sessioni nascono e muoiono con le connessioni, che sono dell'API Gateway. `MaintenanceManager --( INotificationService` la figura ce l'ha già |
+| D44 | Un modulo può **leggere** le tabelle di un altro attraverso `IPersistenceService`; a scriverle resta il modulo che le possiede | §2.2, §2.2.1 | `FleetMonitor` e `NotificationManager` leggono `ride_request` per instradare una notifica: il primo per sapere quale corsa il veicolo stia servendo, il secondo per risalire al passeggero. Nessuno dei due la scrive. La regola è quella che il progetto già applica senza enunciarla — `AllocationManager` legge `system_mode` e solo `ModeController` e lui stesso lo scrivono — e va detta perché il confine fra moduli non la copre: passare da `IPersistenceService` è meccanicamente lecito, quindi un cambiamento di semantica su una colonna altrui non verrebbe segnalato da nessun controllo automatico. Il costo è reale e accettato: chi cambia il significato di `ride_request.status` o di `assignedRobotaxiId` deve cercarne i lettori. L'alternativa — far passare il dato dal chiamante, come fa già `assign()` — vale dove il chiamante lo conosce, e infatti lì si fa; per le transizioni che nessuno innesca da `rides` non lo conosce nessuno |
+| D45 | Il canale push assegna a ogni client una **room** (`passenger:<id>` o `operators`), ma la consegna di un evento di dominio passa dalla sessione | §2.3.3 | MILESTONES.md §M5 chiede le room, la §2.3.3 chiede che a decidere chi riceve cosa siano `PassengerAppSession` e `OperatorDashboardSession`. Consegnare per entrambe le vie duplicherebbe ogni notifica, quindi la via è una: la room resta l'**indirizzo** — il modo in cui il trasporto raggiunge un passeggero o l'insieme degli operatori senza passare da un evento di dominio — e la sessione l'**autorità** su chi ha diritto di vedere. Le firme delle sessioni portano di conseguenza un `NotificationDelivery` e non un `DomainEvent` come nella Fig. 2.4: la traduzione da evento a messaggio si fa una volta sola, nel manager, e `dispatch()` resta privato perché nessuno fuori dal modulo deve poter iniettare una consegna |
+| D46 | Il canale push **non trasporta un ETA numerico** in M5: `VEHICLE_ARRIVING` annuncia che il veicolo è in avvicinamento, non fra quanti minuti arriva | §2.2, §2.4; RASD R6 | R6 elenca «vehicle assignment, **ETA**, arrival at the pickup point, and ride completion», e delle quattro cose questa è l'unica che il messaggio non porta. È una rinuncia consapevole e temporanea, non una svista. In M5 l'unico fornitore di tempi di viaggio è il mock deterministico di M3: un numero preso da lì e mostrato al passeggero come «il tuo robotaxi arriva fra 7 minuti» sarebbe una promessa inventata, e peggiorerebbe R6 invece di completarlo — un ETA sbagliato è meno utile di nessun ETA. Il dato diventa reale con M7, quando l'adapter OSRM e la telemetria del simulatore sostituiscono il mock ed è la posizione vera del veicolo a innescare la transizione 4: lì `NotificationDelivery` e `notificationPushSchema` prendono il campo, e la vista di stato dell'app passeggero (§3.1, M8) lo mostra. Fino ad allora il documento non deve lasciar credere che R6 sia coperto per intero |
 
-**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16 e D25
-hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
+**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
+D38, D39, D40 e D41 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
 `HARNESS.md`, `docs/requirements.json`), che sono stati allineati nella stessa occasione. Il DD
 resta la fonte: se in futuro divergono, è il file operativo a doversi adeguare.

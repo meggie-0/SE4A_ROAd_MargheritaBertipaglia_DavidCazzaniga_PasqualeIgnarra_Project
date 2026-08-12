@@ -24,7 +24,16 @@ import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
 const NOW = new Date('2026-05-04T09:00:00.000Z');
 const DUOMO = { lat: 45.4642, lon: 9.19 };
-const RIDE = { rideRequestId: 'ride-1' };
+/**
+ * Un uuid vero, pur senza una riga di `ride_request` che gli corrisponda.
+ *
+ * Da M5 ogni transizione notifica, e il `NotificationManager` cerca la richiesta per identificatore
+ * per risalire al passeggero: un valore che uuid non è viene rifiutato dal database. La notifica non
+ * fallisce — `update()` non solleva mai — ma lascerebbe uno stack trace a ogni transizione, e una
+ * suite verde che stampa errori è una suite che nessuno legge più.
+ */
+const RIDE_REQUEST_ID = '00000000-0000-4000-8000-000000000001';
+const RIDE = { rideRequestId: RIDE_REQUEST_ID };
 
 const HOOK_TIMEOUT_MS = 180_000;
 
@@ -240,8 +249,8 @@ describe('[R9][NFR5] Due transizioni concorrenti sullo stesso veicolo', () => {
     await givenRobotaxi('RT-01', 'AVAILABLE');
 
     const outcomes = await Promise.allSettled([
-      fleet.assign('RT-01', { rideRequestId: 'ride-1' }),
-      fleet.assign('RT-01', { rideRequestId: 'ride-2' }),
+      fleet.assign('RT-01', { rideRequestId: RIDE_REQUEST_ID }),
+      fleet.assign('RT-01', { rideRequestId: '00000000-0000-4000-8000-000000000002' }),
     ]);
 
     // Senza la scrittura condizionata sullo stato letto riuscirebbero entrambe: leggono tutte e

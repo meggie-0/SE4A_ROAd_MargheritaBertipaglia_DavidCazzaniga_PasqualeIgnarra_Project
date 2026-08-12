@@ -98,6 +98,39 @@ export abstract class FleetMonitorPort {
   abstract assign(robotaxiId: string, request: RideAssignment): Promise<RobotaxiSnapshot>;
 
   /**
+   * Le quattro transizioni con cui una corsa **avanza**: 4, 5, 6 e 7 della Figura 2.10 (M5).
+   *
+   * `assign()` e `releaseAssignment()` esistevano già ed erano gli unici due modi di muovere un
+   * veicolo dall'esterno: bastavano finché il ciclo di vita andava soltanto aperto e chiuso. R6
+   * chiede di notificare al passeggero «vehicle assignment, ETA, arrival at the pickup point, and
+   * ride completion», cioè proprio i passi intermedi, e senza un modo di *provocarli* la
+   * progressione non sarebbe osservabile — il canale push di questa milestone non avrebbe niente da
+   * trasportare. Le transizioni sono quelle che M2 ha già scritto nelle classi di stato: qui non
+   * nasce comportamento nuovo, si pubblica il modo di innescarlo.
+   *
+   * **Chi le chiama.** In questa milestone `rides`, attraverso `RideLifecyclePort`, che muove
+   * insieme il veicolo e la corsa. Da M7 le innescherà la telemetria del simulatore
+   * (`ExternalServicesPort.readTelemetry()`), che è ciò che risolve le guardie della Figura 2.10
+   * dipendenti dalla posizione reale — `hasReachedPickup()`, `hasReachedDestination()`. Il verso
+   * resta questo: chi osserva il veicolo dice *quando*, la classe di stato decide *se*.
+   *
+   * Tutte e quattro condividono la disciplina di `assign()`: `IllegalTransitionError` se lo stato
+   * corrente non le ammette, `ConcurrentTransitionError` se la riga è cambiata fra lettura e
+   * scrittura, `UnknownRobotaxiError` se il veicolo non esiste.
+   */
+  /** Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`). */
+  abstract startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot>;
+
+  /** Transizione 5: il veicolo è al punto di ritiro (`ARRIVING → ARRIVED`). */
+  abstract pickupReached(robotaxiId: string): Promise<RobotaxiSnapshot>;
+
+  /** Transizione 6: il passeggero è a bordo e si parte (`ARRIVED → IN_RIDE`). */
+  abstract startRide(robotaxiId: string): Promise<RobotaxiSnapshot>;
+
+  /** Transizione 7: destinazione raggiunta, il veicolo torna libero (`IN_RIDE → AVAILABLE`). */
+  abstract completeRide(robotaxiId: string): Promise<RobotaxiSnapshot>;
+
+  /**
    * Riporta ad `AVAILABLE` un veicolo che era stato assegnato e la cui corsa è stata annullata
    * (transizione 11, R14).
    *
