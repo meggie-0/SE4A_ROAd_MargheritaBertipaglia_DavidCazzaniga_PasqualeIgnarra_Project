@@ -74,6 +74,21 @@ export const MAINTENANCE_STATUSES = ['SCHEDULED', 'ONGOING', 'COMPLETED', 'CANCE
 export type MaintenanceStatus = (typeof MAINTENANCE_STATUSES)[number];
 
 /**
+ * Ciclo di vita di un'azione di riposizionamento (RASD §2.2.3, enum `RebalancingStatus`).
+ *
+ * L'insieme è quello del RASD per intero, ma in M6 una sola riga nasce già `TRIGGERED`: il DD §2.4,
+ * Figura 2.7 non disegna il ramo con approvazione dell'operatore che la Figura 3.3 del RASD lascia
+ * come alternativa, quindi `SUGGESTED` non ha ancora uno scrittore. `COMPLETED` e `CANCELLED`
+ * arrivano con M7, quando la telemetria del simulatore saprà dire che il veicolo è arrivato nella
+ * zona di destinazione o che il riposizionamento è stato interrotto da una corsa (transizione 10).
+ *
+ * Si dichiara comunque per intero perché è l'enum del RASD, e un vincolo `CHECK` che ne ammettesse
+ * quattro valori su tre dovrebbe essere migrato di nuovo a M7 per una ragione che si conosce già.
+ */
+export const REBALANCING_STATUSES = ['SUGGESTED', 'TRIGGERED', 'COMPLETED', 'CANCELLED'] as const;
+export type RebalancingStatus = (typeof REBALANCING_STATUSES)[number];
+
+/**
  * Tipi di notifica (RASD §2.2.3, enum `NotificationType`).
  *
  * Sono le categorie che il RASD assegna a una `Notification`, e la `Notification` del RASD è

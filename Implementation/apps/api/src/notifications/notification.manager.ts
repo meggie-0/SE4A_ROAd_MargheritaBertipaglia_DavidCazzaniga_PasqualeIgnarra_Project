@@ -100,6 +100,10 @@ export class NotificationManager
    */
   private async recipientOf(event: DomainEvent): Promise<string | null> {
     if (event.kind === 'RIDE_STATUS_CHANGED') return event.passengerId;
+    // I tre eventi di M6 non hanno un passeggero da raggiungere: modo di controllo e
+    // riposizionamento riguardano l'operatore, e la `Notification` del RASD è indirizzata a un
+    // passeggero. Senza destinatario non si scrive storico e non si consegna a nessuna app.
+    if (event.kind !== 'ROBOTAXI_STATE_CHANGED') return null;
     if (event.rideRequestId === null) return null;
 
     try {
@@ -152,9 +156,15 @@ export class NotificationManager
    *   confronto sull'identificatore è il requisito, non un filtro di comodo: senza, un passeggero
    *   saprebbe dove si trovano i veicoli che servono gli altri;
    * - una `OperatorDashboardSession` riceve gli eventi di **flotta**, cioè i movimenti dei veicoli,
-   *   per tutti i veicoli (R7, G8). Gli eventi di corsa non le arrivano: la dashboard sorveglia la
-   *   flotta, e lo stato di avanzamento del viaggio di un singolo passeggero non le serve — la
-   *   stessa progressione la vede comunque, dal lato del veicolo.
+   *   per tutti i veicoli (R7, G8), e **[M6]** quelli di modo e riposizionamento, che sono i suoi e
+   *   di nessun altro. Gli eventi di corsa non le arrivano: la dashboard sorveglia la flotta, e lo
+   *   stato di avanzamento del viaggio di un singolo passeggero non le serve — la stessa
+   *   progressione la vede comunque, dal lato del veicolo.
+   *
+   * La regola dell'operatore è scritta per **esclusione** e non per elenco: tutto ciò che non è un
+   * evento di corsa gli arriva. Un elenco avrebbe richiesto una riga in più a ogni evento nuovo, e
+   * dimenticarla non avrebbe fatto fallire niente — la dashboard avrebbe semplicemente smesso di
+   * mostrare una cosa, che è il guasto più difficile da notare.
    */
   private dispatch(
     event: DomainEvent,
@@ -170,7 +180,7 @@ export class NotificationManager
       }
     }
 
-    if (event.kind === 'ROBOTAXI_STATE_CHANGED') {
+    if (event.kind !== 'RIDE_STATUS_CHANGED') {
       for (const session of this.operatorSessions)
         this.push(() => session.pushToOperator(delivery));
     }

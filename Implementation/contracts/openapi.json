@@ -359,6 +359,116 @@
           "rides"
         ]
       }
+    },
+    "/mode": {
+      "get": {
+        "description": "NFR10: il modo corrente è sempre visibile sulla dashboard. I due valori vengono dal record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier applicativo rispondono la stessa cosa (NFR3).",
+        "operationId": "ControlModeController_getMode",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Legge il modo di controllo e la strategia attiva",
+        "tags": [
+          "mode"
+        ]
+      },
+      "put": {
+        "description": "R13: il sistema resta in Manual finché l'operatore non riabilita Auto esplicitamente. Il rientro **rivaluta subito** l'ultimo livello di traffico noto e applica la strategia che gli compete, quindi la strategia nella risposta può essere diversa da quella scelta a mano. Se il livello è Medium resta quella attiva in quell istante.",
+        "operationId": "ControlModeController_enableAuto",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnableAutoModeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Riabilita il modo Auto",
+        "tags": [
+          "mode"
+        ]
+      }
+    },
+    "/rebalancing/demand": {
+      "get": {
+        "description": "R10: combina la base storica della fascia oraria corrente — in ora locale di Milano — con i moltiplicatori degli eventi attivi in questo istante. Le zone escono per domanda attesa decrescente, pareggi sull identificatore crescente. Non muove nessun veicolo: è una stima.",
+        "operationId": "RebalancingController_getDemand",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemandAnalysisResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stima la domanda attesa per zona",
+        "tags": [
+          "rebalancing"
+        ]
+      }
     }
   },
   "info": {
@@ -773,6 +883,124 @@
           "pickup",
           "destination",
           "scheduledPickup"
+        ]
+      },
+      "ModeResponseDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ],
+            "example": "AUTO",
+            "description": "Il modo di controllo corrente. In Auto il sistema commuta la strategia in base al traffico; in Manual segue la scelta dell operatore e sospende ogni cambio automatico."
+          },
+          "activeStrategy": {
+            "type": "string",
+            "enum": [
+              "NEAREST_AVAILABLE",
+              "MINIMUM_ETA"
+            ],
+            "example": "NEAREST_AVAILABLE",
+            "description": "La politica attiva dopo l operazione. Compare anche qui perché il pannello di controllo della dashboard mostra i due valori insieme, e perché il rientro in modo Auto può cambiarla subito rivalutando l ultimo livello di traffico noto."
+          }
+        },
+        "required": [
+          "mode",
+          "activeStrategy"
+        ]
+      },
+      "EnableAutoModeRequestDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "AUTO"
+            ],
+            "example": "AUTO",
+            "description": "L unico valore ammesso. In modo Manual non ci si porta dichiarandolo: ci si finisce scegliendo una strategia su PUT /allocation/strategy, come prescrive R13."
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "ZoneDemandDto": {
+        "type": "object",
+        "properties": {
+          "zoneId": {
+            "type": "string",
+            "example": "san-siro",
+            "description": "L'identificatore della zona."
+          },
+          "zoneName": {
+            "type": "string",
+            "example": "San Siro",
+            "description": "Il nome leggibile della zona."
+          },
+          "baseDemand": {
+            "type": "number",
+            "example": 3,
+            "description": "La domanda storica della zona nella fascia oraria settimanale corrente, in ora locale di Milano."
+          },
+          "expectedDemand": {
+            "type": "number",
+            "example": 24,
+            "description": "La domanda attesa: la base per il prodotto dei moltiplicatori degli eventi attivi."
+          },
+          "availableRobotaxis": {
+            "type": "number",
+            "example": 2,
+            "description": "I veicoli inattivi che si trovano nella zona in questo momento."
+          },
+          "deficit": {
+            "type": "number",
+            "example": 22,
+            "description": "Domanda attesa meno veicoli inattivi. È la quantità su cui il riposizionamento ordina le zone: positivo significa zona scoperta."
+          },
+          "activeEvents": {
+            "example": [
+              "Partita di campionato"
+            ],
+            "description": "Gli eventi attivi nella zona in questo istante, in ordine alfabetico.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "zoneId",
+          "zoneName",
+          "baseDemand",
+          "expectedDemand",
+          "availableRobotaxis",
+          "deficit",
+          "activeEvents"
+        ]
+      },
+      "DemandAnalysisResponseDto": {
+        "type": "object",
+        "properties": {
+          "analyzedAt": {
+            "type": "string",
+            "example": "2026-05-04T19:30:00.000Z",
+            "description": "L'istante a cui la stima si riferisce."
+          },
+          "zones": {
+            "description": "Le zone per domanda attesa decrescente, pareggi sull identificatore crescente. L'ordine fa parte del contratto.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ZoneDemandDto"
+            }
+          }
+        },
+        "required": [
+          "analyzedAt",
+          "zones"
         ]
       }
     }

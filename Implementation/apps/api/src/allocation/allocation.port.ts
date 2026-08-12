@@ -94,9 +94,22 @@ export abstract class AllocationPort {
    * Questo metodo è l'unico scrittore della strategia attiva (DD §2.2.1).
    *
    * Chi decide *se* un cambio automatico può avvenire è il `ModeController` (M6), che secondo la
-   * Figura 2.6 controlla modo e isteresi **prima** di chiamare qui. Non c'è quindi un secondo
-   * controllo in questo metodo: sarebbe la stessa regola scritta in due posti, e le due copie
+   * Figura 2.6 controlla modo e isteresi **prima** di chiamare qui. La regola dell'isteresi non è
+   * quindi riscritta in questo metodo: sarebbe la stessa cosa detta in due posti, e le due copie
    * divergerebbero.
+   *
+   * **[M6]** Con `source: 'auto'` la scrittura è però **condizionata al modo Auto**, e non è un
+   * secondo controllo della stessa regola: è la stessa disciplina che M2 applica a ogni transizione
+   * di stato. Fra la lettura su cui il `ModeController` ha deciso e questa scrittura ci sta
+   * l'intera azione di un operatore su un'altra replica del tier applicativo (NFR3), e senza la
+   * condizione un cambio automatico deciso un istante prima sovrascriverebbe una scelta manuale
+   * appena fatta — che è precisamente ciò con cui il DD §4.3 falsifica NFR10. La condizione la
+   * valuta il database nella stessa istruzione della scrittura, quindi non c'è finestra in cui
+   * infilarsi, e in quel caso il metodo solleva `StaleRecordError` **senza aver scritto nulla**: chi
+   * chiama ha una via d'uscita utile, cioè rinunciare, perché l'essere umano ha la precedenza.
+   *
+   * Con `source: 'manual'` non c'è condizione, ed è il punto di NFR10: la scelta dell'operatore
+   * vince sempre, qualunque sia il modo corrente.
    *
    * Solleva `UnknownStrategyError` se il nome non corrisponde a una strategia registrata.
    */

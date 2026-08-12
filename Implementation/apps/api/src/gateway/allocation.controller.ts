@@ -16,6 +16,7 @@ import {
 
 import { AllocationPort } from '../allocation/allocation.port';
 import { JwtAuthGuard, Roles, RolesGuard } from '../auth/access-control.port';
+import { ModePort } from '../mode/mode.port';
 
 import { ActiveStrategyResponseDto, SetActiveStrategyRequestDto } from './dto/allocation.dto';
 import { ZodValidationPipe } from './zod-validation.pipe';
@@ -32,17 +33,21 @@ import { ZodValidationPipe } from './zod-validation.pipe';
  * poiché la sede autorevole è il database e non la memoria di un processo — anche le altre repliche
  * del tier applicativo allocano subito con la nuova politica (NFR3).
  *
- * **Perché la `PUT` chiama `AllocationPort` e non `ModePort`.** Nella Figura 2.6 la scelta manuale
- * dell'operatore passa da `ModeController.setManual()`, che a sua volta chiama
- * `AllocationManager.setActiveStrategy()`. `mode` nasce in M6: qui il gateway chiama direttamente
- * la porta dell'allocazione con `source: 'manual'`, che secondo il DD §2.2.1 scrive strategia e
- * modo nella stessa transazione — cioè produce esattamente l'effetto che `setManual()` produrrà.
- * Quando `ModePort` esisterà, questo controller cambierà la porta iniettata e non il resto.
+ * **[M6] La `PUT` passa da `ModePort.setManual()`**, come la Figura 2.6 prescrive. In M3 chiamava
+ * direttamente `AllocationPort.setActiveStrategy(name, 'manual')`, che produceva lo stesso effetto
+ * sul database perché quella scrittura porta con sé il passaggio in modo Manual; ciò che mancava
+ * era l'annuncio all'operatore — l'`ManualOverrideEvent` della figura — che `ModeController` emette
+ * e che le altre dashboard connesse hanno bisogno di ricevere. La `GET` resta su `AllocationPort`:
+ * la strategia attiva è roba sua (DD §2.2.1), e chiedere il modo per leggerla sarebbe passare da
+ * un componente che non la possiede.
  */
 @ApiTags('allocation')
 @Controller()
 export class AllocationController {
-  constructor(private readonly allocation: AllocationPort) {}
+  constructor(
+    private readonly allocation: AllocationPort,
+    private readonly mode: ModePort,
+  ) {}
 
   @Get(API_ROUTES.allocationStrategy)
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -80,7 +85,7 @@ export class AllocationController {
   async setActiveStrategy(
     @Body(new ZodValidationPipe(setActiveStrategyRequestSchema)) body: SetActiveStrategyRequest,
   ): Promise<ActiveStrategyResponseDto> {
-    await this.allocation.setActiveStrategy(body.strategy, 'manual');
+    await this.mode.setManual(body.strategy);
 
     // Si rilegge invece di riecheggiare il corpo della richiesta: la risposta descrive lo stato
     // del sistema, e se un altro scrittore fosse arrivato nel frattempo l'eco direbbe una cosa

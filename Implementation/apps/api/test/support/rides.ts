@@ -1,5 +1,10 @@
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DEFAULT_STRATEGY, type GeoPoint, type StrategyName } from '@road/shared';
+import {
+  DEFAULT_STRATEGY,
+  type GeoPoint,
+  type StrategyName,
+  type TrafficLevel,
+} from '@road/shared';
 
 import { AllocationPort } from '../../src/allocation/allocation.port';
 import { ExternalServicesPort } from '../../src/external/external-services.port';
@@ -397,6 +402,15 @@ export class TravelTimeDouble extends ExternalServicesPort {
   /** Da qui in poi il fornitore non sa rispondere per queste origini. */
   forget(...originIds: readonly string[]): void {
     for (const id of originIds) this.unknown.add(id);
+  }
+
+  /**
+   * Il traffico non entra nella catena delle richieste di corsa: qui si verifica come una
+   * richiesta diventa un'assegnazione, non con quale politica. A leggerlo è il `TrafficMonitor` di
+   * M6, che questi casi non compongono.
+   */
+  getTraffic(): Promise<TrafficLevel> {
+    return Promise.resolve('LOW');
   }
 
   getETA(

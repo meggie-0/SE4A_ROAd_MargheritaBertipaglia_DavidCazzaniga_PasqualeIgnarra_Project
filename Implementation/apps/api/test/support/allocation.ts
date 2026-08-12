@@ -1,5 +1,10 @@
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DEFAULT_STRATEGY, type GeoPoint, type StrategyName } from '@road/shared';
+import {
+  DEFAULT_STRATEGY,
+  type GeoPoint,
+  type StrategyName,
+  type TrafficLevel,
+} from '@road/shared';
 
 import { AllocationModule } from '../../src/allocation/allocation.module';
 import {
@@ -150,6 +155,15 @@ export class EtaTableDouble extends ExternalServicesPort {
 
   constructor(private minutesById: Readonly<Record<string, number>> = {}) {
     super();
+  }
+
+  /**
+   * Il traffico non entra nell'allocazione: la strategia attiva la decide il `ModeController`, e
+   * qui si verifica come si sceglie il veicolo *data* una strategia. Il livello più tranquillo è
+   * quindi la risposta onesta — non «non lo so», che la porta non sa rappresentare.
+   */
+  getTraffic(): Promise<TrafficLevel> {
+    return Promise.resolve('LOW');
   }
 
   /** Cambia la tabella fra un caso e l'altro senza ricomporre il modulo. */

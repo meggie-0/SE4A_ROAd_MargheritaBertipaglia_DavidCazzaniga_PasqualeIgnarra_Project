@@ -27,6 +27,16 @@ export const API_ROUTES = {
   ridesImmediate: '/rides/immediate',
   ridesAdvance: '/rides/advance',
   rideCancel: '/rides/:rideRequestId/cancel',
+
+  // Modo di controllo Auto/Manual (M6, RASD R12, R13; NFR9, NFR10). Una risorsa sola: `GET` la
+  // mostra sul pannello strategia della dashboard, `PUT` riabilita il modo Auto. Non c'è una rotta
+  // per *entrare* in Manual, perché in Manual non ci si porta dichiarandolo: ci si finisce
+  // scegliendo una strategia su `allocationStrategy`, che è ciò che R13 prescrive.
+  mode: '/mode',
+
+  // Analisi della domanda (M6, RASD R10, G9). Sola lettura: il riposizionamento lo innesca lo
+  // scheduler e lo si osserva sul canale push, come ogni altro movimento di flotta.
+  rebalancingDemand: '/rebalancing/demand',
 } as const;
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];

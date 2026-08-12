@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { haversineKm, type GeoPoint } from '@road/shared';
 
-import { ExternalServicesPort, type EtaEstimate, type EtaOrigin } from './external-services.port';
+import type { EtaEstimate, EtaOrigin } from './external-services.port';
 
 /**
- * L'adapter dei servizi esterni di M3: una **stima lineare**, deterministica e senza rete.
+ * L'adapter del servizio di mappe di M3: una **stima lineare**, deterministica e senza rete.
  *
  * MILESTONES.md §M3 chiede per gli ETA «un mock deterministico». Questo non è un doppio da test
  * lasciato in produzione per pigrizia: è esattamente la formula che M7 prescrive come *fallback*
@@ -44,7 +44,7 @@ const STREET_DETOUR_FACTOR = 1.3;
 const MINUTES_PER_HOUR = 60;
 
 @Injectable()
-export class LinearEtaGateway extends ExternalServicesPort {
+export class LinearEtaGateway {
   getETA(origins: readonly EtaOrigin[], destination: GeoPoint): Promise<readonly EtaEstimate[]> {
     const estimates = origins.map((origin): EtaEstimate => ({
       id: origin.id,

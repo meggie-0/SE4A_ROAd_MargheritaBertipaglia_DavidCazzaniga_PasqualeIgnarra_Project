@@ -5,6 +5,7 @@ import { DemandEventEntity } from './demand-event.entity';
 import { DemandSampleEntity } from './demand-sample.entity';
 import { MaintenanceRecordEntity } from './maintenance-record.entity';
 import { NotificationEntity } from './notification.entity';
+import { RebalancingActionEntity } from './rebalancing-action.entity';
 import { ReservationEntity } from './reservation.entity';
 import { RideEntity } from './ride.entity';
 import { RideRequestEntity } from './ride-request.entity';
@@ -18,6 +19,7 @@ export { DemandEventEntity } from './demand-event.entity';
 export { DemandSampleEntity } from './demand-sample.entity';
 export { MaintenanceRecordEntity } from './maintenance-record.entity';
 export { NotificationEntity } from './notification.entity';
+export { RebalancingActionEntity } from './rebalancing-action.entity';
 export { ReservationEntity } from './reservation.entity';
 export { RideEntity } from './ride.entity';
 export { RideRequestEntity } from './ride-request.entity';
@@ -45,6 +47,7 @@ export const ENTITY_BY_KIND = {
   demand_sample: DemandSampleEntity,
   demand_event: DemandEventEntity,
   maintenance_record: MaintenanceRecordEntity,
+  rebalancing_action: RebalancingActionEntity,
   system_mode: SystemModeEntity,
   notification: NotificationEntity,
 } as const satisfies Record<EntityKind, new () => object>;

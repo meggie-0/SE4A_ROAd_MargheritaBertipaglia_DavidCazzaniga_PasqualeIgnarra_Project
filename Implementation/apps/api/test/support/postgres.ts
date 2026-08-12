@@ -10,6 +10,11 @@ import { FleetModule } from '../../src/fleet/fleet.module';
 import { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
 import { MaintenanceModule } from '../../src/maintenance/maintenance.module';
 import { MaintenancePort } from '../../src/maintenance/maintenance.port';
+import { ModeModule } from '../../src/mode/mode.module';
+import { ModePort } from '../../src/mode/mode.port';
+import { TrafficMonitorPort } from '../../src/mode/traffic-monitor.port';
+import { RebalancingModule } from '../../src/rebalancing/rebalancing.module';
+import { RebalancingPort } from '../../src/rebalancing/rebalancing.port';
 import { PersistenceModule } from '../../src/persistence/persistence.module';
 import { PersistencePort, type TimeWindow } from '../../src/persistence/persistence.port';
 import { ClockPort } from '../../src/platform/clock.port';
@@ -61,6 +66,18 @@ export interface ApiHarness {
   readonly rideLifecycle: RideLifecyclePort;
   /** Il registro delle sessioni push, per registrare e deregistrare subscriber nei test (M5). */
   readonly notificationSessions: NotificationSessionPort;
+  /** Modo di controllo e isteresi (M6): i livelli di traffico li passa il test, uno per volta. */
+  readonly mode: ModePort;
+  /**
+   * La lettura periodica del traffico (M6).
+   *
+   * `ModeModule` si compone **senza** `ScheduleModule`, quindi il suo `@Cron` resta inerte: il
+   * traffico si legge solo quando un test chiama `runOnce()`, e il livello che ne esce dipende
+   * dall'ora del `FakeClock` — cioè dal test.
+   */
+  readonly trafficMonitor: TrafficMonitorPort;
+  /** Analisi della domanda e ciclo di riposizionamento (M6). */
+  readonly rebalancing: RebalancingPort;
   /** L'orologio del modulo, sotto il controllo del test (CLAUDE.md Regola 3). */
   readonly clock: FakeClock;
   readonly databaseUrl: string;
@@ -82,6 +99,7 @@ export interface ApiHarness {
 /** L'ordine conta: le figlie prima delle madri, o le chiavi esterne si oppongono. */
 const DOMAIN_TABLES = [
   'notification',
+  'rebalancing_action',
   'ride',
   'booking',
   'robotaxi_reservation',
@@ -140,6 +158,8 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
       AllocationModule,
       NotificationsModule,
       RidesModule,
+      ModeModule,
+      RebalancingModule,
     ],
   })
     .overrideProvider(ClockPort)
@@ -155,6 +175,9 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
   const advanceBooking = moduleRef.get(AdvanceBookingActivatorPort);
   const rideLifecycle = moduleRef.get(RideLifecyclePort);
   const notificationSessions = moduleRef.get(NotificationSessionPort);
+  const mode = moduleRef.get(ModePort);
+  const trafficMonitor = moduleRef.get(TrafficMonitorPort);
+  const rebalancing = moduleRef.get(RebalancingPort);
 
   // La connessione del modulo è pigra e porta con sé le migrazioni: la prima operazione vera è
   // ciò che crea lo schema. Va fatta qui, o il `reset()` del primo test troverebbe un database
@@ -181,6 +204,9 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     advanceBooking,
     rideLifecycle,
     notificationSessions,
+    mode,
+    trafficMonitor,
+    rebalancing,
     clock,
     databaseUrl,
 

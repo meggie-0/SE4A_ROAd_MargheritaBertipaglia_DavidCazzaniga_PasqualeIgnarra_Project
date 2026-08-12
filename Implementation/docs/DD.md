@@ -308,9 +308,12 @@ The main components and the operations they export are:
 - **AllocationManager**: `allocate(request, candidates)`, `setActiveStrategy()`. Selects the
   robotaxi to assign by delegating to the active allocation strategy (R5, R8). This is the context
   of the Strategy pattern.
-- **ModeController**: `onTrafficLevel()`, `setManual()`, `enableAuto()`. Implements Auto/Manual mode,
-  the automatic strategy switching with hysteresis and the priority of human intervention (R12, R13,
-  NFR9, NFR10).
+- **ModeController**: `onTrafficLevel()`, `setManual()`, `enableAuto()`, `getMode()` **[v1.1]**.
+  Implements Auto/Manual mode, the automatic strategy switching with hysteresis and the priority of
+  human intervention (R12, R13, NFR9, NFR10). **[v1.4]** It owns `TrafficMonitor.runOnce()`,
+  published as a **second port** of the component (decision D49), and it is the only writer that
+  returns the mode to Auto; the opposite direction is written by `AllocationManager`, because R13
+  ties the switch to Manual to the choice of a policy and the two must land in one transaction.
 - **FleetMonitor**: `getCandidates()`, `getBookableRobotaxis()` **[v1.2]**,
   `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
   `startPickupNavigation()`, `pickupReached()`, `startRide()`, `completeRide()` **[v1.3]**,
@@ -322,7 +325,11 @@ The main components and the operations they export are:
   is what makes R14 realisable: `RideRequestManager` owns the cancellation, but the state column is
   written only here (decision D28).
 - **RebalancingManager**: `analyzeDemand()`, `rebalance()`. Identifies high-demand zones and
-  repositions available robotaxis (R10, R11, G9).
+  repositions available robotaxis (R10, R11, G9). **[v1.4]** It owns the `rebalancing_action` table,
+  which records where each vehicle was sent — the target zone is neither a column of `robotaxi` nor
+  an argument of `requestRebalancing()`, so without it the destination would be written nowhere. Its
+  arc to `IExternalServices` is not yet realised: in this prototype the demand source is the
+  `demand_sample` / `demand_event` pair, read through `IPersistenceService` (decision D47).
 - **MaintenanceManager**: `requestMaintenance()`, `completeMaintenance()`. Marks robotaxis in/out of
   maintenance and prevents their assignment (R9). **[v1.3]** It is the second component that writes
   the state column, so it is also the second that notifies: a vehicle leaving the fleet disappears
@@ -342,7 +349,10 @@ The main components and the operations they export are:
   in §2.4 and the strategy/mode readers of §2.2.1 both go through it (decision D18).
 - **ExternalServicesGateway**: `getETA()`, `getTraffic()`, `getDemandData()`, `commandRoute()`,
   `readTelemetry()`. A facade over the external systems (mapping service, demand data source,
-  robotaxi fleet), with one adapter per provider (NFR8).
+  robotaxi fleet), with one adapter per provider (NFR8). **[v1.4]** The facade/adapter split becomes
+  real here, with the second operation: one class delegates, one adapter per provider implements
+  (decision D54). Operations enter the port with the milestone that puts them to use — `getETA()` in
+  M3, `getTraffic()` in M6, the remaining three in M7.
 
 ### 2.2.1 Realisation notes **[v1.1]**
 
@@ -1489,7 +1499,7 @@ correspond to defects.
 # Appendice A — Registro delle decisioni
 
 Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento: D1–D26 sono di
-v1.1, D27–D33 di v1.2. Serve a due cose:
+v1.1, D27–D33 di v1.2, D34–D46 di v1.3, D47–D54 di v1.4. Serve a due cose:
 rigenerare il PDF a fine progetto senza rileggere il diff, e permettere a chi rivede il codice di
 capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove, e per quale ragione.
 
@@ -1542,7 +1552,16 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D45 | Il canale push assegna a ogni client una **room** (`passenger:<id>` o `operators`), ma la consegna di un evento di dominio passa dalla sessione | §2.3.3 | MILESTONES.md §M5 chiede le room, la §2.3.3 chiede che a decidere chi riceve cosa siano `PassengerAppSession` e `OperatorDashboardSession`. Consegnare per entrambe le vie duplicherebbe ogni notifica, quindi la via è una: la room resta l'**indirizzo** — il modo in cui il trasporto raggiunge un passeggero o l'insieme degli operatori senza passare da un evento di dominio — e la sessione l'**autorità** su chi ha diritto di vedere. Le firme delle sessioni portano di conseguenza un `NotificationDelivery` e non un `DomainEvent` come nella Fig. 2.4: la traduzione da evento a messaggio si fa una volta sola, nel manager, e `dispatch()` resta privato perché nessuno fuori dal modulo deve poter iniettare una consegna |
 | D46 | Il canale push **non trasporta un ETA numerico** in M5: `VEHICLE_ARRIVING` annuncia che il veicolo è in avvicinamento, non fra quanti minuti arriva | §2.2, §2.4; RASD R6 | R6 elenca «vehicle assignment, **ETA**, arrival at the pickup point, and ride completion», e delle quattro cose questa è l'unica che il messaggio non porta. È una rinuncia consapevole e temporanea, non una svista. In M5 l'unico fornitore di tempi di viaggio è il mock deterministico di M3: un numero preso da lì e mostrato al passeggero come «il tuo robotaxi arriva fra 7 minuti» sarebbe una promessa inventata, e peggiorerebbe R6 invece di completarlo — un ETA sbagliato è meno utile di nessun ETA. Il dato diventa reale con M7, quando l'adapter OSRM e la telemetria del simulatore sostituiscono il mock ed è la posizione vera del veicolo a innescare la transizione 4: lì `NotificationDelivery` e `notificationPushSchema` prendono il campo, e la vista di stato dell'app passeggero (§3.1, M8) lo mostra. Fino ad allora il documento non deve lasciar credere che R6 sia coperto per intero |
 
+| D47 | `IExternalServices.getDemandData()` **non entra in M6**: la domanda la legge il `RebalancingManager` da `demand_sample` e `demand_event` attraverso `IPersistenceService` | §2.2, §2.4 Fig. 2.7 | La Figura 2.7 disegna la domanda come dato di un servizio esterno, e con un fornitore vero è così. In questo prototipo però la sorgente di domanda *è* il database: le due tabelle sono fra le undici di M1, e i criteri con cui si interrogano — «gli eventi attivi in un istante», cioè `startsAt` non oltre `t` ed `endsAt` oltre `t` — sono già nella porta di persistenza, messi lì dalla D12. Farle passare da `IExternalServices` avrebbe messo il gateway dei servizi esterni **sopra** il gestore di persistenza per rileggere righe che il `RebalancingManager` può leggere da sé (D44), aggiungendo un arco fra moduli e un livello di traduzione senza aggiungere né verifica né sostituibilità. L'operazione entra in M7 insieme a un fornitore vero, che è ciò che la rende un servizio esterno invece di un giro di parole attorno a una `SELECT`. Conseguenza sulla Figura 2.1: l'arco `RebalancingManager --( IExternalServices` esiste nel disegno ma non è ancora realizzato |
+| D48 | `setActiveStrategy(name, 'auto')` scrive **condizionatamente al modo Auto** e solleva se il modo è cambiato nel frattempo; con `'manual'` scrive sempre | §2.2.1, §2.4 Fig. 2.6 | La v1.1 aveva stabilito che il controllo su *se* un cambio automatico possa avvenire sta nel `ModeController`, per non scrivere la regola dell'isteresi in due posti. Resta vero, ma fra la lettura su cui il controller decide e la scrittura ci sta l'intera azione di un operatore su un'altra replica del tier applicativo (NFR3): senza condizione, un cambio automatico deciso un istante prima sovrascriverebbe una scelta manuale appena fatta, che è precisamente il modo in cui la §4.3 falsifica NFR10. La condizione non duplica l'isteresi — la valuta il database nella stessa istruzione della scrittura — ed è la stessa disciplina che D28 impone a ogni transizione di stato. L'asimmetria è il contenuto di NFR10: la scelta dell'essere umano non è condizionata da nulla |
+| D49 | Il modulo `mode` espone **due porte**: `IModeControlService` e `ITrafficMonitorService` (`runOnce()`); `RebalancingScheduler` **non** ha una porta corrispondente | §2.2, §2.2.1 | La §2.2.1 elenca `TrafficMonitor.runOnce()` fra le attività periodiche e CLAUDE.md Regola 3 pretende che sia chiamabile dai test, ma HARNESS.md §3 vieta anche ai test di raggiungere l'interno di un modulo: senza porta, l'unico modo di provarlo sarebbe rompere il confine. È la stessa divisione fra porta di servizio e porta di meccanismo di D21, D33 e D40. `RebalancingScheduler` non la riceve perché non fa nulla oltre a chiamare `rebalance()`, che è già pubblica: pubblicarlo darebbe due nomi alla stessa operazione, e ciò che i test guidano è `rebalance()` attraverso la sua porta |
+| D50 | Il `DomainEvent` della Fig. 2.4 acquisisce tre varianti — `StrategyChangedEvent`, `TrafficAlertEvent`, `RebalancingStartedEvent` — che non nascono da un `Subject` e portano `type: null` | §2.3.3, §2.4 Fig. 2.6 e 2.7 | Le Figure 2.6 e 2.7 disegnano `ModeController` e `RebalancingManager` mentre chiamano `update(...)` **direttamente** sul `NotificationManager`, senza essere soggetti dell'Observer, ed è la relazione giusta: soggetto è chi ha uno stato che gli altri osservano, mentre modo e riposizionamento sono decisioni, e una decisione si comunica una volta sola a chi la deve sapere. I soggetti restano due. `type: null` per la ragione già data da D42 — nessuno dei tre ha un passeggero come destinatario — quindi nessuno lascia una riga in `notification`. La regola di instradamento verso l'operatore passa di conseguenza da un elenco a un'esclusione: gli arrivano tutti gli eventi che non sono di corsa |
+| D51 | L'alert della soglia `MEDIUM` si emette **quando la si raggiunge**, non a ogni lettura del traffico | §2.4; RASD R12 | R12 dice «if traffic conditions *reach* a Medium threshold»: è un passaggio di soglia, non uno stato. Il `TrafficMonitor` legge il traffico ogni pochi minuti, quindi ripetere l'alert a ogni lettura riempirebbe il pannello dell'operatore della stessa riga per tutta la durata della condizione — e un pannello che si riempie da solo è un pannello che si smette di guardare. La verifica ne risente in meglio: «esattamente un alert per attraversamento» è falsificabile, «almeno un alert» no |
+| D52 | `rebalance()` manda **un veicolo per zona in deficit per ciclo**, e una zona cede solo i veicoli che eccedono la propria domanda attesa arrotondata per eccesso | §2.2.1, decisione D12 | La D12 fissa gli ordinamenti ma non *quanti* veicoli muovere. Il deficit è una domanda **attesa**, non una coda di richieste: pareggiarlo in un colpo svuoterebbe le zone in surplus e produrrebbe l'oscillazione che il ciclo successivo dovrebbe correggere — lo stesso effetto ping-pong che NFR9 vieta sul versante delle strategie. L'arrotondamento per eccesso della quota che una zona trattiene è prudente per la stessa ragione: cedere il veicolo che copre «1,2 corse attese» scoprirebbe una zona per riempirne un'altra |
+| D53 | La zona di un veicolo si **calcola** con la regola della D10 a ogni ciclo, invece di leggere `robotaxi.zoneId` | §2.2.1, decisione D10 | La colonna esiste dallo schema di M1 ma nessun componente la aggiorna quando un veicolo si muove: da M7, con la telemetria del simulatore, sarebbe sistematicamente vecchia, e il riposizionamento deciderebbe in base a dove i veicoli erano al seed. La regola autorevole dell'appartenenza è la D10 ed è una funzione pura delle coordinate, quindi applicarla costa un confronto per veicolo e non può invecchiare |
+| D54 | `ExternalServicesGateway` diventa un **facade** con un adapter per fornitore già in M6; l'adapter di traffico deduce il livello dall'ora locale di Milano | §2.2; NFR8 | Fino a M5 la porta aveva una sola operazione e una sola classe la realizzava, quindi facade e adapter coincidevano. Con `getTraffic()` i fornitori diventano due, e tenerli nella stessa classe avrebbe significato che l'adapter delle mappe risponde anche di quanto traffico c'è — la confusione che la §4.3 usa per falsificare NFR8. Il modello orario è un'**assunzione dichiarata del prototipo**, come la velocità media della stima lineare degli ETA: deterministico perché il suo unico ingresso è `ClockPort` (CLAUDE.md Regola 3), e sostituibile in M7 senza toccare `mode`, che conosce solo la porta |
+
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
-D38, D39, D40 e D41 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
+D38, D39, D40, D41, D47 e D49 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
 `HARNESS.md`, `docs/requirements.json`), che sono stati allineati nella stessa occasione. Il DD
 resta la fonte: se in futuro divergono, è il file operativo a doversi adeguare.

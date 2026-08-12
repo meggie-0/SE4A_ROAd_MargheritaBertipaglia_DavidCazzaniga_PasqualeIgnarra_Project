@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-import { NOTIFICATION_TYPES, RIDE_STATUSES, ROBOTAXI_STATES } from './domain.js';
+import {
+  CONTROL_MODES,
+  NOTIFICATION_TYPES,
+  RIDE_STATUSES,
+  ROBOTAXI_STATES,
+  STRATEGY_NAMES,
+  TRAFFIC_LEVELS,
+} from './domain.js';
 
 /**
  * Il contratto del **canale push** (RASD R6, G7, NFR2; DD §2.3.3, §2.6.2).
@@ -51,6 +58,14 @@ export const NOTIFICATION_AUTH_FIELD = 'token';
  * dashboard dell'operatore con `type: null` e non lasciano una riga in `notification`: la
  * `Notification` del RASD è indirizzata a un passeggero, e per un evento di flotta non ce n'è uno.
  * Inventare una categoria fuori dall'enum avrebbe fatto divergere codice e documento.
+ *
+ * **[M6]** I quattro campi in coda — `strategy`, `mode`, `trafficLevel`, `zoneId` — servono al
+ * pannello di controllo del DD §3.2, che mostra modo e strategia attiva e tiene un elenco degli
+ * switch automatici e dei suggerimenti di riposizionamento. Sono annullabili come gli altri per la
+ * stessa ragione: una notifica ne porta quelli che il proprio evento conosce. Trasportarli
+ * strutturati e non solo dentro `message` è ciò che permette alla dashboard di *aggiornare* il
+ * pannello invece di stampare una riga di testo, e al cancello di M6 di asserire su un valore
+ * invece che su una frase.
  */
 export const notificationPushSchema = z.object({
   type: z.enum(NOTIFICATION_TYPES).nullable(),
@@ -65,5 +80,13 @@ export const notificationPushSchema = z.object({
   robotaxiState: z.enum(ROBOTAXI_STATES).nullable(),
   /** Lo stato della corsa dopo il cambiamento (RASD §2.2.3). */
   rideStatus: z.enum(RIDE_STATUSES).nullable(),
+  /** La strategia attiva **dopo** il cambiamento, per gli eventi di modo (M6, R8, R12, R13). */
+  strategy: z.enum(STRATEGY_NAMES).nullable(),
+  /** Il modo di controllo dopo il cambiamento (M6, R13, NFR10). */
+  mode: z.enum(CONTROL_MODES).nullable(),
+  /** Il livello di traffico che ha provocato l'evento (M6, R12, NFR9). */
+  trafficLevel: z.enum(TRAFFIC_LEVELS).nullable(),
+  /** La zona a cui l'evento si riferisce: la destinazione di un riposizionamento (M6, R11, G9). */
+  zoneId: z.string().nullable(),
 });
 export type NotificationPush = z.infer<typeof notificationPushSchema>;

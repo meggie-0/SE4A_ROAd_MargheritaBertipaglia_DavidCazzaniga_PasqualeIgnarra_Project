@@ -1,6 +1,7 @@
 import { InitialSchema1786320000000 } from './1786320000000-initial-schema';
 import { BookingClosedAt1786406400000 } from './1786406400000-booking-closed-at';
 import { Ride1786492800000 } from './1786492800000-ride';
+import { RebalancingAction1786579200000 } from './1786579200000-rebalancing-action';
 
 /**
  * Le migrazioni, elencate esplicitamente e in ordine.
@@ -13,4 +14,5 @@ export const ALL_MIGRATIONS = [
   InitialSchema1786320000000,
   BookingClosedAt1786406400000,
   Ride1786492800000,
+  RebalancingAction1786579200000,
 ];

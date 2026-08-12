@@ -1,4 +1,11 @@
-import type { NotificationType, RideStatus, RobotaxiState } from '@road/shared';
+import type {
+  ControlMode,
+  NotificationType,
+  RideStatus,
+  RobotaxiState,
+  StrategyName,
+  TrafficLevel,
+} from '@road/shared';
 
 /**
  * La porta del `NotificationManager` (DD §2.2, §2.3.3; CLAUDE.md Regola 1 e Regola 2).
@@ -65,8 +72,78 @@ export interface RideStatusChangedEvent {
   readonly status: RideStatus;
 }
 
-/** Il `DomainEvent` della Figura 2.4: ciò che un soggetto notifica ai propri observer. */
-export type DomainEvent = RobotaxiStateChangedEvent | RideStatusChangedEvent;
+/**
+ * La strategia attiva è cambiata (DD §2.4, Figura 2.6: `StrategyChangedEvent`, `ManualOverrideEvent`).
+ *
+ * I due eventi della figura sono **uno solo** qui, distinto da `source`: hanno gli stessi campi e
+ * lo stesso destinatario, e ciò che li separa è da dove è venuto il cambiamento — che è esattamente
+ * il `ChangeSource` che `AllocationPort.setActiveStrategy()` già riceve. Due interfacce identiche a
+ * meno del nome avrebbero costretto ogni lettore a gestirle due volte per dire la stessa cosa.
+ *
+ * `trafficLevel` è il livello che ha provocato lo switch, e per un cambio manuale è l'ultimo noto:
+ * è ciò che rende leggibile il pannello alert del DD §3.2 — «passato a MinimumETA perché il traffico
+ * è alto» dice all'operatore qualcosa che il solo nome della strategia non dice.
+ */
+export interface StrategyChangedEvent {
+  readonly kind: 'STRATEGY_CHANGED';
+  readonly occurredAt: Date;
+  readonly strategy: StrategyName;
+  readonly mode: ControlMode;
+  readonly source: 'auto' | 'manual';
+  readonly trafficLevel: TrafficLevel | null;
+}
+
+/**
+ * Il traffico ha raggiunto la soglia intermedia: si avvisa e **non** si cambia (RASD R12, NFR9).
+ *
+ * È l'unico evento del sistema che non segue un cambiamento di stato, ed è voluto: R12 chiede che
+ * su Medium «the system alerts the Fleet Operator, suggesting a switch», cioè che accada una cosa
+ * *osservabile* proprio là dove non accade nessuna transizione. Senza questo evento la soglia
+ * intermedia sarebbe indistinguibile dal non aver letto affatto il traffico, e NFR9 — «un cambio
+ * su Medium falsifica la proprietà» — sarebbe verificabile solo in negativo.
+ *
+ * `suggestedStrategy` è la politica che R12 suggerisce, non una che qualcuno abbia attivato.
+ */
+export interface TrafficAlertEvent {
+  readonly kind: 'TRAFFIC_ALERT';
+  readonly occurredAt: Date;
+  readonly trafficLevel: TrafficLevel;
+  readonly suggestedStrategy: StrategyName;
+}
+
+/**
+ * Un veicolo inattivo è stato mandato verso una zona in deficit (DD §2.4, Figura 2.7; R11, G9).
+ *
+ * Non sostituisce la transizione `AVAILABLE → REBALANCING`, che il `Robotaxi` notifica per conto
+ * proprio come ogni altra (decisione D39): quella dice che il veicolo si sta spostando, questa dice
+ * **verso dove**. La destinazione non è una colonna di `robotaxi` e non passa da
+ * `requestRebalancing()`, quindi senza questo evento la dashboard vedrebbe partire dei veicoli
+ * senza poter dire perché — che è metà di ciò che MILESTONES.md §M6 chiede con «produce alert in
+ * dashboard».
+ */
+export interface RebalancingStartedEvent {
+  readonly kind: 'REBALANCING_STARTED';
+  readonly occurredAt: Date;
+  readonly robotaxiId: string;
+  readonly targetZoneId: string;
+  readonly targetZoneName: string;
+}
+
+/**
+ * Il `DomainEvent` della Figura 2.4: ciò che un soggetto notifica ai propri observer.
+ *
+ * **[M6]** I tre eventi aggiunti non nascono da un `Subject`, e non è un'incoerenza col DD §2.3.3:
+ * le Figure 2.6 e 2.7 disegnano `ModeController` e `RebalancingManager` che chiamano
+ * `update(...)` **direttamente** sul `NotificationManager`. I soggetti dell'Observer restano due,
+ * `Robotaxi` e `Ride`, perché soggetto è chi ha uno stato che gli altri osservano; modo e
+ * riposizionamento sono decisioni, e una decisione si comunica una volta sola a chi la deve sapere.
+ */
+export type DomainEvent =
+  | RobotaxiStateChangedEvent
+  | RideStatusChangedEvent
+  | StrategyChangedEvent
+  | TrafficAlertEvent
+  | RebalancingStartedEvent;
 
 // ---------------------------------------------------------------------------------------------
 // Le due interfacce del pattern
@@ -120,6 +197,11 @@ export interface NotificationDelivery {
   readonly robotaxiId: string | null;
   readonly robotaxiState: RobotaxiState | null;
   readonly rideStatus: RideStatus | null;
+  /** I quattro campi del pannello di controllo dell'operatore (M6, DD §3.2). */
+  readonly strategy: StrategyName | null;
+  readonly mode: ControlMode | null;
+  readonly trafficLevel: TrafficLevel | null;
+  readonly zoneId: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------

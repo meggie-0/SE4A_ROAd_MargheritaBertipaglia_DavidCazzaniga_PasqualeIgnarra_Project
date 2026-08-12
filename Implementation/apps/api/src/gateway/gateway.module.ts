@@ -3,14 +3,18 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AllocationModule } from '../allocation/allocation.module';
 import { AuthModule } from '../auth/auth.module';
+import { ModeModule } from '../mode/mode.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PlatformModule } from '../platform/platform.module';
+import { RebalancingModule } from '../rebalancing/rebalancing.module';
 import { RidesModule } from '../rides/rides.module';
 
 import { AllocationController } from './allocation.controller';
 import { AuthController } from './auth.controller';
+import { ControlModeController } from './control-mode.controller';
 import { HealthController } from './health.controller';
 import { NotificationsGateway } from './notifications.gateway';
+import { RebalancingController } from './rebalancing.controller';
 import { RidesController } from './rides.controller';
 
 /**
@@ -38,6 +42,15 @@ import { RidesController } from './rides.controller';
  * deregistra le sessioni dei client connessi (M5, R6, G7, NFR2). È il primo pezzo di gateway che
  * non è un controller HTTP, e resta fedele alla stessa regola: apre un trasporto e delega.
  *
+ * `ModeModule` e `RebalancingModule` arrivano con M6. Il primo dà `ModePort`, con cui
+ * `ControlModeController` legge il modo e riabilita Auto e con cui `AllocationController` inoltra
+ * la scelta manuale dell'operatore — la `PUT` della strategia passa da `setManual()`, come la
+ * Figura 2.6 prescrive, e non più direttamente da `AllocationPort` (R12, R13, NFR9, NFR10). Il
+ * secondo dà `RebalancingPort`, con cui `RebalancingController` pubblica l'analisi della domanda
+ * (R10, G9). Nessuno dei due espone il proprio scheduler: le esecuzioni periodiche non hanno un
+ * endpoint, e l'unica porta di quel genere che il gateway potrebbe vedere — `TrafficMonitorPort` —
+ * non viene iniettata da nessun controller.
+ *
  * Delle due porte di `notifications` il gateway **inietta soltanto quella delle sessioni**.
  * L'altra — `NotificationPort`, quella dei *soggetti* — resta iniettabile, perché importare un
  * modulo rende disponibile tutto ciò che esporta: la disciplina è nel codice, non nel contenitore.
@@ -52,8 +65,17 @@ import { RidesController } from './rides.controller';
     AllocationModule,
     RidesModule,
     NotificationsModule,
+    ModeModule,
+    RebalancingModule,
   ],
-  controllers: [HealthController, AuthController, AllocationController, RidesController],
+  controllers: [
+    HealthController,
+    AuthController,
+    AllocationController,
+    RidesController,
+    ControlModeController,
+    RebalancingController,
+  ],
   providers: [NotificationsGateway],
 })
 export class GatewayModule {}

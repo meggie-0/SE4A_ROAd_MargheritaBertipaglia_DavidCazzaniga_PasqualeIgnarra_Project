@@ -74,11 +74,22 @@ export class AllocationManager extends AllocationPort {
      * Una sola `UPDATE`, quindi atomica per costruzione: con `source: 'manual'` non esiste
      * interleaving che lasci la strategia manuale scritta e il modo ancora su Auto, che è la
      * condizione con cui NFR10 si falsifica (DD §4.3).
+     *
+     * **[M6]** Un cambio automatico porta con sé la condizione `mode: 'AUTO'`, valutata dal
+     * database nella stessa istruzione: se nel frattempo un operatore è passato in Manual, la
+     * scrittura non avviene e la chiamata solleva `StaleRecordError`. È l'altra metà di NFR10 —
+     * la prima dice che la scelta manuale è atomica, questa che nessun automatismo può disfarla
+     * un istante dopo.
      */
-    await this.persistence.update('system_mode', SYSTEM_MODE_ID, {
-      activeStrategy: name,
-      ...(source === 'manual' ? { mode: 'MANUAL' as const } : {}),
-    });
+    await this.persistence.update(
+      'system_mode',
+      SYSTEM_MODE_ID,
+      {
+        activeStrategy: name,
+        ...(source === 'manual' ? { mode: 'MANUAL' as const } : {}),
+      },
+      source === 'auto' ? { mode: 'AUTO' } : undefined,
+    );
   }
 
   async getActiveStrategy(): Promise<StrategyName> {
