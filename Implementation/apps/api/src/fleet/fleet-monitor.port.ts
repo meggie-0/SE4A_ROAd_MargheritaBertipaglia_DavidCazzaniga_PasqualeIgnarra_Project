@@ -137,8 +137,24 @@ export abstract class FleetMonitorPort {
    * corrente non le ammette, `ConcurrentTransitionError` se la riga è cambiata fra lettura e
    * scrittura, `UnknownRobotaxiError` se il veicolo non esiste.
    */
-  /** Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`). */
-  abstract startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot>;
+  /**
+   * Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`).
+   *
+   * `etaToPickupMinutes` è il tempo che il passeggero vedrà nella notifica di avvicinamento (R6,
+   * decisione D66). **Non è un dato che `fleet` sappia produrre**: glielo passa chi ha chiesto la
+   * transizione, che è anche chi ha chiesto il percorso al fornitore di mappe. La forma è quella di
+   * `assign()`, che riceve allo stesso modo la corsa accettata — un valore che il modulo non
+   * calcola, trasporta, e che serve a chi riceverà l'evento.
+   *
+   * È **opzionale e annullabile**, e non per comodità: il fornitore può non saper rispondere per un
+   * veicolo, e chi fa avanzare una corsa senza aver chiesto un percorso non ha un tempo da
+   * promettere. Senza, il passeggero riceve l'annuncio dell'avvicinamento senza minuti — cioè ciò
+   * che il sistema faceva fino a M6 (decisione D46).
+   */
+  abstract startPickupNavigation(
+    robotaxiId: string,
+    etaToPickupMinutes?: number | null,
+  ): Promise<RobotaxiSnapshot>;
 
   /** Transizione 5: il veicolo è al punto di ritiro (`ARRIVING → ARRIVED`). */
   abstract pickupReached(robotaxiId: string): Promise<RobotaxiSnapshot>;

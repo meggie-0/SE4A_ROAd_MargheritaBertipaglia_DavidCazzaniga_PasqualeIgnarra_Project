@@ -164,6 +164,8 @@ export class MaintenanceManager extends MaintenancePort {
       from: read.state,
       to: updated.state,
       rideRequestId: null,
+      // Nessun tempo di attesa da annunciare: la manutenzione non è un avvicinamento (D66).
+      etaToPickupMinutes: null,
     });
 
     return robotaxiSnapshotOf(updated);

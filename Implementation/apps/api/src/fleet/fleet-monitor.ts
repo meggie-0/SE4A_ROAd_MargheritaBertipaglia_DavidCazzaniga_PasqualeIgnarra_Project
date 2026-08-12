@@ -104,9 +104,16 @@ export class FleetMonitor extends FleetMonitorPort {
     );
   }
 
-  async startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot> {
-    return this.applyTransition(robotaxiId, 'startPickupNavigation', (robotaxi) =>
-      robotaxi.startPickupNavigation(),
+  async startPickupNavigation(
+    robotaxiId: string,
+    etaToPickupMinutes: number | null = null,
+  ): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(
+      robotaxiId,
+      'startPickupNavigation',
+      (robotaxi) => robotaxi.startPickupNavigation(),
+      undefined,
+      etaToPickupMinutes,
     );
   }
 
@@ -189,6 +196,8 @@ export class FleetMonitor extends FleetMonitorPort {
     transition: RobotaxiTransition,
     apply: (robotaxi: Robotaxi) => void,
     knownRideRequestId?: string,
+    /** Solo la transizione 4 lo porta: è il tempo di attesa che il passeggero vedrà (R6, D66). */
+    etaToPickupMinutes: number | null = null,
   ): Promise<RobotaxiSnapshot> {
     const [record] = await this.persistence.find('robotaxi', {
       where: { id: robotaxiId },
@@ -230,6 +239,7 @@ export class FleetMonitor extends FleetMonitorPort {
       from: record.state,
       to: updated.state,
       rideRequestId: rideRequestId ?? null,
+      etaToPickupMinutes,
     });
 
     return robotaxiSnapshotOf(updated);

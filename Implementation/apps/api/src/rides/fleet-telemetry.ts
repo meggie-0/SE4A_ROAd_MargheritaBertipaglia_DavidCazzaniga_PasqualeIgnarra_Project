@@ -125,6 +125,23 @@ export class FleetTelemetry extends FleetTelemetryPort {
    * - `IN_RIDE` — a destinazione raggiunta la corsa si chiude e la rotta si revoca, così il veicolo
    *   torna disponibile senza portarsi dietro un percorso concluso.
    */
+  /**
+   * I minuti che il veicolo impiegherà a raggiungere il punto di ritiro, o `null` se non si sanno.
+   *
+   * `null` non è un errore ed è previsto dalla porta: un fornitore può non saper rispondere per
+   * un'origine, e in quel caso il passeggero riceve l'annuncio senza minuti invece di un numero
+   * inventato — che è la disciplina della decisione D46, applicata al caso in cui il numero non
+   * esista.
+   */
+  private async estimateArrival(
+    robotaxiId: string,
+    from: GeoPoint,
+    pickup: GeoPoint,
+  ): Promise<number | null> {
+    const [estimate] = await this.external.getETA([{ id: robotaxiId, position: from }], pickup);
+    return estimate?.etaMinutes ?? null;
+  }
+
   private async advance(
     request: RideRequestRecord,
     robotaxiId: string,
@@ -138,7 +155,19 @@ export class FleetTelemetry extends FleetTelemetryPort {
 
     try {
       if (state === 'ASSIGNED') {
-        await this.lifecycle.startPickupNavigation(request.id);
+        /**
+         * Il tempo di attesa si **chiede prima** della transizione, perché è la transizione a
+         * notificarlo: il passeggero riceve una notifica sola — «il tuo robotaxi sta arrivando, fra
+         * sette minuti» — e non due (R6, decisione D66).
+         *
+         * È una lettura, non un comando, quindi può stare prima senza violare la regola che i
+         * comandi alla flotta seguono le transizioni: se la transizione viene rifiutata, di questa
+         * chiamata non resta niente. Il percorso che il veicolo percorrerà davvero lo chiede il
+         * comando qui sotto, e per la stessa coppia di punti il fornitore risponde dalla cache.
+         */
+        const etaToPickupMinutes = await this.estimateArrival(robotaxiId, from, pickup);
+
+        await this.lifecycle.startPickupNavigation(request.id, etaToPickupMinutes);
         await this.external.commandRoute(robotaxiId, { from, to: pickup });
         return 'PICKUP_NAVIGATION_STARTED';
       }

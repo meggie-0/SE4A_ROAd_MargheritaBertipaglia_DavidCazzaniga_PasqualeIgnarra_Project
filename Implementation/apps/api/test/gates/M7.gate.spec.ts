@@ -10,6 +10,7 @@ import type { PersistencePort } from '../../src/persistence/persistence.port';
 import type { RebalancingPort } from '../../src/rebalancing/rebalancing.port';
 import type { FleetTelemetryPort } from '../../src/rides/fleet-telemetry.port';
 import type { RideRequestPort } from '../../src/rides/rides.port';
+import { recordPassenger } from '../support/notifications';
 import { startApiHarness, type ApiHarness } from '../support/postgres';
 
 /**
@@ -289,6 +290,33 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       const [ride] = await persistence.find('ride', { where: { rideRequestId }, limit: 1 });
       expect(ride?.status).toBe('COMPLETED');
       expect(ride?.endedAt).not.toBeNull();
+    });
+
+    it("l'ETA che il passeggero riceve è quello del fornitore, non una stima interna", async () => {
+      await givenRobotaxi('RT-01', { lat: DUOMO.lat + 0.01, lon: DUOMO.lon });
+      const giulia = recordPassenger(harness.notificationSessions, passengerId);
+
+      await rides.submitImmediate({ passengerId, pickup: DUOMO, destination: CENTRALE });
+      await telemetry.runOnce();
+
+      /**
+       * R6 chiede di notificare «vehicle assignment, **ETA**, arrival at the pickup point, and ride
+       * completion»: fino a M6 il canale portava tre cose su quattro, e la decisione D46 diceva
+       * perché — l'unico fornitore di tempi era un mock, e una promessa inventata è peggio del
+       * silenzio. Qui il numero attraversa tutta la catena: OSRM lo calcola, l'adapter lo traduce
+       * in minuti, la transizione 4 lo porta con sé e il `NotificationManager` lo consegna.
+       *
+       * Vale esattamente i dieci minuti che il fornitore ha risposto: una stima interna darebbe un
+       * altro numero, quindi questa asserzione distingue le due sorgenti invece di limitarsi a
+       * pretendere che ci sia un numero qualsiasi.
+       */
+      const [arriving] = giulia.received.filter((one) => one.robotaxiState === 'ARRIVING');
+      expect(arriving?.type).toBe('VEHICLE_ARRIVING');
+      expect(arriving?.etaMinutes).toBeCloseTo(PROVIDER_ETA_MINUTES, 6);
+      expect(arriving?.message).toContain('circa 10 minuti');
+
+      // E resta **una** notifica per un fatto solo: l'ETA non arriva con un secondo messaggio.
+      expect(giulia.received.filter((one) => one.robotaxiState === 'ARRIVING')).toHaveLength(1);
     });
 
     it('la posizione dei veicoli in movimento finisce in tabella', async () => {

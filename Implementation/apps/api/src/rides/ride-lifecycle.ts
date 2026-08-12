@@ -41,11 +41,15 @@ export class RideLifecycle extends RideLifecyclePort {
     super();
   }
 
-  async startPickupNavigation(rideRequestId: string): Promise<RideProgress> {
-    // La corsa resta `SCHEDULED`: è il veicolo che si muove, non il patto che cambia.
+  async startPickupNavigation(
+    rideRequestId: string,
+    etaToPickupMinutes: number | null = null,
+  ): Promise<RideProgress> {
+    // La corsa resta `SCHEDULED`: è il veicolo che si muove, non il patto che cambia. Il tempo di
+    // attesa viaggia con la transizione, perché a notificarlo è il veicolo (decisione D66).
     return this.step(
       rideRequestId,
-      (robotaxiId) => this.fleet.startPickupNavigation(robotaxiId),
+      (robotaxiId) => this.fleet.startPickupNavigation(robotaxiId, etaToPickupMinutes),
       null,
     );
   }

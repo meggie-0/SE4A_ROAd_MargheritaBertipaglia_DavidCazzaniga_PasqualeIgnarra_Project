@@ -176,5 +176,6 @@ function serialise(delivery: NotificationDelivery): NotificationPush {
     mode: delivery.mode,
     trafficLevel: delivery.trafficLevel,
     zoneId: delivery.zoneId,
+    etaMinutes: delivery.etaMinutes,
   };
 }
