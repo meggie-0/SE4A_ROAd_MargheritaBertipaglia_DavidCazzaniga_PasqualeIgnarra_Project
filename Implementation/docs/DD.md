@@ -126,7 +126,7 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.0 | July 11, 2026 | Initial release of the Design Document |
 | 1.1 | August 10, 2026 | **[v1.1]** Realisation decisions taken before implementation: port signatures aligned with the code contract, Observer realisation, `IllegalTransitionError` naming, reservation timeline for immediate rides, advance-booking activation, zone membership rule, `enableAuto()` re-evaluation, demand ranking, operational definitions for NFR3/NFR6/NFR8, R14. See [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.2 | August 11, 2026 | **[v1.2]** Decisions taken while implementing the ride request flows (M4), and the resolution of two contradictions the document carried: R14 required a cancelled ride to free an already assigned vehicle while Figure 2.10 gave `ASSIGNED` no exit towards `AVAILABLE` (transition 11 added), and Figures 2.5 and the activation diagram disagreed on the order of `reserve()` and `assign()`. Also: the `RideRequestManager` arcs missing from Figure 2.1, the sixth `FleetMonitor` operation, the nominal filtering window of Figure 2.8, and the meaning of "still eligible" at activation. See decisions D27–D33 in [Appendice A](#appendice-a--registro-delle-decisioni). |
-| 1.3 | August 12, 2026 | **[v1.3]** Decisions taken while implementing the notification channel (M5), and the resolution of the gap the document carried on its second subject: Section 2.3.3 draws `Ride` as a `Subject` with a `RideStatus`, but no table, no component operation and no flow ever created one — the entity existed in the RASD and nowhere in this design. Also: the four lifecycle transitions that had no way of being triggered, the two ports of `notifications`, the three arcs Figure 2.1 was missing, token verification outside the HTTP path, and the ordering rule between persisting a transition and notifying it. See decisions D36–D45 in [Appendice A](#appendice-a--registro-delle-decisioni). |
+| 1.3 | August 12, 2026 | **[v1.3]** Decisions taken while implementing the notification channel (M5), and the resolution of the gap the document carried on its second subject: Section 2.3.3 draws `Ride` as a `Subject` with a `RideStatus`, but no table, no component operation and no flow ever created one — the entity existed in the RASD and nowhere in this design. Also: the four lifecycle transitions that had no way of being triggered, the two ports of `notifications`, the three arcs Figure 2.1 was missing, token verification outside the HTTP path, and the ordering rule between persisting a transition and notifying it. See decisions D36–D46 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
 ## 1.4 Document Structure
 
@@ -224,6 +224,7 @@ package "Backend" {
 
     component "Notification Manager" as NotificationManager
     () "INotificationService"
+    () "INotificationSessionService"
 
     component "Rebalancing Manager" as RebalancingManager
 }
@@ -242,6 +243,7 @@ APIGateway --( IRideRequestService
 APIGateway --( IFleetMonitorService
 APIGateway --( IModeControlService
 APIGateway --( IMaintenanceService
+APIGateway --( INotificationSessionService
 
 AuthenticationManager -up- IAuthenticationService
 RideRequestManager   -up- IRideRequestService
@@ -252,6 +254,7 @@ AllocationManager    -up- IAllocationService
 PersistenceManager   -up- IPersistenceService
 ExternalServicesGateway -up- IExternalServices
 NotificationManager  -up- INotificationService
+NotificationManager  -up- INotificationSessionService
 
 RideRequestManager --( IPersistenceService
 RideRequestManager --( IAllocationService
@@ -263,6 +266,9 @@ AllocationManager --( IExternalServices
 
 FleetMonitor --( IPersistenceService
 FleetMonitor --( IExternalServices
+FleetMonitor --( INotificationService
+
+NotificationManager --( IPersistenceService
 
 ModeController --( IAllocationService
 ModeController --( INotificationService
@@ -764,7 +770,9 @@ PM --> RRM : reservationConfirmed
 RRM --> API : rideConfirmed(rideId, robotaxi, ETA)
 API --> P : ride confirmation
 
-RRM ->> NM : update(RideAssignedEvent)
+' [v1.3] Il soggetto notifica, non il manager, e solo dopo che la transizione e' stata scritta:
+' l'evento nasce dentro assign(), dal Robotaxi verso il suo unico observer (decisione D39).
+FM ->> NM : update(RobotaxiStateChangedEvent)
 NM ->> API : push(RideAssignedEvent)
 API ->> P : push(RideAssignedEvent)
 ```
@@ -940,7 +948,9 @@ alt feasible robotaxi found
     alt reservation committed
         RRM --> API : advanceBookingConfirmed(bookingId)
         API --> P : booking confirmation
-        RRM ->> NM : update(BookingConfirmedEvent)
+        ' [v1.3] Il soggetto e' la Ride che la richiesta accettata genera, in stato SCHEDULED:
+        ' nessun veicolo e' ancora assegnato, quindi non c'e' un Robotaxi che abbia da dire nulla.
+        RRM ->> NM : update(RideStatusChangedEvent)
         NM ->> API : push(BookingConfirmedEvent)
         API ->> P : push(BookingConfirmedEvent)
     else concurrent reservation conflict
@@ -1031,11 +1041,12 @@ loop for each due booking
             FM --> RRM : assignmentConfirmed
         else no feasible robotaxi
             RRM -> PM : update(request, REJECTED)
-            RRM ->> NM : update(BookingRejectedEvent)
+            ' [v1.3] La corsa e' l'altro soggetto: e' lei a dire al passeggero che e' finita.
+            RRM ->> NM : update(RideStatusChangedEvent)
         end
     end
 
-    RRM ->> NM : update(RideAssignedEvent)
+    ' [v1.3] L'assegnazione l'ha gia' notificata il Robotaxi dentro assign() (decisione D39).
 end
 ```
 
@@ -1529,8 +1540,9 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D43 | La Figura 2.1 acquisisce **tre archi**: `FleetMonitor --( INotificationService`, `NotificationManager --( IPersistenceService`, `APIGateway --( INotificationSessionService` | §2.2, Fig. 2.1 | Stessa omissione che D29 ha corretto per il `RideRequestManager`, su un componente diverso. La §2.3.3 pretende che ogni cambiamento di stato di un `Robotaxi` raggiunga il `NotificationManager`, ma la figura dava al `FleetMonitor` due soli archi e nessuno dei due era quello: il componente che *produce* gli eventi non aveva modo di consegnarli. Il secondo arco è la conseguenza di due cose che la figura già chiede — la tabella `notification` (RASD §2.2.3) va scritta da qualcuno, e l'evento di un veicolo porta al più l'identificatore della richiesta, quindi risalire al passeggero è una lettura. Il terzo è la realizzazione di D40: le sessioni nascono e muoiono con le connessioni, che sono dell'API Gateway. `MaintenanceManager --( INotificationService` la figura ce l'ha già |
 | D44 | Un modulo può **leggere** le tabelle di un altro attraverso `IPersistenceService`; a scriverle resta il modulo che le possiede | §2.2, §2.2.1 | `FleetMonitor` e `NotificationManager` leggono `ride_request` per instradare una notifica: il primo per sapere quale corsa il veicolo stia servendo, il secondo per risalire al passeggero. Nessuno dei due la scrive. La regola è quella che il progetto già applica senza enunciarla — `AllocationManager` legge `system_mode` e solo `ModeController` e lui stesso lo scrivono — e va detta perché il confine fra moduli non la copre: passare da `IPersistenceService` è meccanicamente lecito, quindi un cambiamento di semantica su una colonna altrui non verrebbe segnalato da nessun controllo automatico. Il costo è reale e accettato: chi cambia il significato di `ride_request.status` o di `assignedRobotaxiId` deve cercarne i lettori. L'alternativa — far passare il dato dal chiamante, come fa già `assign()` — vale dove il chiamante lo conosce, e infatti lì si fa; per le transizioni che nessuno innesca da `rides` non lo conosce nessuno |
 | D45 | Il canale push assegna a ogni client una **room** (`passenger:<id>` o `operators`), ma la consegna di un evento di dominio passa dalla sessione | §2.3.3 | MILESTONES.md §M5 chiede le room, la §2.3.3 chiede che a decidere chi riceve cosa siano `PassengerAppSession` e `OperatorDashboardSession`. Consegnare per entrambe le vie duplicherebbe ogni notifica, quindi la via è una: la room resta l'**indirizzo** — il modo in cui il trasporto raggiunge un passeggero o l'insieme degli operatori senza passare da un evento di dominio — e la sessione l'**autorità** su chi ha diritto di vedere. Le firme delle sessioni portano di conseguenza un `NotificationDelivery` e non un `DomainEvent` come nella Fig. 2.4: la traduzione da evento a messaggio si fa una volta sola, nel manager, e `dispatch()` resta privato perché nessuno fuori dal modulo deve poter iniettare una consegna |
+| D46 | Il canale push **non trasporta un ETA numerico** in M5: `VEHICLE_ARRIVING` annuncia che il veicolo è in avvicinamento, non fra quanti minuti arriva | §2.2, §2.4; RASD R6 | R6 elenca «vehicle assignment, **ETA**, arrival at the pickup point, and ride completion», e delle quattro cose questa è l'unica che il messaggio non porta. È una rinuncia consapevole e temporanea, non una svista. In M5 l'unico fornitore di tempi di viaggio è il mock deterministico di M3: un numero preso da lì e mostrato al passeggero come «il tuo robotaxi arriva fra 7 minuti» sarebbe una promessa inventata, e peggiorerebbe R6 invece di completarlo — un ETA sbagliato è meno utile di nessun ETA. Il dato diventa reale con M7, quando l'adapter OSRM e la telemetria del simulatore sostituiscono il mock ed è la posizione vera del veicolo a innescare la transizione 4: lì `NotificationDelivery` e `notificationPushSchema` prendono il campo, e la vista di stato dell'app passeggero (§3.1, M8) lo mostra. Fino ad allora il documento non deve lasciar credere che R6 sia coperto per intero |
 
-**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16 e D25
-hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
+**Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
+D38, D39, D40 e D41 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,
 `HARNESS.md`, `docs/requirements.json`), che sono stati allineati nella stessa occasione. Il DD
 resta la fonte: se in futuro divergono, è il file operativo a doversi adeguare.

@@ -5,6 +5,7 @@ import {
   NOTIFICATION_AUTH_FIELD,
   NOTIFICATION_EVENT,
   NOTIFICATIONS_NAMESPACE,
+  notificationPushSchema,
   type NotificationPush,
   type UserRole,
 } from '@road/shared';
@@ -117,6 +118,7 @@ interface PushClient {
   readonly received: NotificationPush[];
   waitFor(count: number): Promise<NotificationPush[]>;
   robotaxiStates(): (NotificationPush['robotaxiState'] | null)[];
+  rideStatuses(): (NotificationPush['rideStatus'] | null)[];
 }
 
 async function connect(token: string): Promise<PushClient> {
@@ -146,6 +148,8 @@ async function connect(token: string): Promise<PushClient> {
     },
     robotaxiStates: () =>
       received.filter((one) => one.robotaxiState !== null).map((one) => one.robotaxiState),
+    rideStatuses: () =>
+      received.filter((one) => one.rideStatus !== null).map((one) => one.rideStatus),
   };
 }
 
@@ -223,19 +227,42 @@ describe('[M5] Cancello: NotificationManager (Observer) e push', () => {
       await lifecycle.startPickupNavigation(outcome.request.id);
       await lifecycle.pickupReached(outcome.request.id);
       await lifecycle.startRide(outcome.request.id);
+      await lifecycle.completeRide(outcome.request.id);
 
-      // Quattro eventi di veicolo più quelli di corsa: si attende il totale minimo e poi si
-      // guardano solo gli stati del veicolo, che sono ciò che il criterio nomina.
-      await client.waitFor(7);
+      // Quattro eventi di veicolo più quattro di corsa. `waitFor` è un'attesa **limitata**, non un
+      // controllo: a decidere sono le uguaglianze esatte qui sotto, che falliscono anche se manca
+      // un solo messaggio.
+      await client.waitFor(8);
 
       expect(client.robotaxiStates()).toEqual(['ASSIGNED', 'ARRIVING', 'ARRIVED', 'IN_RIDE']);
+      // L'altra metà, dal secondo soggetto dell'Observer: senza questa riga il canale potrebbe non
+      // trasportare affatto gli eventi di `Ride` e il caso passerebbe lo stesso.
+      expect(client.rideStatuses()).toEqual([
+        'SCHEDULED',
+        'WAITING_FOR_PICKUP',
+        'IN_PROGRESS',
+        'COMPLETED',
+      ]);
       // Le tre categorie che R6 nomina esplicitamente — «vehicle assignment, ETA, arrival at the
-      // pickup point» — arrivano con il tipo del RASD §2.2.3.
+      // pickup point» — arrivano con il tipo del RASD §2.2.3, e la quarta — «ride completion» —
+      // arriva dalla corsa, che dopo la deduplica di D42 ne è l'unica sorgente.
       expect(client.received.map((one) => one.type)).toEqual(
         expect.arrayContaining(['VEHICLE_ASSIGNED', 'VEHICLE_ARRIVING', 'VEHICLE_ARRIVED']),
       );
-      // Ogni messaggio rispetta il contratto pubblicato in `packages/shared`: è ciò che i client
-      // di M8 useranno per validare senza importare una riga da `apps/api`.
+      expect(client.received.filter((one) => one.rideStatus === 'COMPLETED')).toHaveLength(1);
+
+      /**
+       * Ogni messaggio è validato contro lo **schema pubblicato** in `packages/shared`, non contro
+       * un campo scelto a mano.
+       *
+       * È il precedente del cancello di M0, che valida `/health` con `healthResponseSchema`: il
+       * WebSocket non compare nell'OpenAPI, quindi `notificationPushSchema` è l'unico contratto
+       * che i client di M8 hanno, e un contratto che nessuno esegue non è un contratto.
+       */
+      for (const message of client.received) {
+        expect(notificationPushSchema.safeParse(message)).toMatchObject({ success: true });
+      }
+      // Le marche temporali vengono da `ClockPort`, mai dall'orologio di sistema (Regola 3).
       expect(client.received.every((one) => one.occurredAt === NOW.toISOString())).toBe(true);
     });
 

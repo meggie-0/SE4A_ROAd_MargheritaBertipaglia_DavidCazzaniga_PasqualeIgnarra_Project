@@ -83,8 +83,10 @@ export class RideJournal {
    * `startedAt` ed `endedAt` seguono lo stato invece di essere argomenti: sono le due marche
    * temporali che il RASD §2.2.3 dà a `Ride`, e il momento in cui valorizzarle è definito dallo
    * stato in cui si entra. Lasciarle decidere al chiamante avrebbe reso possibile una corsa
-   * `COMPLETED` senza fine e una `IN_PROGRESS` senza inizio, che il `CHECK` in migrazione rifiuta
-   * comunque — ma è meglio che il caso non si presenti.
+   * `COMPLETED` senza fine e una `IN_PROGRESS` senza inizio, e il database **non** le fermerebbe:
+   * `ride_period_is_ordered` impone solo che le due marche, quando ci sono entrambe, siano in
+   * ordine — di più non può pretendere, o vieterebbe l'annullamento di una corsa mai partita. Qui
+   * è l'unico punto in cui quella coerenza si decide.
    *
    * Restituisce `null` se la richiesta non ha una corsa: le richieste rifiutate non ne generano
    * (RASD §2.2.1), e chiedere di far avanzare la corsa di una di quelle non è un errore, è un

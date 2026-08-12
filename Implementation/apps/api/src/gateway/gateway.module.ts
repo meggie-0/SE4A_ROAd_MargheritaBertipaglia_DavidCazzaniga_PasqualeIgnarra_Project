@@ -36,9 +36,13 @@ import { RidesController } from './rides.controller';
  *
  * `NotificationsModule` gli dà `NotificationSessionPort`, con cui `NotificationsGateway` registra e
  * deregistra le sessioni dei client connessi (M5, R6, G7, NFR2). È il primo pezzo di gateway che
- * non è un controller HTTP, e resta fedele alla stessa regola: apre un trasporto e delega. Nota che
- * **non** riceve `NotificationPort` — quella è la porta dei *soggetti*, e un gateway che potesse
- * chiamare `update()` sarebbe un gateway capace di inventare eventi di dominio.
+ * non è un controller HTTP, e resta fedele alla stessa regola: apre un trasporto e delega.
+ *
+ * Delle due porte di `notifications` il gateway **inietta soltanto quella delle sessioni**.
+ * L'altra — `NotificationPort`, quella dei *soggetti* — resta iniettabile, perché importare un
+ * modulo rende disponibile tutto ciò che esporta: la disciplina è nel codice, non nel contenitore.
+ * Il motivo per cui vale la pena tenerla: un gateway che chiamasse `update()` sarebbe un gateway
+ * capace di inventare eventi di dominio, cioè di raccontare ai client cose mai accadute.
  */
 @Module({
   imports: [

@@ -60,7 +60,8 @@ export abstract class RideLifecyclePort {
    * Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`).
    *
    * La corsa resta `SCHEDULED`: per il passeggero il patto non è cambiato, è cambiato dove si trova
-   * il suo veicolo. È il veicolo a notificare, con `VEHICLE_ARRIVING` — l'«ETA» che R6 nomina.
+   * il suo veicolo. È il veicolo a notificare, con `VEHICLE_ARRIVING`, che annuncia
+   * l'avvicinamento **senza un ETA numerico**: quello arriva con M7 (decisione D46).
    */
   abstract startPickupNavigation(rideRequestId: string): Promise<RideProgress>;
 

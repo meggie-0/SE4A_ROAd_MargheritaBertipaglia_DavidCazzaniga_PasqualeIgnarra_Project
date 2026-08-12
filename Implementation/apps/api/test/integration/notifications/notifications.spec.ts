@@ -130,6 +130,64 @@ describe('[R6][G7] Gli eventi di dominio raggiungono chi li aspetta', () => {
   });
 });
 
+describe('[R6][G7] La corsa completata chiude tutto ciò che aveva aperto', () => {
+  it('notifica il completamento e accorcia la riserva sull istante effettivo', async () => {
+    await givenRobotaxi('RT-01', 0.01);
+    const giulia = recordPassenger(harness.notificationSessions, passengerId);
+
+    const outcome = await harness.rides.submitImmediate(draft());
+    expect(outcome.accepted).toBe(true);
+    if (!outcome.accepted) return;
+
+    // La finestra iniziale è una **stima**: ETA più durata più buffer (decisione D8).
+    const stimata = outcome.reservation.period.end;
+    expect(stimata.getTime()).toBeGreaterThan(NOW.getTime());
+
+    await harness.rideLifecycle.startPickupNavigation(outcome.request.id);
+    await harness.rideLifecycle.pickupReached(outcome.request.id);
+    await harness.rideLifecycle.startRide(outcome.request.id);
+
+    // La corsa finisce prima di quanto la stima prevedesse.
+    const finita = new Date(NOW.getTime() + 5 * 60_000);
+    harness.clock.setNow(finita);
+    await harness.rideLifecycle.completeRide(outcome.request.id);
+
+    // «Ride completion», che R6 nomina, arriva dalla corsa: dopo la deduplica di D42 ne è l'unica
+    // sorgente, quindi è qui che si vede se quella metà del canale funziona davvero.
+    expect(giulia.rideStatuses()).toEqual([
+      'SCHEDULED',
+      'WAITING_FOR_PICKUP',
+      'IN_PROGRESS',
+      'COMPLETED',
+    ]);
+    expect(giulia.robotaxiStates()).toEqual(['ASSIGNED', 'ARRIVING', 'ARRIVED', 'IN_RIDE']);
+
+    /**
+     * La riserva si è **accorciata** sull'istante effettivo (decisione D8), non rilasciata.
+     *
+     * Verificato su Postgres e non su un doppio: `period` è un `tstzrange` con un `transformer`
+     * dedicato, e vive sotto il vincolo di esclusione `no_overlapping_reservations`. Un
+     * accorciamento che il doppio accetta e il database rifiuta sarebbe un difetto invisibile
+     * ovunque tranne che qui.
+     */
+    const [reservation] = await harness.persistence.find('robotaxi_reservation', {
+      where: { rideRequestId: outcome.request.id },
+    });
+    expect(reservation?.period.end).toEqual(finita);
+    expect(reservation?.period.end.getTime()).toBeLessThan(stimata.getTime());
+    // Onorata, non annullata: il tempo già consumato resta occupato (R14 è un'altra cosa).
+    expect(reservation?.releasedAt).toBeNull();
+
+    // E il tempo che avanza torna prenotabile: è l'effetto osservabile dell'accorciamento.
+    expect(
+      await harness.persistence.filterAvailable(['RT-01'], {
+        start: new Date(finita.getTime() + 60_000),
+        end: stimata,
+      }),
+    ).toEqual(['RT-01']);
+  });
+});
+
 describe('[R6][NFR5] Si notifica ciò che è stato scritto, non ciò che si stava per fare', () => {
   it('una transizione illegale non produce nessuna notifica', async () => {
     await givenRobotaxi('RT-01', 0.01);

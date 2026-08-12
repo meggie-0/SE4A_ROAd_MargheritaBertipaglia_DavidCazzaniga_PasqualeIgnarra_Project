@@ -12,9 +12,15 @@ import type { DomainEvent, NotificationDelivery } from './notification.port';
  *
  * La mappa da stato di arrivo a `NotificationType` è la traduzione della Figura 2.10 nell'enum del
  * RASD §2.2.3. Le tre categorie specifiche del RASD (`VEHICLE_ASSIGNED`, `VEHICLE_ARRIVING`,
- * `VEHICLE_ARRIVED`) coprono i tre momenti che R6 nomina esplicitamente — «vehicle assignment, ETA,
- * arrival at the pickup point» — e `RIDE_STATUS_CHANGED` copre il resto della progressione, incluso
- * il completamento che R6 chiude («ride completion»).
+ * `VEHICLE_ARRIVED`) coprono tre dei quattro momenti che R6 nomina — «vehicle assignment, ETA,
+ * arrival at the pickup point, and ride completion» — e il quarto, il completamento, arriva
+ * dall'altro soggetto: `Ride` passando a `COMPLETED`.
+ *
+ * L'**ETA numerico non c'è**, ed è una rinuncia registrata come decisione D46, non una svista:
+ * `VEHICLE_ARRIVING` dice che il veicolo è in avvicinamento, non fra quanti minuti arriva. In M5
+ * l'unico fornitore di tempi di viaggio è il mock deterministico di M3, e un numero preso da lì e
+ * mostrato come promessa al passeggero peggiorerebbe R6 invece di completarlo. Il campo arriva con
+ * M7, insieme all'adapter OSRM e alla telemetria che innesca davvero la transizione 4.
  */
 
 /**

@@ -91,6 +91,12 @@ export class NotificationManager
    * Se la lettura fallisce si procede **senza destinatario**: la dashboard dell'operatore riceve
    * comunque il movimento del veicolo, che non dipende da chi sia il passeggero. Perdere anche
    * quello sarebbe far pagare a chi guarda la flotta un guasto che riguarda un'altra tabella.
+   *
+   * Va detto con precisione fin dove arriva la degradazione, perché è meno di quanto sembri: senza
+   * destinatario **né** lo storico si scrive **né** il passeggero riceve, e non è un'omissione da
+   * correggere — sono le due cose che di quel nome hanno bisogno. Consegnare a un passeggero
+   * sconosciuto non è un'operazione che esista. Quello che resta indipendente è il resto: un guasto
+   * *sullo storico* non spegne la consegna, e una socket caduta non impedisce la scrittura.
    */
   private async recipientOf(event: DomainEvent): Promise<string | null> {
     if (event.kind === 'RIDE_STATUS_CHANGED') return event.passengerId;

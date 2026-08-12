@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { RobotaxiState } from '@road/shared';
 
 import type { DomainEvent } from '../../../src/notifications/notification.port';
@@ -218,6 +219,17 @@ describe('[R6][NFR2] Il ciclo di vita delle sottoscrizioni', () => {
 });
 
 describe('[R6][NFR5] Una consegna fallita non annulla la transizione che l ha generata', () => {
+  /**
+   * I guasti di questo blocco sono **iniettati apposta**, e il manager li registra: è ciò che deve
+   * fare. Lasciarli stampare riempirebbe l'esecuzione di stack trace veri per errori finti, e una
+   * suite verde che stampa errori è una suite che nessuno legge più — la stessa obiezione mossa al
+   * cancello di M2 in questa milestone. Si zittisce il registro, non il comportamento.
+   */
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
   it('update() non solleva se lo storico non si scrive, e consegna lo stesso', async () => {
     // La richiesta esiste — quindi `recipientOf` la trova e si arriva davvero alla scrittura dello
     // storico — e **solo dopo** la scrittura si rompe. Rompendo `create` fin dall'inizio, la riga
@@ -238,6 +250,26 @@ describe('[R6][NFR5] Una consegna fallita non annulla la transizione che l ha ge
     ).resolves.toBeUndefined();
     // Lo storico è perso, ma chi è connesso in questo momento la corsa la vede partire lo stesso.
     expect(giulia.robotaxiStates()).toEqual(['ASSIGNED']);
+  });
+
+  it("se il destinatario non si risolve, l'operatore vede comunque il veicolo muoversi", async () => {
+    await givenRideRequest('corsa-di-giulia', GIULIA);
+    const giulia = recordPassenger(harness.sessions, GIULIA);
+    const operatore = recordOperator(harness.sessions);
+    jest
+      .spyOn(harness.persistence, 'find')
+      .mockRejectedValue(new Error('database irraggiungibile'));
+
+    await expect(
+      harness.notifications.update(robotaxiEvent('AVAILABLE', 'ASSIGNED', 'corsa-di-giulia')),
+    ).resolves.toBeUndefined();
+
+    // Senza il nome del destinatario non c'è né storico né consegna al passeggero, e non è
+    // un'omissione: sono le due cose che di quel nome hanno bisogno. Il movimento del veicolo però
+    // non dipende da chi sia il passeggero, e negarlo anche alla dashboard significherebbe far
+    // pagare a chi guarda la flotta un guasto che riguarda un'altra tabella.
+    expect(giulia.received).toEqual([]);
+    expect(operatore.robotaxiStates()).toEqual(['ASSIGNED']);
   });
 
   it('e non solleva se una sessione esplode durante la consegna', async () => {

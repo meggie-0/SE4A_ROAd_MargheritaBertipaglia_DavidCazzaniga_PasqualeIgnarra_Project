@@ -9,6 +9,7 @@ import {
   NOTIFICATION_EVENT,
   NOTIFICATIONS_NAMESPACE,
   type NotificationPush,
+  type UserRole,
 } from '@road/shared';
 import type { Socket } from 'socket.io';
 
@@ -19,6 +20,7 @@ import {
   OperatorDashboardSession,
   PassengerAppSession,
   type NotificationSession,
+  type NotificationTransport,
 } from '../notifications/session.port';
 
 /**
@@ -94,12 +96,16 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
       client.emit(NOTIFICATION_EVENT, serialise(delivery));
     };
 
-    const isOperator = user.role === 'OPERATOR';
-    const session: NotificationSession = isOperator
-      ? new OperatorDashboardSession(transport)
-      : new PassengerAppSession(user.id, transport);
-
-    await client.join(isOperator ? OPERATORS_ROOM : passengerRoom(user.id));
+    /**
+     * La sessione si sceglie con uno `switch` esaustivo sul ruolo, non con un ternario.
+     *
+     * Con due soli ruoli le due forme sono equivalenti *oggi*. La differenza si vede il giorno in
+     * cui `USER_ROLES` ne prende un terzo: il ternario lo tratterebbe come un passeggero, in
+     * silenzio, dandogli una sessione con il filtro sbagliato; lo `switch` con ritorno tipizzato
+     * non compila finché quel caso non viene deciso.
+     */
+    const session: NotificationSession = sessionFor(user.role, user.id, transport);
+    await client.join(user.role === 'OPERATOR' ? OPERATORS_ROOM : passengerRoom(user.id));
 
     this.sessions.set(client.id, session);
     this.registry.registerSession(session);
@@ -128,6 +134,20 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     this.sessions.delete(client.id);
     this.registry.removeSession(session);
     this.logger.debug(`Sessione chiusa per la socket ${client.id}.`);
+  }
+}
+
+/** La sessione che compete a un ruolo. Esaustiva su `UserRole`: un ruolo nuovo non compila. */
+function sessionFor(
+  role: UserRole,
+  userId: string,
+  transport: NotificationTransport,
+): NotificationSession {
+  switch (role) {
+    case 'OPERATOR':
+      return new OperatorDashboardSession(transport);
+    case 'PASSENGER':
+      return new PassengerAppSession(userId, transport);
   }
 }
 
