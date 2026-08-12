@@ -5,11 +5,11 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 
-import { repoRoot, buildShared, colors } from '../lib/run.mjs';
+import { repoRoot, buildPackages, colors } from '../lib/run.mjs';
 
 const isWindows = process.platform === 'win32';
 
-if (buildShared() !== 0) {
+if (buildPackages() !== 0) {
   console.error(colors.red('dev: packages/shared non compila, non ha senso avviare il resto.'));
   process.exit(1);
 }

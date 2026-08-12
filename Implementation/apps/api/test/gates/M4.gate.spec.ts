@@ -7,6 +7,7 @@ import { GatewayModule } from '../../src/gateway/gateway.module';
 import { activationDueAt, type PersistencePort } from '../../src/persistence/persistence.port';
 import { ClockPort } from '../../src/platform/clock.port';
 import type { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
+import type { RideLifecyclePort } from '../../src/rides/ride-lifecycle.port';
 import type { RideRequestPort } from '../../src/rides/rides.port';
 import { startApiHarness, type ApiHarness } from '../support/postgres';
 
@@ -17,7 +18,8 @@ import { startApiHarness, type ApiHarness } from '../support/postgres';
  *   - la catena **richiesta → allocazione → assegnazione** si completa (R3, G2);
  *   - una prenotazione anticipata **o scrive entrambe le righe o nessuna**, verificato forzando un
  *     errore a metà transazione (R4, G3, NFR4);
- *   - l'annullamento rilascia la riserva e **la finestra torna prenotabile** (R14);
+ *   - l'annullamento rilascia la riserva e **la finestra torna prenotabile** (R14), anche con il
+ *     veicolo **già in avvicinamento** — la seconda metà di R14, che arriva con M7 (decisione D59);
  *   - `runOnce()` su un orologio finto attiva una prenotazione dovuta, e ne **ri-alloca** una il cui
  *     veicolo è finito in manutenzione nel frattempo (R4, decisione D9).
  *
@@ -61,6 +63,8 @@ let api: INestApplication;
 let persistence: PersistencePort;
 let rides: RideRequestPort;
 let advanceBooking: AdvanceBookingActivatorPort;
+/** Le transizioni 4-7 (M5): servono a portare il veicolo in avvicinamento prima di annullarlo. */
+let rideLifecycle: RideLifecyclePort;
 let passengerId: string;
 let passengerToken: string;
 
@@ -103,6 +107,7 @@ beforeAll(async () => {
   persistence = harness.persistence;
   rides = harness.rides;
   advanceBooking = harness.advanceBooking;
+  rideLifecycle = harness.rideLifecycle;
 
   const moduleRef = await Test.createTestingModule({ imports: [GatewayModule] })
     .overrideProvider(ClockPort)
@@ -368,6 +373,53 @@ describe('[M4] Cancello: RideRequestManager', () => {
 
       expect(second.accepted && second.robotaxiId).toBe('RT-01');
       expect(await persistedState('RT-01')).toBe('ASSIGNED');
+    });
+
+    /**
+     * La seconda metà di R14, aggiunta al cancello con M7 (MILESTONES.md §M7).
+     *
+     * Fino a M6 un veicolo in `ARRIVING` rifiutava l'annullamento, e la copertura del requisito era
+     * dichiaratamente parziale (RASD R14, nota di copertura). Qui la catena è quella vera, su
+     * Postgres: la corsa avanza fino all'avvicinamento passando dalla macchina a stati, e poi viene
+     * annullata.
+     */
+    it.each([['ARRIVING', 12] as const, ['ARRIVED', 13] as const])(
+      'annulla anche con il veicolo in %s (transizione %d), e la finestra torna prenotabile',
+      async (state, _transition) => {
+        await givenRobotaxi('RT-01', 0.01);
+        const outcome = await rides.submitImmediate(immediateDraft());
+
+        // Le transizioni 4 e 5, percorse davvero: il veicolo si muove verso il ritiro e ci arriva.
+        await rideLifecycle.startPickupNavigation(outcome.request.id);
+        if (state === 'ARRIVED') await rideLifecycle.pickupReached(outcome.request.id);
+        expect(await persistedState('RT-01')).toBe(state);
+
+        const cancellation = await rides.cancel(outcome.request.id, passengerId);
+
+        // Il veicolo torna disponibile perché la sua rotta è stata revocata prima (decisione D59).
+        expect(cancellation.request.status).toBe('CANCELLED');
+        expect(cancellation.releasedRobotaxiId).toBe('RT-01');
+        expect(await persistedState('RT-01')).toBe('AVAILABLE');
+
+        const again = await rides.submitImmediate(immediateDraft());
+        expect(again.accepted && again.robotaxiId).toBe('RT-01');
+      },
+    );
+
+    it('ma non con il passeggero già a bordo: lì la corsa è cominciata davvero', async () => {
+      await givenRobotaxi('RT-01', 0.01);
+      const outcome = await rides.submitImmediate(immediateDraft());
+      await rideLifecycle.startPickupNavigation(outcome.request.id);
+      await rideLifecycle.pickupReached(outcome.request.id);
+      await rideLifecycle.startRide(outcome.request.id);
+
+      // R14 ammette l'annullamento «before the ride begins», e la corsa comincia quando il
+      // passeggero sale (RASD §1.2.2): è il confine, e dopo M7 è l'unico rifiuto che resta.
+      await expect(rides.cancel(outcome.request.id, passengerId)).rejects.toMatchObject({
+        name: 'RideNotCancellableError',
+        refusal: 'RIDE_ALREADY_UNDER_WAY',
+      });
+      expect(await persistedState('RT-01')).toBe('IN_RIDE');
     });
 
     it('la stessa cosa vale per una prenotazione annullata prima della sua finestra', async () => {

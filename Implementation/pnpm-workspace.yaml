@@ -1,6 +1,10 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  # `tools/simulator` è il simulatore di flotta di M7 (MILESTONES.md §M7), che vive qui perché non
+  # è dominio: è il fornitore dall'altra parte di ExternalServicesPort. Il glob prende solo le
+  # cartelle di tools/ che hanno un package.json, quindi gli script di harness restano fuori.
+  - 'tools/*'
 
 # pnpm chiede esplicitamente quali pacchetti possono eseguire script di installazione.
 # esbuild e unrs-resolver ne hanno bisogno: scaricano/collegano il binario nativo usato

@@ -73,3 +73,20 @@ export const ALLOCATABLE_STATES: readonly RobotaxiStateName[] = ['AVAILABLE', 'R
 export const BOOKABLE_STATES: readonly RobotaxiStateName[] = ROBOTAXI_STATES.filter(
   (state) => state !== 'MAINTENANCE',
 );
+
+/**
+ * Gli stati dai quali una corsa può essere **annullata** (R14; transizioni 11, 12 e 13).
+ *
+ * Fino a M6 ce n'era uno solo, `ASSIGNED`, e la ragione era un comando che non esisteva: fermare un
+ * veicolo già in movimento verso il punto di ritiro richiede di revocargli la rotta, e
+ * `commandRoute()` nasce con M7 (DD §2.6.3, decisione D27). Con il comando disponibile il confine
+ * si sposta dove R14 lo aveva sempre messo — «before the ride begins» — e la corsa comincia quando
+ * il passeggero sale, non quando il veicolo parte: da `IN_RIDE` in poi l'annullamento resta
+ * rifiutato (decisione D59).
+ *
+ * Come `ALLOCATABLE_STATES`, è una **seconda scrittura** di un fatto che sta nelle classi di stato:
+ * annullabile equivale a «la classe ridefinisce `cancelRide`». Esiste perché chi rifiuta un
+ * annullamento deve poter dire *perché* senza istanziare sette stati, e il cancello di M2 verifica
+ * l'equivalenza fra le due codifiche nei due versi — due verità non legate divergono.
+ */
+export const CANCELLABLE_STATES: readonly RobotaxiStateName[] = ['ASSIGNED', 'ARRIVING', 'ARRIVED'];

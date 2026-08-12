@@ -3,6 +3,7 @@ import { ROBOTAXI_STATES, type RobotaxiState as RobotaxiStateName } from '@road/
 import type { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
 import {
   ALLOCATABLE_STATES,
+  CANCELLABLE_STATES,
   IllegalTransitionError,
   ROBOTAXI_TRANSITIONS,
   Robotaxi,
@@ -16,9 +17,9 @@ import { startApiHarness, type ApiHarness } from '../support/postgres';
  * Cancello di M2 (MILESTONES.md §M2, HARNESS.md §6).
  *
  * Criterio di completamento, tradotto in test:
- *   - copertura **esaustiva** della FSM a sette stati del DD §2.6.3, Figura 2.10: le undici
+ *   - copertura **esaustiva** della FSM a sette stati del DD §2.6.3, Figura 2.10: le tredici
  *     transizioni legali riescono e portano dove la figura dice, e **tutte** le altre
- *     (7 stati × 10 metodi − 11 = 59) sollevano `IllegalTransitionError`;
+ *     (7 stati × 10 metodi − 13 = 57) sollevano `IllegalTransitionError`;
  *   - lo stato sopravvive a un giro di persistenza e ricostruzione;
  *   - un veicolo in manutenzione è escluso dai candidati, uno in rebalancing no.
  *
@@ -48,11 +49,23 @@ const LEGAL_TRANSITIONS: ReadonlyArray<
   // La 11 nasce con M4 **[v1.2]**: senza un'uscita da `ASSIGNED` verso `AVAILABLE`, R14 non è
   // realizzabile — l'annullamento deve poter restituire alla flotta un veicolo già assegnato.
   ['ASSIGNED', 'cancelRide', 'AVAILABLE'], // 11
+  /**
+   * Le 12 e 13 nascono con M7 **[v1.5]**, e completano R14 (decisione D59).
+   *
+   * La v1.2 le aveva escluse con una ragione precisa: fermare un veicolo già in movimento verso il
+   * punto di ritiro richiede di **revocargli la rotta**, che è un comando alla flotta e non una
+   * transizione del ciclo di vita — e `commandRoute()` non esisteva. Con M7 esiste, quindi la
+   * ragione del divieto è venuta meno e il confine dell'annullamento è tornato dove R14 lo mette:
+   * si annulla finché il passeggero non è a bordo. Da `IN_RIDE` resta vietato, e infatti quella
+   * combinazione è ancora fra le illegali qui sotto.
+   */
+  ['ARRIVING', 'cancelRide', 'AVAILABLE'], // 12
+  ['ARRIVED', 'cancelRide', 'AVAILABLE'], // 13
 ];
 
 const legalKeys = new Set(LEGAL_TRANSITIONS.map(([from, transition]) => `${from}/${transition}`));
 
-/** Le 59 combinazioni restanti: tutte quelle che la figura non elenca. */
+/** Le 57 combinazioni restanti: tutte quelle che la figura non elenca. */
 const ILLEGAL_TRANSITIONS: ReadonlyArray<readonly [RobotaxiStateName, RobotaxiTransition]> =
   ROBOTAXI_STATES.flatMap((from) =>
     ROBOTAXI_TRANSITIONS.filter((transition) => !legalKeys.has(`${from}/${transition}`)).map(
@@ -157,14 +170,14 @@ beforeEach(async () => {
 
 describe('[M2] Cancello: FleetMonitor e Robotaxi (State)', () => {
   describe('[NFR5][G6] La macchina a stati del DD §2.6.3, Figura 2.10', () => {
-    it('ha esattamente sette stati e dieci transizioni', () => {
+    it('ha esattamente sette stati, dieci transizioni e tredici righe legali', () => {
       // Sette e non sei: la macchina autorevole è quella del DD, non quella del RASD §3.2. Se
       // qualcuno togliesse `REBALANCING` dall'enum condiviso, i conti qui sotto cambierebbero
       // senza che nessun altro test se ne accorgesse.
       expect(ROBOTAXI_STATES).toHaveLength(7);
       expect(ROBOTAXI_TRANSITIONS).toHaveLength(10);
-      expect(LEGAL_TRANSITIONS).toHaveLength(11);
-      expect(ILLEGAL_TRANSITIONS).toHaveLength(7 * 10 - 11);
+      expect(LEGAL_TRANSITIONS).toHaveLength(13);
+      expect(ILLEGAL_TRANSITIONS).toHaveLength(7 * 10 - 13);
     });
 
     it.each(LEGAL_TRANSITIONS)('%s --%s--> %s riesce', (from, transition, to) => {
@@ -205,6 +218,33 @@ describe('[M2] Cancello: FleetMonitor e Robotaxi (State)', () => {
         expect(ALLOCATABLE_STATES.includes(state)).toBe(assignable);
       },
     );
+  });
+
+  describe('[R14][NFR5] Annullabile significa una cosa sola', () => {
+    it.each(ROBOTAXI_STATES)(
+      'da %s, «è in CANCELLABLE_STATES» ed «esce da cancelRide senza errore» coincidono',
+      (state) => {
+        // Stessa disciplina di `ALLOCATABLE_STATES`: l'elenco è una seconda scrittura di un fatto
+        // che vive nelle classi di stato, e senza questo test le due copie divergerebbero in
+        // silenzio — chi rifiuta un annullamento direbbe «troppo tardi» a un veicolo che invece
+        // sarebbe ancora fermabile, o il contrario.
+        let cancellable = true;
+        try {
+          vehicleIn(state).cancelRide();
+        } catch {
+          cancellable = false;
+        }
+
+        expect(CANCELLABLE_STATES.includes(state)).toBe(cancellable);
+      },
+    );
+
+    it('un veicolo con il passeggero a bordo non si libera', () => {
+      // È il confine di R14, e l'unico stato in cui l'annullamento resta rifiutato dopo M7: la
+      // corsa comincia quando il passeggero sale (RASD §1.2.2).
+      expect(CANCELLABLE_STATES).not.toContain('IN_RIDE');
+      expect(() => vehicleIn('IN_RIDE').cancelRide()).toThrow(IllegalTransitionError);
+    });
   });
 
   describe('[NFR5][G6] Lo stato sopravvive a persistenza e ricostruzione', () => {

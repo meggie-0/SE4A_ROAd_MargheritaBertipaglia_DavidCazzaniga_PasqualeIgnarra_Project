@@ -1,5 +1,4 @@
 import {
-  RideNotCancellableError,
   RideRequestNotFoundError,
   ScheduledPickupNotInFutureError,
 } from '../../../src/rides/rides.port';
@@ -366,15 +365,60 @@ describe('[R14] Ride Cancellation', () => {
     });
   });
 
+  /**
+   * La **seconda metà di R14**, che nasce con M7 (decisione D59).
+   *
+   * Fino a M6 l'annullamento si fermava al veicolo assegnato e fermo: da `ARRIVING` in poi veniva
+   * rifiutato, perché riportare fra i disponibili un veicolo in movimento richiede di revocargli la
+   * rotta e `commandRoute()` non esisteva (DD §2.6.3, decisione D27). Adesso esiste, e le due righe
+   * mancanti della Figura 2.10 — transizioni 12 e 13 — sono state aggiunte.
+   */
+  it.each([
+    ['ARRIVING' as const, 'in avvicinamento al punto di ritiro'],
+    ['ARRIVED' as const, 'fermo al punto di ritiro ad aspettare'],
+  ])('si annulla con il veicolo %s (%s), revocandogli la rotta', async (state, _situation) => {
+    harness = await composeRides({ now: NOW, vehicles: [north('RT-01', 0.01)] });
+    const outcome = await harness.rides.submitImmediate(immediateDraft);
+    harness.fleet.setState('RT-01', state);
+
+    const cancellation = await harness.rides.cancel(outcome.request.id, PASSENGER);
+
+    expect(cancellation.request.status).toBe('CANCELLED');
+    expect(cancellation.releasedRobotaxiId).toBe('RT-01');
+    expect(harness.fleet.stateOf('RT-01')).toBe('AVAILABLE');
+
+    /**
+     * **La rotta si revoca prima di liberare il veicolo**, e l'ordine è il requisito.
+     *
+     * Un veicolo dichiarato disponibile mentre percorre ancora la rotta verso un passeggero che ha
+     * annullato potrebbe essere assegnato a qualcun altro *e continuare ad andare dove non serve
+     * più*. Il doppio registra i comandi in ordine, quindi la revoca deve essere l'ultimo comando
+     * ricevuto e deve esserci.
+     */
+    expect(harness.external.routeCommands).toEqual([{ robotaxiId: 'RT-01', destination: null }]);
+  });
+
   it('non si annulla una corsa già cominciata, e il rifiuto non tocca nulla', async () => {
     harness = await composeRides({ now: NOW, vehicles: [north('RT-01', 0.01)] });
     const outcome = await harness.rides.submitImmediate(immediateDraft);
-    // Il veicolo si è mosso verso il punto di ritiro: la transizione 11 non è più ammessa.
-    harness.fleet.setState('RT-01', 'ARRIVING');
+    // Il passeggero è a bordo: la corsa è cominciata davvero (RASD §1.2.2), e R14 ammette
+    // l'annullamento solo «before the ride begins». È l'unico stato in cui il rifiuto resta.
+    harness.fleet.setState('RT-01', 'IN_RIDE');
 
-    await expect(harness.rides.cancel(outcome.request.id, PASSENGER)).rejects.toBeInstanceOf(
-      RideNotCancellableError,
-    );
+    await expect(harness.rides.cancel(outcome.request.id, PASSENGER)).rejects.toMatchObject({
+      name: 'RideNotCancellableError',
+      refusal: 'RIDE_ALREADY_UNDER_WAY',
+    });
+
+    /**
+     * **Nessun comando è arrivato alla flotta**, ed è la parte che conta di questo caso.
+     *
+     * Revocare la rotta non è una scrittura che si possa disfare: ferma un veicolo in strada. Farlo
+     * prima di sapere se la transizione sarà accettata significherebbe fermare il veicolo di un
+     * passeggero **già a bordo** e poi rispondere «non ho fatto niente» — che è esattamente ciò che
+     * questo test dichiara nel titolo. Asserire solo le righe di database lo lascerebbe passare.
+     */
+    expect(harness.external.routeCommands).toEqual([]);
 
     // **Il veicolo si libera prima della riserva**, quindi un rifiuto lascia tutto com'era: la
     // finestra resta impegnata e la richiesta accettata, che è ciò che deve essere se la corsa

@@ -34,6 +34,7 @@ const robotaxiEvent = (
   from: RobotaxiState,
   to: RobotaxiState,
   rideRequestId: string | null,
+  etaToPickupMinutes: number | null = null,
 ): DomainEvent => ({
   kind: 'ROBOTAXI_STATE_CHANGED',
   occurredAt: AT,
@@ -41,6 +42,7 @@ const robotaxiEvent = (
   from,
   to,
   rideRequestId,
+  etaToPickupMinutes,
 });
 
 /** Una richiesta di corsa già scritta, così che il manager possa risalire al passeggero. */
@@ -161,6 +163,66 @@ describe('[R6][G7] Ride status notifications — instradamento dell Observer', (
     // È la ragione per cui la tabella esiste: chi riapre l'app ritrova ciò che è successo mentre
     // non c'era. Una push persa non lascia traccia da nessuna parte.
     expect(harness.persistence.rowsOf('notification')).toHaveLength(1);
+  });
+});
+
+describe('[R6] Il tempo di attesa arriva al passeggero con l annuncio di avvicinamento', () => {
+  it('la notifica di avvicinamento porta i minuti, nel campo e nel testo', async () => {
+    await givenRideRequest('corsa-di-giulia', GIULIA);
+    const giulia = recordPassenger(harness.sessions, GIULIA);
+
+    await harness.notifications.update(
+      robotaxiEvent('ASSIGNED', 'ARRIVING', 'corsa-di-giulia', 6.7),
+    );
+
+    /**
+     * È il quarto dei momenti che R6 elenca — «vehicle assignment, **ETA**, arrival at the pickup
+     * point, and ride completion» — e l'ultimo ad arrivare: fino a M6 mancava, perché l'unico
+     * fornitore di tempi era un mock e un numero inventato sarebbe stato peggio di nessun numero
+     * (decisione D46). Il campo porta il valore esatto, il testo lo arrotonda.
+     */
+    const [arriving] = giulia.received;
+    expect(arriving?.type).toBe('VEHICLE_ARRIVING');
+    expect(arriving?.etaMinutes).toBe(6.7);
+    expect(arriving?.message).toBe(
+      'Il robotaxi RT-01 sta arrivando al punto di ritiro: circa 7 minuti.',
+    );
+  });
+
+  it('meno di un minuto si dice «circa 1 minuto», non «circa 0»', async () => {
+    await givenRideRequest('corsa-di-giulia', GIULIA);
+    const giulia = recordPassenger(harness.sessions, GIULIA);
+
+    await harness.notifications.update(
+      robotaxiEvent('ASSIGNED', 'ARRIVING', 'corsa-di-giulia', 0.2),
+    );
+
+    // «Fra 0 minuti» direbbe al passeggero che il veicolo è già lì, che è la notifica successiva.
+    expect(giulia.received[0]?.message).toBe(
+      'Il robotaxi RT-01 sta arrivando al punto di ritiro: circa 1 minuto.',
+    );
+  });
+
+  it('senza un tempo noto la notifica resta quella di M5', async () => {
+    await givenRideRequest('corsa-di-giulia', GIULIA);
+    const giulia = recordPassenger(harness.sessions, GIULIA);
+
+    // Il fornitore non ha saputo rispondere: si annuncia l'avvicinamento e basta.
+    await harness.notifications.update(robotaxiEvent('ASSIGNED', 'ARRIVING', 'corsa-di-giulia'));
+
+    expect(giulia.received[0]?.type).toBe('VEHICLE_ARRIVING');
+    expect(giulia.received[0]?.etaMinutes).toBeNull();
+    expect(giulia.received[0]?.message).toBe('Il robotaxi RT-01 sta arrivando al punto di ritiro.');
+  });
+
+  it('le altre transizioni non parlano di tempi di attesa', async () => {
+    await givenRideRequest('corsa-di-giulia', GIULIA);
+    const giulia = recordPassenger(harness.sessions, GIULIA);
+
+    await harness.notifications.update(robotaxiEvent('AVAILABLE', 'ASSIGNED', 'corsa-di-giulia'));
+    await harness.notifications.update(robotaxiEvent('ARRIVING', 'ARRIVED', 'corsa-di-giulia'));
+
+    expect(giulia.received.every((one) => one.etaMinutes === null)).toBe(true);
   });
 });
 

@@ -5,9 +5,9 @@
 // committato insieme al codice che ha cambiato l'API, così la modifica compare nel diff della
 // pull request (HARNESS.md §4).
 
-import { run, buildShared, colors } from '../lib/run.mjs';
+import { run, buildPackages, colors } from '../lib/run.mjs';
 
-if (buildShared() !== 0) process.exit(1);
+if (buildPackages() !== 0) process.exit(1);
 
 const status = run('npx', ['jest', '--selectProjects', 'contract'], {
   env: { ROAD_UPDATE_OPENAPI: '1' },

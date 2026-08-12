@@ -71,6 +71,28 @@ module.exports = {
       },
     },
     {
+      name: 'simulator-only-behind-the-port',
+      comment:
+        'Il simulatore di flotta (@road/simulator, tools/simulator) è un fornitore esterno: si ' +
+        "raggiunge solo dall'adapter che lo avvolge, dentro src/external/. Se un manager di " +
+        'dominio potesse importarlo saprebbe che la flotta è simulata — cioè saprebbe una cosa ' +
+        'che con veicoli veri sarebbe falsa, ed è esattamente ciò che NFR8 vieta (DD §4.3).',
+      severity: 'error',
+      from: { pathNot: '^(apps/api/src/external/|tools/simulator/)' },
+      to: { path: '^tools/simulator/' },
+    },
+    {
+      name: 'simulation-port-is-not-for-the-domain',
+      comment:
+        'FleetSimulationPort fa avanzare il mondo simulato: la iniettano lo scheduler di external ' +
+        'e i test, nessun altro. Un manager di dominio che comandasse al mondo di muoversi non ' +
+        'starebbe gestendo una flotta, e il giorno in cui i veicoli fossero veri quella porta ' +
+        'sparirebbe insieme al simulatore (DD, decisione D64).',
+      severity: 'error',
+      from: { pathNot: '^(apps/api/src/external/|apps/api/test/)' },
+      to: { path: '^apps/api/src/external/fleet-simulation\\.port\\.ts$' },
+    },
+    {
       name: 'no-circular',
       comment: 'Nessuna dipendenza circolare fra moduli.',
       severity: 'error',
@@ -97,7 +119,17 @@ module.exports = {
 
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '(^|/)(dist|coverage|\\.tsbuild)/' },
+    /**
+     * Le cartelle di build si escludono dal grafo — con **un'eccezione voluta**.
+     *
+     * `tools/simulator/dist` resta dentro: è lì che `@road/simulator` viene risolto, perché il
+     * pacchetto pubblica il proprio artefatto compilato. Escludendolo come gli altri, la regola
+     * `simulator-only-behind-the-port` non avrebbe niente da vedere e passerebbe sempre —
+     * sembrando una protezione mentre non lo è, che è il difetto contro cui mette in guardia
+     * HARNESS.md §3. Verificato togliendo l'eccezione: con essa un import proibito fallisce, senza
+     * di essa nessuno se ne accorge.
+     */
+    exclude: { path: '(^|/)(coverage|\\.tsbuild)/|^(apps|packages)/[^/]+/dist/' },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.depcruise.json' },
     enhancedResolveOptions: {

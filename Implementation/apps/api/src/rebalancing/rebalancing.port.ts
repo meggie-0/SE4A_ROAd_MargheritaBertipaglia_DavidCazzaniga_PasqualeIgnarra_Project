@@ -52,9 +52,19 @@ export interface DemandAnalysis {
   readonly zones: readonly ZoneDemand[];
 }
 
-/** L'esito di un ciclo: la stessa analisi, più i veicoli effettivamente mandati. */
+/** L'esito di un ciclo: la stessa analisi, più i veicoli mandati e quelli arrivati. */
 export interface RebalancingPlan extends DemandAnalysis {
   readonly dispatched: readonly RebalancingDispatch[];
+  /**
+   * I veicoli che hanno **raggiunto** la zona verso cui erano stati mandati, e che questo ciclo ha
+   * riportato ad `AVAILABLE` (transizione 9, M7).
+   *
+   * Un ciclo chiude prima di aprire: senza questa metà, un veicolo mandato a riposizionarsi
+   * resterebbe in `REBALANCING` per sempre — allocabile, ma mai più contato fra gli inattivi e
+   * quindi mai più spostabile (decisione D60). È vuota finché nessuno è arrivato, che è lo stato
+   * normale di una flotta ferma.
+   */
+  readonly completed: readonly string[];
 }
 
 export abstract class RebalancingPort {

@@ -88,5 +88,20 @@ export const notificationPushSchema = z.object({
   trafficLevel: z.enum(TRAFFIC_LEVELS).nullable(),
   /** La zona a cui l'evento si riferisce: la destinazione di un riposizionamento (M6, R11, G9). */
   zoneId: z.string().nullable(),
+  /**
+   * I minuti stimati perché il veicolo raggiunga il punto di ritiro (M7, R6).
+   *
+   * È il quarto dei momenti che R6 elenca — «vehicle assignment, **ETA**, arrival at the pickup
+   * point, and ride completion» — e fino a M6 era l'unico che il canale non portava: l'unico
+   * fornitore di tempi di viaggio era un mock, e un numero preso da lì e mostrato come promessa al
+   * passeggero sarebbe stato peggio di nessun numero (decisione D46). Con OSRM collegato il dato è
+   * reale, e lo porta la notifica di avvicinamento.
+   *
+   * **Annullabile** perché non sempre si conosce: un fornitore può non saper rispondere per un
+   * veicolo, e le altre notifiche non parlano affatto di tempi di arrivo. Un client lo mostra se
+   * c'è — «il tuo robotaxi arriva fra 7 minuti» — e senza si limita ad annunciare l'avvicinamento,
+   * che è ciò che il sistema faceva fino a M6.
+   */
+  etaMinutes: z.number().nullable(),
 });
 export type NotificationPush = z.infer<typeof notificationPushSchema>;

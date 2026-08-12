@@ -53,6 +53,20 @@ export interface RobotaxiStateChangedEvent {
   readonly from: RobotaxiState;
   readonly to: RobotaxiState;
   readonly rideRequestId: string | null;
+  /**
+   * I minuti stimati per raggiungere il punto di ritiro, quando la transizione è la **4** e
+   * qualcuno li conosce (M7, R6, decisione D66).
+   *
+   * È l'unico campo dell'evento che il veicolo non sa produrre da sé: glielo passa chi ha chiesto
+   * la transizione, che è anche chi ha chiesto il percorso al fornitore di mappe. Non è un'anomalia
+   * — `assign()` riceve allo stesso modo la corsa accettata, che il veicolo non conoscerebbe — ed è
+   * ciò che permette al passeggero di ricevere **una** notifica invece di due: «il tuo robotaxi sta
+   * arrivando» e «fra sette minuti» sono la stessa notizia.
+   *
+   * `null` in tutte le altre transizioni, e anche nella 4 se il fornitore non ha saputo rispondere:
+   * un ETA inventato è peggio di nessun ETA (decisione D46).
+   */
+  readonly etaToPickupMinutes: number | null;
 }
 
 /**
@@ -232,6 +246,8 @@ export interface NotificationDelivery {
   readonly mode: ControlMode | null;
   readonly trafficLevel: TrafficLevel | null;
   readonly zoneId: string | null;
+  /** I minuti stimati all'arrivo al punto di ritiro (M7, R6): solo la notifica di avvicinamento. */
+  readonly etaMinutes: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -5,10 +5,10 @@
 // in più che dimenticherebbe (o di introdurre un runner TypeScript fra le dipendenze, che
 // MILESTONES.md non elenca).
 
-import { buildShared, runOrExit } from '../lib/run.mjs';
+import { buildPackages, runOrExit } from '../lib/run.mjs';
 
 export function buildApi() {
-  const shared = buildShared();
+  const shared = buildPackages();
   if (shared !== 0) process.exit(shared);
   runOrExit('pnpm', ['--filter', '@road/api', 'build']);
 }

@@ -1,17 +1,28 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
   DEFAULT_STRATEGY,
+  ROBOTAXI_STATES,
   type GeoPoint,
   type StrategyName,
   type TrafficLevel,
 } from '@road/shared';
 
 import { AllocationPort } from '../../src/allocation/allocation.port';
-import { ExternalServicesPort } from '../../src/external/external-services.port';
-import { FleetMonitorPort, type FleetStatus } from '../../src/fleet/fleet-monitor.port';
+import {
+  ExternalServicesPort,
+  type RouteCommandOutcome,
+  type RouteRequest,
+  type VehicleTelemetry,
+} from '../../src/external/external-services.port';
+import {
+  FleetMonitorPort,
+  type FleetStatus,
+  type ObservedPosition,
+} from '../../src/fleet/fleet-monitor.port';
 import {
   ALLOCATABLE_STATES,
   BOOKABLE_STATES,
+  CANCELLABLE_STATES,
   IllegalTransitionError,
   type RideAssignment,
   type RobotaxiSnapshot,
@@ -35,6 +46,7 @@ import { ClockPort } from '../../src/platform/clock.port';
 import { FakeClock } from '../../src/platform/fake-clock';
 import { NotificationSessionPort } from '../../src/notifications/session.port';
 import { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
+import { FleetTelemetryPort } from '../../src/rides/fleet-telemetry.port';
 import { RideLifecyclePort } from '../../src/rides/ride-lifecycle.port';
 import { RidesModule } from '../../src/rides/rides.module';
 import { RideRequestPort } from '../../src/rides/rides.port';
@@ -263,7 +275,10 @@ export class FleetDouble extends FleetMonitorPort {
   private readonly vehicles = new Map<string, RobotaxiSnapshot>();
   readonly assignments: Array<{ robotaxiId: string; rideRequestId: string }> = [];
 
-  constructor(vehicles: readonly RobotaxiSnapshot[] = []) {
+  constructor(
+    private readonly clock: FakeClock,
+    vehicles: readonly RobotaxiSnapshot[] = [],
+  ) {
     super();
     for (const vehicle of vehicles) this.vehicles.set(vehicle.id, vehicle);
   }
@@ -299,10 +314,30 @@ export class FleetDouble extends FleetMonitorPort {
     return Promise.resolve(this.allocatable().filter((vehicle) => vehicle.state === 'AVAILABLE'));
   }
 
+  /**
+   * La fotografia della flotta.
+   *
+   * Fino a M6 il doppio la rifiutava: nessun test di `rides` ne aveva bisogno, e rispondere a una
+   * domanda che nessuno fa è un modo di far sembrare verificato ciò che non lo è. Da M7 serve
+   * davvero — `FleetTelemetry` la usa per sapere in che stato è il veicolo di ogni corsa in corso —
+   * quindi il doppio la produce, con i conteggi calcolati e non inventati.
+   */
   getFleetStatus(): Promise<FleetStatus> {
-    return Promise.reject(
-      new Error('Il doppio di FleetMonitorPort non produce lo stato di flotta.'),
+    const robotaxis = [...this.vehicles.values()].sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
     );
+    const countsByState = Object.fromEntries(ROBOTAXI_STATES.map((state) => [state, 0])) as Record<
+      RobotaxiSnapshot['state'],
+      number
+    >;
+    for (const vehicle of robotaxis) countsByState[vehicle.state] += 1;
+
+    return Promise.resolve({
+      observedAt: this.clock.now(),
+      total: robotaxis.length,
+      countsByState,
+      robotaxis,
+    });
   }
 
   assign(robotaxiId: string, request: RideAssignment): Promise<RobotaxiSnapshot> {
@@ -315,9 +350,16 @@ export class FleetDouble extends FleetMonitorPort {
     return Promise.resolve(this.moveTo(robotaxiId, 'ASSIGNED'));
   }
 
+  /**
+   * L'annullamento, ammesso da **tre** stati (transizioni 11, 12 e 13 della Figura 2.10).
+   *
+   * Le due nuove entrano con M7: `commandRoute()` esiste, quindi un veicolo in avvicinamento o già
+   * fermo al ritiro può essere fermato revocandogli la rotta (decisione D59). Da `IN_RIDE` resta
+   * vietato, ed è il confine di R14 — la corsa comincia quando il passeggero sale.
+   */
   releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot> {
     const vehicle = this.require(robotaxiId);
-    if (vehicle.state !== 'ASSIGNED') {
+    if (!CANCELLABLE_STATES.includes(vehicle.state)) {
       return Promise.reject(new IllegalTransitionError(robotaxiId, vehicle.state, 'cancelRide'));
     }
     return Promise.resolve(this.moveTo(robotaxiId, 'AVAILABLE'));
@@ -364,6 +406,27 @@ export class FleetDouble extends FleetMonitorPort {
     return Promise.resolve(this.moveTo(robotaxiId, 'REBALANCING'));
   }
 
+  completeRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.advance(robotaxiId, 'REBALANCING', 'AVAILABLE', 'completeRebalancing');
+  }
+
+  /** Le posizioni osservate: il doppio le registra, perché `rides` gliele consegna a ogni ciclo. */
+  recordPositions(positions: readonly ObservedPosition[]): Promise<number> {
+    let updated = 0;
+    for (const position of positions) {
+      const vehicle = this.vehicles.get(position.robotaxiId);
+      if (vehicle === undefined) continue;
+      this.vehicles.set(position.robotaxiId, {
+        ...vehicle,
+        lat: position.lat,
+        lon: position.lon,
+        updatedAt: position.observedAt,
+      });
+      updated += 1;
+    }
+    return Promise.resolve(updated);
+  }
+
   private allocatable(): RobotaxiSnapshot[] {
     return [...this.vehicles.values()]
       .filter((vehicle) => ALLOCATABLE_STATES.includes(vehicle.state))
@@ -395,7 +458,22 @@ export class FleetDouble extends FleetMonitorPort {
 export class TravelTimeDouble extends ExternalServicesPort {
   private readonly unknown = new Set<string>();
 
-  constructor(private readonly minutesPerDegree = 100) {
+  /**
+   * I comandi di rotta ricevuti, nell'ordine (M7).
+   *
+   * Sono parte di ciò che c'è da verificare e non un dettaglio: R14 pretende che l'annullamento
+   * **revochi la rotta prima** di liberare il veicolo, e l'unico modo di dimostrarlo è guardare cosa
+   * è stato comandato alla flotta e quando.
+   */
+  readonly routeCommands: Array<{ robotaxiId: string; destination: GeoPoint | null }> = [];
+
+  /** La telemetria dei veicoli a cui è stata comandata una rotta, per identificatore. */
+  private readonly moving = new Map<string, { destination: GeoPoint; hasArrived: boolean }>();
+
+  constructor(
+    private readonly clock: FakeClock = new FakeClock(new Date('2026-05-04T09:00:00.000Z')),
+    private readonly minutesPerDegree = 100,
+  ) {
     super();
   }
 
@@ -433,6 +511,53 @@ export class TravelTimeDouble extends ExternalServicesPort {
       ),
     );
   }
+
+  /**
+   * Registra il comando e mette (o toglie) il veicolo fra quelli in movimento.
+   *
+   * Il doppio non simula il percorso — a farlo è `@road/simulator`, dietro l'adapter vero: qui
+   * serve solo sapere **che cosa** è stato comandato, perché è su quello che l'annullamento di R14
+   * e la progressione guidata dalla telemetria si verificano.
+   */
+  commandRoute(robotaxiId: string, route: RouteRequest | null): Promise<RouteCommandOutcome> {
+    this.routeCommands.push({ robotaxiId, destination: route === null ? null : route.to });
+
+    if (route === null) this.moving.delete(robotaxiId);
+    else this.moving.set(robotaxiId, { destination: route.to, hasArrived: false });
+
+    return Promise.resolve({
+      robotaxiId,
+      etaMinutes: route === null ? null : 0,
+      distanceKm: route === null ? null : 0,
+    });
+  }
+
+  /** Dichiara che il veicolo ha raggiunto la destinazione comandata: la guardia della Figura 2.10. */
+  arrive(robotaxiId: string): void {
+    const vehicle = this.moving.get(robotaxiId);
+    if (vehicle === undefined) {
+      throw new Error(
+        `Nessuna rotta comandata al robotaxi ${robotaxiId}: non può essere arrivato.`,
+      );
+    }
+    this.moving.set(robotaxiId, { ...vehicle, hasArrived: true });
+  }
+
+  readTelemetry(): Promise<readonly VehicleTelemetry[]> {
+    const observedAt = this.clock.now();
+    return Promise.resolve(
+      [...this.moving.entries()]
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([robotaxiId, vehicle]) => ({
+          robotaxiId,
+          position: vehicle.destination,
+          destination: vehicle.destination,
+          remainingKm: vehicle.hasArrived ? 0 : 1,
+          hasArrived: vehicle.hasArrived,
+          observedAt,
+        })),
+    );
+  }
 }
 
 export interface RidesHarness {
@@ -440,6 +565,13 @@ export interface RidesHarness {
   readonly advanceBooking: AdvanceBookingActivatorPort;
   /** L'avanzamento di una corsa assegnata (M5): transizioni 4-7 della Figura 2.10. */
   readonly rideLifecycle: RideLifecyclePort;
+  /**
+   * Il giro che legge la telemetria e innesca quelle transizioni (M7).
+   *
+   * Nei test lo chiama il test, un giro alla volta: `RidesModule` si compone senza
+   * `ScheduleModule`, quindi il `@Cron` resta inerte (CLAUDE.md Regola 3).
+   */
+  readonly fleetTelemetry: FleetTelemetryPort;
   /**
    * Il registro delle sessioni push (M5).
    *
@@ -464,8 +596,8 @@ export interface ComposeRidesOptions {
 export async function composeRides(options: ComposeRidesOptions = {}): Promise<RidesHarness> {
   const clock = new FakeClock(options.now ?? new Date('2026-05-04T09:00:00.000Z'));
   const persistence = new RidesPersistenceDouble(clock, options.activeStrategy);
-  const fleet = new FleetDouble(options.vehicles);
-  const external = new TravelTimeDouble();
+  const fleet = new FleetDouble(clock, options.vehicles);
+  const external = new TravelTimeDouble(clock);
 
   const moduleRef: TestingModule = await Test.createTestingModule({ imports: [RidesModule] })
     .overrideProvider(PersistencePort)
@@ -482,6 +614,7 @@ export async function composeRides(options: ComposeRidesOptions = {}): Promise<R
     rides: moduleRef.get(RideRequestPort),
     advanceBooking: moduleRef.get(AdvanceBookingActivatorPort),
     rideLifecycle: moduleRef.get(RideLifecyclePort),
+    fleetTelemetry: moduleRef.get(FleetTelemetryPort),
     notificationSessions: moduleRef.get(NotificationSessionPort),
     persistence,
     fleet,

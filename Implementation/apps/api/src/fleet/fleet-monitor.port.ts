@@ -9,7 +9,11 @@ import type { RobotaxiSnapshot } from './robotaxi';
  * Le cinque operazioni del DD §2.2 — `getCandidates`, `getAvailableRobotaxis`, `getFleetStatus`,
  * `assign`, `requestRebalancing` — più le due che M4 aggiunge: `releaseAssignment`, insieme alla
  * transizione 11 della Figura 2.10 (decisione D28), e `getBookableRobotaxis`, perché «può prendere
- * una corsa adesso» e «potrà servirne una fra due ore» non sono la stessa domanda (decisione D34). Il DD attribuisce a `RideRequestManager` il
+ * una corsa adesso» e «potrà servirne una fra due ore» non sono la stessa domanda (decisione D34).
+ * Le quattro transizioni intermedie arrivano con M5 (decisione D37), e M7 chiude l'elenco con le
+ * due che la telemetria rende possibili: `completeRebalancing`, la transizione 9 che fino ad allora
+ * nessuno sapeva innescare, e `recordPositions`, che non è una transizione affatto (decisioni D60 e
+ * D61). Il DD attribuisce a `RideRequestManager` il
  * compito di riportare il veicolo ad `AVAILABLE` quando una corsa viene annullata (§2.4, R14) senza
  * dire attraverso quale operazione: `rides` non può toccare la colonna di stato — la macchina la
  * governa `fleet` — quindi l'operazione che mancava è questa.
@@ -30,6 +34,21 @@ export interface FleetStatus {
   readonly total: number;
   readonly countsByState: Readonly<Record<RobotaxiStateName, number>>;
   readonly robotaxis: readonly RobotaxiSnapshot[];
+}
+
+/**
+ * Dove un veicolo è stato osservato, e quando (M7).
+ *
+ * È ciò che resta della telemetria una volta tolto tutto quello che riguarda il fornitore: non c'è
+ * la rotta, non c'è quanto manca, non c'è se è arrivato. `fleet` ha bisogno di sapere **dove sono i
+ * veicoli**, che è la domanda di R7 e G8; il resto serve a chi decide le transizioni, e passa da
+ * `ExternalServicesPort`.
+ */
+export interface ObservedPosition {
+  readonly robotaxiId: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly observedAt: Date;
 }
 
 /** Sollevata quando l'identificatore indicato non corrisponde ad alcun veicolo della flotta. */
@@ -118,8 +137,24 @@ export abstract class FleetMonitorPort {
    * corrente non le ammette, `ConcurrentTransitionError` se la riga è cambiata fra lettura e
    * scrittura, `UnknownRobotaxiError` se il veicolo non esiste.
    */
-  /** Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`). */
-  abstract startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot>;
+  /**
+   * Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`).
+   *
+   * `etaToPickupMinutes` è il tempo che il passeggero vedrà nella notifica di avvicinamento (R6,
+   * decisione D66). **Non è un dato che `fleet` sappia produrre**: glielo passa chi ha chiesto la
+   * transizione, che è anche chi ha chiesto il percorso al fornitore di mappe. La forma è quella di
+   * `assign()`, che riceve allo stesso modo la corsa accettata — un valore che il modulo non
+   * calcola, trasporta, e che serve a chi riceverà l'evento.
+   *
+   * È **opzionale e annullabile**, e non per comodità: il fornitore può non saper rispondere per un
+   * veicolo, e chi fa avanzare una corsa senza aver chiesto un percorso non ha un tempo da
+   * promettere. Senza, il passeggero riceve l'annuncio dell'avvicinamento senza minuti — cioè ciò
+   * che il sistema faceva fino a M6 (decisione D46).
+   */
+  abstract startPickupNavigation(
+    robotaxiId: string,
+    etaToPickupMinutes?: number | null,
+  ): Promise<RobotaxiSnapshot>;
 
   /** Transizione 5: il veicolo è al punto di ritiro (`ARRIVING → ARRIVED`). */
   abstract pickupReached(robotaxiId: string): Promise<RobotaxiSnapshot>;
@@ -144,6 +179,44 @@ export abstract class FleetMonitorPort {
    * nell'assegnazione (DD §2.4).
    */
   abstract releaseAssignment(robotaxiId: string): Promise<RobotaxiSnapshot>;
+
+  /**
+   * Riporta ad `AVAILABLE` un veicolo che ha raggiunto la zona verso cui era stato mandato
+   * (transizione 9, M7).
+   *
+   * La Figura 2.10 la definisce dal v1.0 e `RebalancingState` la implementa dal M2, ma fino a M6
+   * **nessuna operazione la innescava**: un veicolo mandato a riposizionarsi restava in
+   * `REBALANCING` finché una corsa non lo interrompeva (transizione 10). Mancava la guardia
+   * `hasReachedTargetArea()`, che dipende dalla posizione reale del veicolo — cioè dalla telemetria,
+   * che nasce con M7. È la stessa lacuna che la decisione D37 aveva colmato per le transizioni 4-7,
+   * lasciata aperta sulla 9 perché allora nessuno sapeva dire *quando* (decisione D60).
+   *
+   * Il chiamante è il `RebalancingManager`, all'inizio del proprio ciclo: chi ha mandato il veicolo
+   * è chi si accorge che è arrivato. Condivide la disciplina di `assign()` —
+   * `IllegalTransitionError` se il veicolo non è in `REBALANCING`, `ConcurrentTransitionError` se la
+   * riga è cambiata fra lettura e scrittura, `UnknownRobotaxiError` se non esiste.
+   */
+  abstract completeRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot>;
+
+  /**
+   * Scrive dove i veicoli sono stati osservati, e restituisce quanti ne ha aggiornati (M7).
+   *
+   * **Non è una transizione**: nessuna colonna di stato cambia, nessuna classe di stato viene
+   * interrogata, nessun observer viene notificato. Un veicolo che si sposta lungo la propria rotta
+   * non cambia ciò che è, cambia dov'è — e R7 chiede all'operatore di poter vedere entrambe le
+   * cose.
+   *
+   * Sta qui e non in chi legge la telemetria perché la riga del veicolo la scrive `fleet` e nessun
+   * altro (decisione D28): il modulo che osserva consegna ciò che ha visto, il modulo che possiede
+   * il dato lo registra. Un veicolo sconosciuto viene ignorato invece di sollevare — la telemetria
+   * arriva da un sistema esterno, che può parlare di veicoli che ROAd non ha in flotta, e un ciclo
+   * periodico non deve fermarsi per questo.
+   *
+   * Le notifiche restano fuori di proposito: una posizione cambia a ogni tick, e spingerne una per
+   * veicolo per tick inonderebbe il canale di M5 — che esiste per gli eventi della corsa (R6). La
+   * dashboard le posizioni le legge da `getFleetStatus()`.
+   */
+  abstract recordPositions(positions: readonly ObservedPosition[]): Promise<number>;
 
   /**
    * Porta il veicolo a `REBALANCING` e ne persiste lo stato (transizione 8).

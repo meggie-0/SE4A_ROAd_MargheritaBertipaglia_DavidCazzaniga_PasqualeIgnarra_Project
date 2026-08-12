@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
+import { ExternalServicesPort } from '../external/external-services.port';
 import { FleetMonitorPort } from '../fleet/fleet-monitor.port';
-import { ConcurrentTransitionError, IllegalTransitionError } from '../fleet/robotaxi.port';
+import {
+  CANCELLABLE_STATES,
+  ConcurrentTransitionError,
+  IllegalTransitionError,
+} from '../fleet/robotaxi.port';
 import {
   PersistencePort,
   activationDueAt,
@@ -50,6 +55,16 @@ export class RideRequestManager extends RideRequestPort {
     private readonly clock: ClockPort,
     /** Apre e chiude la `Ride`, il secondo soggetto dell'Observer (M5, DD §2.3.3). */
     private readonly journal: RideJournal,
+    /**
+     * Il comando alla flotta (M7).
+     *
+     * Serve a un solo passo, l'annullamento: revocare la rotta di un veicolo che si stava già
+     * muovendo verso il punto di ritiro, che è ciò che completa R14 (decisione D59). I tempi di
+     * viaggio delle altre due operazioni passano invece da `RideAllocator`, che li chiede alla
+     * stessa porta — l'arco verso `external` esiste dal M4 (decisione D29), qui cambia solo chi lo
+     * percorre.
+     */
+    private readonly external: ExternalServicesPort,
   ) {
     super();
   }
@@ -252,17 +267,61 @@ export class RideRequestManager extends RideRequestPort {
    *
    * Traduce i due rifiuti della macchina a stati in errori del dominio, e li tiene **distinti**:
    *
-   * - `IllegalTransitionError` significa che il veicolo si è già mosso verso il punto di ritiro,
-   *   cioè che la corsa è cominciata. Ripetere la chiamata non cambierà nulla.
+   * - `IllegalTransitionError` significa che il passeggero è già a bordo, cioè che la corsa è
+   *   cominciata davvero (transizioni 11, 12 e 13: si annulla da `ASSIGNED`, `ARRIVING` e
+   *   `ARRIVED`, non da `IN_RIDE`). Ripetere la chiamata non cambierà nulla.
    * - `ConcurrentTransitionError` significa che la transizione era legale quando si è letto e non
    *   lo era più quando si è scritto. Ripetere ha senso, ed è la differenza che il passeggero deve
    *   poter vedere. Senza questo ramo l'errore uscirebbe grezzo dal manager e diventerebbe un 500:
    *   un guasto annunciato per una corsa che nel frattempo è semplicemente partita.
+   *
+   * Entrambi restano possibili anche dopo il controllo preventivo qui sotto — fra la lettura dello
+   * stato e la scrittura, la telemetria può far salire il passeggero — ma allora sono davvero una
+   * corsa persa e non il caso ordinario. Il veicolo a cui in quella finestra è stata revocata la
+   * rotta la riceve di nuovo al giro di telemetria successivo, che ricomanda la destinazione
+   * proprio per questo (`FleetTelemetry`, ramo `IN_RIDE`).
    */
   private async releaseVehicle(request: RideRequestRecord): Promise<string | null> {
     if (request.assignedRobotaxiId === null) return null;
 
+    /**
+     * **Prima si guarda se l'annullamento è ammesso, poi si tocca la flotta.**
+     *
+     * La revoca della rotta non è una scrittura che si possa disfare: ferma un veicolo in strada.
+     * Farla prima di sapere se la transizione sarà accettata significherebbe fermare il veicolo di
+     * un passeggero **già a bordo** per poi rifiutare l'annullamento — l'esito peggiore possibile,
+     * e per giunta con la chiamata che risponde «non ho fatto niente». La promessa della porta è
+     * che un rifiuto non lasci nulla dietro di sé, e vale per il mondo fisico prima ancora che per
+     * il database.
+     *
+     * Lo stato lo dà `fleet`, che è chi lo possiede: qui non si decide se la transizione è legale
+     * — quello lo fa la classe di stato un istante dopo — si decide se vale la pena **comandare
+     * qualcosa alla flotta**. La finestra fra questa lettura e la scrittura resta possibile ed è
+     * gestita sotto, dove è sempre stata.
+     */
+    const { robotaxis } = await this.fleet.getFleetStatus();
+    const vehicle = robotaxis.find((one) => one.id === request.assignedRobotaxiId);
+    if (vehicle !== undefined && !CANCELLABLE_STATES.includes(vehicle.state)) {
+      throw new RideNotCancellableError(request.id, 'RIDE_ALREADY_UNDER_WAY', vehicle.state);
+    }
+
     try {
+      /**
+       * **Prima si revoca la rotta, poi si libera il veicolo** (R14, decisione D27, M7).
+       *
+       * È l'ordine che rende legale l'annullamento da `ARRIVING` e da `ARRIVED`, e non è
+       * intercambiabile: dichiarare disponibile un veicolo che sta ancora percorrendo una rotta
+       * verso un passeggero che ha annullato significherebbe poterlo assegnare a qualcun altro
+       * mentre continua ad andare dove non serve più. Il DD §2.6.3 lo dice nella nota alla
+       * transizione 11: fermare un veicolo in movimento è un comando alla flotta, e viene prima
+       * della transizione del ciclo di vita.
+       *
+       * La revoca è **innocua** se il veicolo non si era mosso — il caso `ASSIGNED`, l'unico
+       * ammesso fino a M6 — perché nessuna rotta gli era stata comandata e la flotta non ha niente
+       * da revocare.
+       */
+      await this.external.commandRoute(request.assignedRobotaxiId, null);
+
       await this.fleet.releaseAssignment(request.assignedRobotaxiId);
       return request.assignedRobotaxiId;
     } catch (error) {

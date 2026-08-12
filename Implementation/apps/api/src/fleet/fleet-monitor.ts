@@ -2,10 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { ROBOTAXI_STATES, type RobotaxiState as RobotaxiStateName } from '@road/shared';
 
 import { NotificationPort } from '../notifications/notification.port';
-import { PersistencePort, StaleRecordError } from '../persistence/persistence.port';
+import {
+  PersistencePort,
+  RecordNotFoundError,
+  StaleRecordError,
+} from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
 
-import { FleetMonitorPort, UnknownRobotaxiError, type FleetStatus } from './fleet-monitor.port';
+import {
+  FleetMonitorPort,
+  UnknownRobotaxiError,
+  type FleetStatus,
+  type ObservedPosition,
+} from './fleet-monitor.port';
 import type { RideAssignment } from './ride-assignment';
 import { Robotaxi, robotaxiSnapshotOf, type RobotaxiSnapshot } from './robotaxi';
 import { ALLOCATABLE_STATES, BOOKABLE_STATES } from './robotaxi.port';
@@ -95,9 +104,16 @@ export class FleetMonitor extends FleetMonitorPort {
     );
   }
 
-  async startPickupNavigation(robotaxiId: string): Promise<RobotaxiSnapshot> {
-    return this.applyTransition(robotaxiId, 'startPickupNavigation', (robotaxi) =>
-      robotaxi.startPickupNavigation(),
+  async startPickupNavigation(
+    robotaxiId: string,
+    etaToPickupMinutes: number | null = null,
+  ): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(
+      robotaxiId,
+      'startPickupNavigation',
+      (robotaxi) => robotaxi.startPickupNavigation(),
+      undefined,
+      etaToPickupMinutes,
     );
   }
 
@@ -125,6 +141,43 @@ export class FleetMonitor extends FleetMonitorPort {
     );
   }
 
+  async completeRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(robotaxiId, 'completeRebalancing', (robotaxi) =>
+      robotaxi.completeRebalancing(),
+    );
+  }
+
+  /**
+   * Registra le posizioni osservate: una `UPDATE` per veicolo, nessuna transizione.
+   *
+   * Non passa da `applyTransition()` e non deve: quel metodo legge lo stato, costruisce il
+   * `Robotaxi`, gli chiede un passo della macchina e notifica. Qui non c'è nessun passo — la
+   * colonna di stato non viene nemmeno letta, e scriverne una copia identica sarebbe un modo di
+   * perdere una transizione concorrente per niente.
+   *
+   * Un veicolo che il sistema non conosce viene saltato invece di far fallire il ciclo: la
+   * telemetria arriva da fuori, e ciò che sta fuori può parlare di veicoli che non sono in flotta.
+   */
+  async recordPositions(positions: readonly ObservedPosition[]): Promise<number> {
+    let updated = 0;
+
+    for (const position of positions) {
+      try {
+        await this.persistence.update('robotaxi', position.robotaxiId, {
+          lat: position.lat,
+          lon: position.lon,
+          updatedAt: position.observedAt,
+        });
+        updated += 1;
+      } catch (error) {
+        if (error instanceof RecordNotFoundError) continue;
+        throw error;
+      }
+    }
+
+    return updated;
+  }
+
   /**
    * Legge, transisce, scrive — **condizionando la scrittura sullo stato letto**.
    *
@@ -143,6 +196,8 @@ export class FleetMonitor extends FleetMonitorPort {
     transition: RobotaxiTransition,
     apply: (robotaxi: Robotaxi) => void,
     knownRideRequestId?: string,
+    /** Solo la transizione 4 lo porta: è il tempo di attesa che il passeggero vedrà (R6, D66). */
+    etaToPickupMinutes: number | null = null,
   ): Promise<RobotaxiSnapshot> {
     const [record] = await this.persistence.find('robotaxi', {
       where: { id: robotaxiId },
@@ -184,6 +239,7 @@ export class FleetMonitor extends FleetMonitorPort {
       from: record.state,
       to: updated.state,
       rideRequestId: rideRequestId ?? null,
+      etaToPickupMinutes,
     });
 
     return robotaxiSnapshotOf(updated);

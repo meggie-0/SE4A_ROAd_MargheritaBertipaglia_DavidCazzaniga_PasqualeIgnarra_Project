@@ -180,7 +180,9 @@ describe('[M0] Cancello: walking skeleton', () => {
       // Che lo script esista non basta: dev'esserci dentro ogni controllo che HARNESS.md §1
       // elenca, gate compreso (§6: i cancelli già passati non tornano mai rossi).
       expect(steps).toEqual([
-        'shared',
+        // Il primo passo si chiamava `shared` finché il monorepo aveva un solo pacchetto di
+        // libreria; da M7 ne compila due, perché il simulatore di flotta è il secondo.
+        'packages',
         'typecheck',
         'lint',
         'arch',

@@ -6,6 +6,9 @@ import { AllocationModule } from '../../src/allocation/allocation.module';
 import { AllocationPort } from '../../src/allocation/allocation.port';
 import { AuthModule } from '../../src/auth/auth.module';
 import { AuthPort } from '../../src/auth/auth.port';
+import { ExternalModule } from '../../src/external/external.module';
+import { ExternalServicesPort } from '../../src/external/external-services.port';
+import { FleetSimulationPort } from '../../src/external/fleet-simulation.port';
 import { FleetModule } from '../../src/fleet/fleet.module';
 import { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
 import { MaintenanceModule } from '../../src/maintenance/maintenance.module';
@@ -22,6 +25,7 @@ import { FakeClock } from '../../src/platform/fake-clock';
 import { NotificationsModule } from '../../src/notifications/notifications.module';
 import { NotificationSessionPort } from '../../src/notifications/session.port';
 import { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
+import { FleetTelemetryPort } from '../../src/rides/fleet-telemetry.port';
 import { RideLifecyclePort } from '../../src/rides/ride-lifecycle.port';
 import { RidesModule } from '../../src/rides/rides.module';
 import { RideRequestPort } from '../../src/rides/rides.port';
@@ -66,6 +70,27 @@ export interface ApiHarness {
   readonly rideLifecycle: RideLifecyclePort;
   /** Il registro delle sessioni push, per registrare e deregistrare subscriber nei test (M5). */
   readonly notificationSessions: NotificationSessionPort;
+  /**
+   * La telemetria che fa avanzare le corse (M7).
+   *
+   * `RidesModule` si compone senza `ScheduleModule`, quindi il `@Cron` resta inerte: le corse
+   * avanzano solo quando un test chiama `runOnce()`, dopo aver fatto muovere i veicoli.
+   */
+  readonly fleetTelemetry: FleetTelemetryPort;
+  /**
+   * I servizi esterni **veri**, composti come in produzione (M7).
+   *
+   * Senza `OSRM_BASE_URL` l'adapter delle mappe stima in linea d'aria e non tocca la rete; con
+   * l'ambiente configurato verso un OSRM raggiungibile parla con quello. La flotta è il simulatore.
+   */
+  readonly external: ExternalServicesPort;
+  /**
+   * Il comando che fa avanzare il mondo simulato (M7).
+   *
+   * È l'unico modo in cui un test muove un veicolo, e passa da una porta come tutto il resto: il
+   * simulatore «sotto test avanza solo su `tick()` esplicito» (MILESTONES.md §M7).
+   */
+  readonly simulation: FleetSimulationPort;
   /** Modo di controllo e isteresi (M6): i livelli di traffico li passa il test, uno per volta. */
   readonly mode: ModePort;
   /**
@@ -153,6 +178,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     imports: [
       PersistenceModule,
       AuthModule,
+      ExternalModule,
       FleetModule,
       MaintenanceModule,
       AllocationModule,
@@ -175,6 +201,9 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
   const advanceBooking = moduleRef.get(AdvanceBookingActivatorPort);
   const rideLifecycle = moduleRef.get(RideLifecyclePort);
   const notificationSessions = moduleRef.get(NotificationSessionPort);
+  const fleetTelemetry = moduleRef.get(FleetTelemetryPort);
+  const external = moduleRef.get(ExternalServicesPort);
+  const simulation = moduleRef.get(FleetSimulationPort);
   const mode = moduleRef.get(ModePort);
   const trafficMonitor = moduleRef.get(TrafficMonitorPort);
   const rebalancing = moduleRef.get(RebalancingPort);
@@ -204,6 +233,9 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     advanceBooking,
     rideLifecycle,
     notificationSessions,
+    fleetTelemetry,
+    external,
+    simulation,
     mode,
     trafficMonitor,
     rebalancing,
@@ -230,6 +262,17 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     async reset(): Promise<void> {
       const quoted = DOMAIN_TABLES.map((table) => `"${table}"`).join(', ');
       await admin.query(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+
+      /**
+       * Anche il **mondo simulato** si svuota, e non è una precauzione teorica (M7).
+       *
+       * Il simulatore è la flotta, non una vista del database: le posizioni dei veicoli vivono
+       * nella sua memoria e a un `TRUNCATE` non succede niente. Senza questa riga, un test
+       * troverebbe i veicoli dove li ha lasciati quello precedente e arriverebbe a destinazione
+       * con qualche tick di anticipo — cioè la suite dipenderebbe dall'ordine di esecuzione,
+       * che HARNESS.md §2 vieta. Scoperto proprio così, scrivendo il cancello di M7.
+       */
+      simulation.reset();
 
       // `system_mode` non si svuota — la riga singleton nasce con lo schema — ma si riporta al
       // default, o l'esito di un test dipenderebbe da quello che ha scritto il test precedente.

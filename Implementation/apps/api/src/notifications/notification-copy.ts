@@ -16,11 +16,15 @@ import type { DomainEvent, NotificationDelivery } from './notification.port';
  * arrival at the pickup point, and ride completion» — e il quarto, il completamento, arriva
  * dall'altro soggetto: `Ride` passando a `COMPLETED`.
  *
- * L'**ETA numerico non c'è**, ed è una rinuncia registrata come decisione D46, non una svista:
- * `VEHICLE_ARRIVING` dice che il veicolo è in avvicinamento, non fra quanti minuti arriva. In M5
- * l'unico fornitore di tempi di viaggio è il mock deterministico di M3, e un numero preso da lì e
- * mostrato come promessa al passeggero peggiorerebbe R6 invece di completarlo. Il campo arriva con
- * M7, insieme all'adapter OSRM e alla telemetria che innesca davvero la transizione 4.
+ * **[M7] L'ETA numerico c'è, e chiude la decisione D46.** In M5 mancava per una ragione precisa —
+ * l'unico fornitore di tempi di viaggio era il mock deterministico di M3, e un numero preso da lì e
+ * mostrato come promessa al passeggero avrebbe peggiorato R6 invece di completarlo. Ora il tempo lo
+ * calcola OSRM sulla rete stradale vera, e a innescare la transizione 4 è la posizione del veicolo:
+ * `VEHICLE_ARRIVING` dice **quando** arriva, e i quattro momenti che R6 elenca sono coperti tutti.
+ *
+ * Resta annullabile: un fornitore può non saper rispondere per un veicolo, e in quel caso la
+ * notifica torna a essere quella di M5 — l'avvicinamento senza minuti. È la stessa disciplina della
+ * D46, applicata al caso in cui il numero non esista invece che al caso in cui non sia credibile.
  */
 
 /**
@@ -47,13 +51,33 @@ const TYPE_BY_ARRIVAL_STATE: Partial<Record<RobotaxiState, NotificationType>> = 
   IN_RIDE: 'RIDE_STATUS_CHANGED',
 };
 
+/**
+ * Il tempo di attesa, in una forma che si possa leggere su uno schermo.
+ *
+ * Arrotonda ai minuti e non scende sotto uno: «fra 0 minuti» sarebbe una promessa che il veicolo è
+ * già lì, e a dirlo sarà la notifica successiva, `VEHICLE_ARRIVED`. Il campo strutturato della
+ * consegna resta il numero esatto — chi costruisce un'interfaccia lo arrotonda come preferisce —
+ * mentre qui si sceglie una volta sola come si dice in italiano.
+ */
+function waitingTime(etaMinutes: number): string {
+  const minutes = Math.max(1, Math.round(etaMinutes));
+  return minutes === 1 ? 'circa 1 minuto' : `circa ${minutes} minuti`;
+}
+
 /** Il testo mostrato al passeggero per ogni transizione che riguarda la sua corsa. */
-function rideMessage(robotaxiId: string, from: RobotaxiState, to: RobotaxiState): string {
+function rideMessage(
+  robotaxiId: string,
+  from: RobotaxiState,
+  to: RobotaxiState,
+  etaToPickupMinutes: number | null,
+): string {
   switch (to) {
     case 'ASSIGNED':
       return `Il robotaxi ${robotaxiId} è stato assegnato alla tua corsa.`;
     case 'ARRIVING':
-      return `Il robotaxi ${robotaxiId} sta arrivando al punto di ritiro.`;
+      return etaToPickupMinutes === null
+        ? `Il robotaxi ${robotaxiId} sta arrivando al punto di ritiro.`
+        : `Il robotaxi ${robotaxiId} sta arrivando al punto di ritiro: ${waitingTime(etaToPickupMinutes)}.`;
     case 'ARRIVED':
       return `Il robotaxi ${robotaxiId} è arrivato al punto di ritiro.`;
     case 'IN_RIDE':
@@ -160,6 +184,7 @@ const NOTHING = {
   mode: null,
   trafficLevel: null,
   zoneId: null,
+  etaMinutes: null,
 } satisfies Omit<NotificationDelivery, 'message' | 'occurredAt'>;
 
 /**
@@ -195,11 +220,14 @@ export function describeEvent(event: DomainEvent): NotificationDelivery {
         message:
           type === null
             ? fleetMessage(event.robotaxiId, event.from, event.to)
-            : rideMessage(event.robotaxiId, event.from, event.to),
+            : rideMessage(event.robotaxiId, event.from, event.to, event.etaToPickupMinutes),
         occurredAt: event.occurredAt,
         rideRequestId: event.rideRequestId,
         robotaxiId: event.robotaxiId,
         robotaxiState: event.to,
+        // Solo l'avvicinamento porta un tempo di attesa: le altre transizioni non ne hanno uno, e
+        // l'evento lo riflette già con `null`.
+        etaMinutes: event.etaToPickupMinutes,
       };
     }
 

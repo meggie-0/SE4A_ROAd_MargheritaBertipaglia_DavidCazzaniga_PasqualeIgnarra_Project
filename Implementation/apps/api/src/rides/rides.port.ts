@@ -127,10 +127,13 @@ export class RideRequestNotFoundError extends Error {
  *
  * - `REQUEST_NOT_ACTIVE`: la richiesta è già annullata, rifiutata o conclusa. Non c'è niente da
  *   annullare, e ripetere la chiamata non cambierà nulla.
- * - `RIDE_ALREADY_UNDER_WAY`: il veicolo si è già mosso verso il punto di ritiro. R14 ammette
- *   l'annullamento «before the ride begins», ma la Figura 2.10 lascia tornare disponibile solo un
- *   veicolo ancora fermo (transizione 11, decisione D27): fermarne uno in movimento è un comando
- *   alla flotta, non una transizione del ciclo di vita, e arriva con M7.
+ * - `RIDE_ALREADY_UNDER_WAY`: **il passeggero è a bordo**. R14 ammette l'annullamento «before the
+ *   ride begins», e la corsa comincia quando il passeggero sale (RASD §1.2.2), non quando il
+ *   veicolo parte: da `IN_RIDE` in poi non si annulla più. Fino a M6 questo rifiuto arrivava molto
+ *   prima — bastava che il veicolo si fosse mosso — perché fermarne uno in movimento richiede di
+ *   revocargli la rotta, e `commandRoute()` non esisteva (decisione D27). Con M7 il comando esiste,
+ *   l'annullamento è legale anche da `ARRIVING` e `ARRIVED` (transizioni 12 e 13), e il rifiuto è
+ *   tornato dove il requisito lo metteva (decisione D59).
  * - `VEHICLE_CHANGED_CONCURRENTLY`: fra la lettura della richiesta e la scrittura, qualcun altro ha
  *   cambiato lo stato del veicolo. È l'unico dei tre per cui **ripetere la chiamata ha senso**: la
  *   richiesta era giusta e si è persa una corsa, non è arrivata tardi. Confonderlo con gli altri due
@@ -219,10 +222,14 @@ export abstract class RideRequestPort {
    * è una richiesta che per quel passeggero non esiste, e per questo solleva
    * `RideRequestNotFoundError`.
    *
-   * Solleva `RideNotCancellableError` se la richiesta non è più attiva, se la corsa è già in corso,
-   * o se il veicolo è cambiato sotto le mani fra la lettura e la scrittura. In tutti e tre i casi
-   * **nulla viene scritto**: il veicolo si libera prima della riserva, quindi un rifiuto della
+   * Solleva `RideNotCancellableError` se la richiesta non è più attiva, se il passeggero è già a
+   * bordo, o se il veicolo è cambiato sotto le mani fra la lettura e la scrittura. In tutti e tre i
+   * casi **nulla viene scritto**: il veicolo si libera prima della riserva, quindi un rifiuto della
    * macchina a stati lascia la riserva in piedi e la richiesta intatta.
+   *
+   * Da M7 l'annullamento **revoca la rotta prima di liberare il veicolo** (decisione D59): uno che
+   * si stava avvicinando al punto di ritiro smette di andarci, e solo allora torna disponibile per
+   * qualcun altro. È ciò che completa R14, la cui copertura fino a M6 si fermava al veicolo fermo.
    */
   abstract cancel(rideRequestId: string, passengerId: string): Promise<RideCancellation>;
 }

@@ -60,10 +60,18 @@ export abstract class RideLifecyclePort {
    * Transizione 4: il veicolo assegnato parte verso il punto di ritiro (`ASSIGNED → ARRIVING`).
    *
    * La corsa resta `SCHEDULED`: per il passeggero il patto non è cambiato, è cambiato dove si trova
-   * il suo veicolo. È il veicolo a notificare, con `VEHICLE_ARRIVING`, che annuncia
-   * l'avvicinamento **senza un ETA numerico**: quello arriva con M7 (decisione D46).
+   * il suo veicolo. È il veicolo a notificare, con `VEHICLE_ARRIVING`, che da M7 annuncia
+   * l'avvicinamento **con il tempo di attesa** — il quarto dei momenti che R6 elenca, e l'ultimo ad
+   * arrivare (decisioni D46 e D66).
+   *
+   * `etaToPickupMinutes` lo conosce chi ha appena chiesto il percorso al fornitore di mappe, cioè
+   * `FleetTelemetry`. È opzionale perché non tutti i chiamanti ne hanno uno: senza, la notifica
+   * resta quella di M5 e annuncia l'avvicinamento senza minuti.
    */
-  abstract startPickupNavigation(rideRequestId: string): Promise<RideProgress>;
+  abstract startPickupNavigation(
+    rideRequestId: string,
+    etaToPickupMinutes?: number | null,
+  ): Promise<RideProgress>;
 
   /**
    * Transizione 5: il veicolo è al punto di ritiro (`ARRIVING → ARRIVED`), e la corsa passa a
