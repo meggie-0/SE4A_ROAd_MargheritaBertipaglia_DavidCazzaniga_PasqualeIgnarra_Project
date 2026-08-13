@@ -158,6 +158,14 @@ marker passa al colore di `REBALANCING` e nel pannello alert compare la riga cor
 > non un obbligo. È la scelta giusta per un prototipo, ma va detta: con il tier applicativo
 > replicato (NFR3), due istanze che partono insieme su un database non migrato le eseguirebbero in
 > parallelo. In un deploy vero le migrazioni sono un passo a sé, prima di avviare le repliche.
+>
+> Per la stessa ragione, in un deploy replicato **il lavoro periodico va acceso su un'istanza sola**
+> (decisione D72). Ciò che NFR3 chiede replicabile è il cammino delle richieste — nessuno stato di
+> sessione lato server, un token emesso da un'istanza accettato da un'altra — non i cinque `@Cron` e
+> `@Interval`. Attivazione prenotazioni e riposizionamento su due repliche farebbero lavoro doppio
+> senza incoerenze, perché ogni transizione è condizionata sullo stato letto; il **simulatore** no:
+> vive nella memoria del processo, quindi due repliche avrebbero due flotte simulate diverse che
+> scrivono le stesse righe. In locale, con un processo solo, la questione non si pone.
 
 ## Verifica
 

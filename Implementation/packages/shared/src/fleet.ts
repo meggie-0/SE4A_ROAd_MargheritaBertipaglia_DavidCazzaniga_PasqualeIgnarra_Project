@@ -34,7 +34,7 @@ import { geoPointSchema } from './rides.js';
  *
  * Mezzo secondo: sotto la soglia oltre la quale l'occhio smette di leggere una serie di posizioni
  * come un movimento e comincia a vedere dei salti. È anche il motivo per cui **non** passa dal
- * canale push: due posizioni al secondo per venti veicoli fanno quaranta messaggi al secondo verso
+ * canale push: due posizioni al secondo per una flotta di sessantaquattro veicoli fanno centoventotto messaggi al secondo verso
  * ogni client connesso, e il canale esiste per gli eventi della corsa (R6). Chi vuole la posizione
  * la chiede; chi vuole lo stato lo riceve.
  *

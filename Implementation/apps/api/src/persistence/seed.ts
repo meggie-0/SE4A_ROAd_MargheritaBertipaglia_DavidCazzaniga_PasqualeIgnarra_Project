@@ -12,7 +12,7 @@ import { DEMAND_EVENT_RECORDS, ZONE_RECORDS, demandSampleRecords, fleetRecords }
 /**
  * `pnpm db:seed`.
  *
- * Riporta il database ai dati di partenza di MILESTONES.md §M1: 16 zone, 20 robotaxi, una
+ * Riporta il database ai dati di partenza di MILESTONES.md §M1: 16 zone, 64 robotaxi, una
  * settimana di domanda di base, tre eventi. È **ripetibile** — svuota prima di scrivere — perché
  * un comando che fallisce alla seconda esecuzione è un comando che nessuno userà davvero.
  *

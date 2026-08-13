@@ -474,7 +474,7 @@ describe('[M9] Cancello: test di sistema e demo', () => {
         const flotta = await harness.query<{ state: string; zone_id: string }>(
           'SELECT "state", "zone_id" FROM "robotaxi"',
         );
-        expect(flotta).toHaveLength(20);
+        expect(flotta).toHaveLength(64);
         expect(flotta.every((veicolo) => veicolo.state === 'AVAILABLE')).toBe(true);
         expect(flotta.filter((veicolo) => veicolo.zone_id === 'san-siro')).toEqual([]);
 

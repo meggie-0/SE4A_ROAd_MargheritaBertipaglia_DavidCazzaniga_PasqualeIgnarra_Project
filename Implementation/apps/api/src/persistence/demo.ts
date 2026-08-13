@@ -71,12 +71,14 @@ const STADIUM_EXPECTED_RIDES = 6;
  *   contendere allo stadio i veicoli del ciclo. Lo stadio dev'essere l'unica zona scoperta, o metà
  *   dei veicoli partirebbe per un'altra destinazione e la dimostrazione racconterebbe un'altra cosa.
  *
- * **Perché la domanda va riscritta e non basta l'evento.** Con i profili del seed — che sono in
- * corse attese per ora, e arrivano a diciotto in centro — venti veicoli su sedici zone non bastano
- * a coprire nemmeno la domanda di base: fra le sette del mattino e le undici di sera il surplus è
- * **zero in ogni zona**, quindi `rebalance()` non avrebbe un solo veicolo da spostare e la
- * dimostrazione, a qualunque ora la si tenga, non mostrerebbe nulla. Il moltiplicatore da solo
- * sposta la classifica, non crea i veicoli da mandare.
+ * **Perché serve, ora che il seed è tarato.** Dalla decisione D73 la flotta è di sessantaquattro
+ * veicoli e la domanda è alla scala giusta, quindi veicoli da cedere ce ne sono a ogni ora: il
+ * primo motivo per cui questa riscrittura è nata — un surplus cittadino che era **zero** fra le
+ * sette e le ventitré — non c'è più. Resta il secondo, ed è quello che conta per la dimostrazione:
+ * il seed sbilancia la domanda di proposito verso il centro e la stazione, che nelle ore di punta
+ * sono anch'esse scoperte. Senza abbassarle, un ciclo manderebbe un veicolo allo stadio **e** uno
+ * per ciascuna di quelle, e chi guarda vedrebbe veicoli partire in tre direzioni invece della
+ * storia che il RASD racconta.
  *
  * Il che descrive una serata tranquilla, che è esattamente la scena del RASD §2.1 scenario 4:
  * «several idle robotaxis scattered in **low-demand** areas of the city».

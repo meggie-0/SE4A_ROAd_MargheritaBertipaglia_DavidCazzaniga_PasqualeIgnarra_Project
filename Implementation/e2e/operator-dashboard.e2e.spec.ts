@@ -84,7 +84,7 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
   test('[R7][G8] la mappa e la status bar mostrano la flotta viva', async ({ page }) => {
     await signIn(page);
 
-    // La status bar riassume la flotta per stato: il totale viene dal seed, che carica 20 veicoli.
+    // La status bar riassume la flotta per stato: il totale viene dal seed, che carica 64 veicoli.
     const total = page.getByTestId('fleet-total');
     await expect(total).not.toHaveText('—');
     expect(Number.parseInt((await total.innerText()).trim(), 10)).toBeGreaterThan(0);
