@@ -140,11 +140,13 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
      *
      * La prima versione asseriva una fase per volta con `toHaveAttribute`, e funzionava per un
      * motivo che non era una proprietà del sistema: la telemetria girava ogni dieci secondi, quindi
-     * ogni fase restava a schermo abbastanza a lungo perché un'asserzione la cogliesse. Da quando
-     * le posizioni si rinnovano due volte al secondo, `arrived` dura **un ciclo** — mezzo secondo —
-     * e un'asserzione puntuale fallisce non perché la fase non ci sia stata, ma perché è già
-     * passata. Un test che dipende da quanto è lento il sistema sotto misura è instabile per
-     * costruzione, e HARNESS.md §2 dice che un test instabile è peggio di nessun test.
+     * ogni fase restava a schermo abbastanza a lungo perché un'asserzione la cogliesse. Con le
+     * posizioni rinnovate due volte al secondo quella coincidenza è finita: la sosta al ritiro ha
+     * poi ripreso a durare (`BOARDING_SECONDS`, decisione D63), ma `assigned` no — dura il tempo di
+     * un giro di telemetria, e un'asserzione puntuale su quella fase falliva non perché la fase non
+     * ci fosse stata, ma perché era già passata. Un test che dipende da quanto è lento il sistema
+     * sotto misura è instabile per costruzione, e HARNESS.md §2 dice che un test instabile è peggio
+     * di nessun test.
      *
      * Qui si campiona l'attributo mentre cambia e si tiene l'elenco delle fasi **distinte** nella
      * loro sequenza. È anche la traduzione più fedele del criterio di M8 — «vede lo stato

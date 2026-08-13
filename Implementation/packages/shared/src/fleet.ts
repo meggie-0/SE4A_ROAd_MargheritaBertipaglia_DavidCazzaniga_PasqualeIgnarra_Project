@@ -34,8 +34,9 @@ import { geoPointSchema } from './rides.js';
  *
  * Mezzo secondo: sotto la soglia oltre la quale l'occhio smette di leggere una serie di posizioni
  * come un movimento e comincia a vedere dei salti. È anche il motivo per cui **non** passa dal
- * canale push: dieci posizioni al secondo per venti veicoli sono un flusso, e il canale esiste per
- * gli eventi della corsa (R6). Chi vuole la posizione la chiede; chi vuole lo stato lo riceve.
+ * canale push: due posizioni al secondo per venti veicoli fanno quaranta messaggi al secondo verso
+ * ogni client connesso, e il canale esiste per gli eventi della corsa (R6). Chi vuole la posizione
+ * la chiede; chi vuole lo stato lo riceve.
  *
  * Non è la velocità del mondo simulato, che resta quella di prima: un passo più corto, ripetuto più
  * spesso, copre la stessa strada nello stesso tempo reale (vedi `DEFAULT_SIMULATOR_SETTINGS`).

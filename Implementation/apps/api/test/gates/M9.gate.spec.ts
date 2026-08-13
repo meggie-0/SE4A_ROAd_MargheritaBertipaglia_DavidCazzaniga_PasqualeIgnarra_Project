@@ -273,6 +273,38 @@ describe('[M9] Cancello: test di sistema e demo', () => {
     });
   });
 
+  describe('Una sola cadenza per le posizioni', () => {
+    /**
+     * I quattro punti che devono battere insieme (decisione D71).
+     *
+     * L'invariante non è verificabile eseguendo qualcosa: i due scheduler sono dichiarazioni che
+     * `ScheduleModule` trasforma in esecuzioni, e i due client girano in un browser. Ciò che si può
+     * verificare è che nessuno dei quattro abbia il proprio numero — ed è precisamente il modo in
+     * cui l'invariante si perderebbe: qualcuno scrive `500` o `5_000` a mano, tutto continua a
+     * funzionare, e alla prima modifica della costante il mondo avanza più in fretta di quanto lo si
+     * osservi. Un controllo sul testo è debole, ma è più forte del nulla che c'era.
+     */
+    const cadenzati = [
+      ['apps', 'api', 'src', 'external', 'simulator.schedule.ts'],
+      ['apps', 'api', 'src', 'rides', 'fleet-telemetry.schedule.ts'],
+      ['apps', 'web', 'src', 'App.tsx'],
+      ['apps', 'passenger', 'src', 'App.tsx'],
+    ];
+
+    it.each(cadenzati.map((path) => [path.join('/'), path]))(
+      '%s prende la cadenza da @road/shared, non da un numero suo',
+      (_name, path) => {
+        const source = specOf(...(path as string[]));
+
+        expect(source).toContain('FLEET_POSITION_REFRESH_MS');
+        // Le due forme in cui il numero rientrerebbe: un intervallo dichiarato con una costante
+        // numerica, o un `refetchInterval` scritto a mano.
+        expect(source).not.toMatch(/@Interval\(\s*\d/);
+        expect(source).not.toMatch(/refetchInterval:\s*\d/);
+      },
+    );
+  });
+
   describe('Tracciabilità', () => {
     it('pnpm trace non lascia requisiti scoperti', () => {
       const result = spawnSync(`node "${join('tools', 'trace', 'trace.mjs')}"`, {
@@ -445,6 +477,39 @@ describe('[M9] Cancello: test di sistema e demo', () => {
         expect(flotta).toHaveLength(20);
         expect(flotta.every((veicolo) => veicolo.state === 'AVAILABLE')).toBe(true);
         expect(flotta.filter((veicolo) => veicolo.zone_id === 'san-siro')).toEqual([]);
+
+        /*
+         * **E su quel dataset il riposizionamento fa davvero partire qualcuno.**
+         *
+         * È l'asserzione che rende la dimostrazione una dimostrazione, e tutte quelle qui sopra
+         * sarebbero vere anche nel mondo in cui `rebalance()` non manda mai nessuno — che è
+         * esattamente il mondo in cui questo comando è nato: con i profili di domanda del seed, fra
+         * le sette del mattino e le undici di sera **nessuna zona ha veicoli cedibili**, quindi un
+         * evento allo stadio spostava la classifica senza spostare un veicolo. Il comando adesso
+         * abbassa la domanda della fascia corrente, e questo test è ciò che impedisce a quella
+         * correzione di sparire senza che nulla diventi rosso.
+         *
+         * L'orologio finto si porta sull'ora del database: il comando ha scritto la finestra
+         * dell'evento sull'ora vera, e con l'harness fermo al 4 maggio l'evento non risulterebbe
+         * attivo — il ciclo non troverebbe nessun picco e il test fallirebbe dicendo il falso.
+         */
+        harness.clock.setNow(new Date(adesso));
+        const piano = await harness.rebalancing.rebalance();
+
+        expect(piano.zones[0]?.zoneId).toBe('san-siro');
+        expect(piano.dispatched.map((invio) => invio.targetZoneId)).toEqual(['san-siro']);
+        expect(piano.dispatched[0]?.fromZoneId).not.toBe('san-siro');
+
+        /*
+         * Lo schema torna com'era, **esplicitamente**.
+         *
+         * Questo caso è l'unico del file che distrugge e ricostruisce il database, e finora
+         * sopravviveva solo perché è l'ultimo dichiarato: `beforeEach` avrebbe rimesso a posto le
+         * tabelle, ma per una coincidenza dell'ordine di esecuzione, che è precisamente ciò che
+         * HARNESS.md §2 vieta. Ripulire qui rende l'indipendenza una scelta invece di una fortuna.
+         */
+        await harness.reset();
+        harness.clock.setNow(NOW);
       },
       README_TIMEOUT_MS,
     );

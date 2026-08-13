@@ -164,16 +164,36 @@ describe('[NFR8] Il simulatore di flotta avanza solo su tick espliciti', () => {
     expect(simulator.reading('RT-01')?.hasArrived).toBe(true);
   });
 
-  it('un passo di default copre esattamente il tempo reale fra due letture, moltiplicato per la scala', () => {
+  it('con i parametri di default un secondo di tempo reale vale sei secondi di mondo', () => {
     /*
-     * L'invariante che tiene insieme le tre cadenze: il mondo avanza di tanto quanto ne è passato
-     * fra due osservazioni. Se il passo fosse più lungo, fra una lettura e l'altra il veicolo
-     * salterebbe un pezzo di strada che nessuno vede; se fosse più corto, il mondo rallenterebbe
-     * senza che nessuno l'abbia chiesto. Nessuno dei due difetti fa fallire qualcosa da sé.
+     * L'invariante che tiene insieme le cadenze, verificata **percorrendo la strada** invece di
+     * riscrivere la formula che definisce il passo.
+     *
+     * La prima versione di questo test asseriva `tickSeconds === (REFRESH_MS/1000) × SCALE`, che è
+     * la definizione di `tickSeconds` copiata nell'asserzione: non poteva fallire per nessuna
+     * modifica al codice. Qui si conta quanti tick stanno in un secondo di tempo reale e si guarda
+     * quanta strada ne esce: dev'essere quella che un veicolo a `speedKmH` copre in
+     * `SIMULATED_TIME_SCALE` secondi. Un passo più lungo del dovuto — il difetto vero, un mondo che
+     * avanza più in fretta di quanto lo si osservi — fallisce qui.
      */
-    expect(DEFAULT_SIMULATOR_SETTINGS.tickSeconds).toBe(
-      (FLEET_POSITION_REFRESH_MS / 1000) * SIMULATED_TIME_SCALE,
-    );
+    const ticksInOneRealSecond = 1000 / FLEET_POSITION_REFRESH_MS;
+    const simulator = new FleetSimulator();
+    simulator.followRoute('RT-01', DUOMO, [GARIBALDI]);
+
+    const before = simulator.reading('RT-01')?.remainingKm ?? 0;
+    for (let step = 0; step < ticksInOneRealSecond; step += 1) simulator.tick();
+    const covered = before - (simulator.reading('RT-01')?.remainingKm ?? 0);
+
+    /*
+     * La tolleranza non è generosità: il simulatore consuma il budget di percorrenza sulla distanza
+     * haversine e poi interpola le coordinate **in gradi**, quindi la strada rimasta ricalcolata
+     * dopo un passo parziale differisce dal budget consumato di una frazione di millimetro. È lo
+     * scarto che `interpolate()` dichiara — «meno di un metro su distanze urbane» — e sei cifre
+     * decimali su un chilometro sono un millimetro: abbastanza stretto perché un passo sbagliato
+     * anche di poco fallisca, abbastanza largo da non inseguire l'aritmetica in virgola mobile.
+     */
+    const expectedKm = (DEFAULT_SIMULATOR_SETTINGS.speedKmH * SIMULATED_TIME_SCALE) / 3600;
+    expect(covered).toBeCloseTo(expectedKm, 6);
   });
 
   it('due simulatori con la stessa rotta e gli stessi tick finiscono nello stesso punto', () => {

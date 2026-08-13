@@ -123,18 +123,27 @@ d'occhio se una schermata ferma è una flotta ferma o un backend spento.
 ### La dimostrazione: una serata con la partita a San Siro
 
 ```bash
-pnpm db:demo        # dopo db:seed, e in qualunque momento per ricominciare da capo
+# a `pnpm dev` fermo, e dopo `pnpm db:seed`
+pnpm db:demo
+pnpm dev
 ```
 
 Arrangia lo scenario 4 del RASD sul momento in cui lo si esegue: scrive un evento di domanda attivo
-**adesso** allo stadio, con un moltiplicatore calcolato sui dati della fascia oraria corrente perché
-San Siro superi la zona più affollata anche a mezzogiorno; riporta tutti i robotaxi disponibili e ne
-sposta via chi stava allo stadio, così la zona è davvero scoperta; e ripulisce le corse della
-dimostrazione precedente.
+**adesso** allo stadio; abbassa la domanda della sola fascia oraria corrente nelle altre zone, così
+qualcuna ha veicoli da cedere e San Siro resta l'unica zona scoperta; riporta tutti i robotaxi
+disponibili e ne sposta via chi stava allo stadio; e ripulisce le corse della dimostrazione
+precedente. È ripetibile.
 
-Poi si guarda la dashboard: il ciclo di riposizionamento gira ogni dieci minuti, e quando parte i
-veicoli inattivi delle zone in surplus si mettono in viaggio verso lo stadio — i marker passano al
-colore di `REBALANCING` e nel pannello alert compare una riga per ciascun veicolo mandato.
+> **A `pnpm dev` fermo.** Da M7 le posizioni dei veicoli vivono nella memoria del processo API — il
+> simulatore *è* la flotta — e questo comando non lo raggiunge: con l'API accesa i veicoli che
+> stavano percorrendo una rotta la riprendono, e la telemetria riscrive entro mezzo secondo le
+> posizioni appena sistemate. Fermare, eseguire, riavviare.
+
+Poi si guarda la dashboard. Il ciclo di riposizionamento gira **ogni dieci minuti** e manda un
+veicolo per zona scoperta, quindi il primo movimento arriva entro dieci minuti dall'avvio e i
+successivi uno ogni dieci: è la cadenza scelta in M6, e una dimostrazione dal vivo conviene
+avviarla in anticipo. Quando parte, un veicolo inattivo si mette in viaggio verso lo stadio — il suo
+marker passa al colore di `REBALANCING` e nel pannello alert compare la riga corrispondente.
 
 > `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
 > il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica
