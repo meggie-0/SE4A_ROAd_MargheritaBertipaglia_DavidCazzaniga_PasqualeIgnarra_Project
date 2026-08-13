@@ -94,3 +94,34 @@ export const rideRequestResponseSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 export type RideRequestResponse = z.infer<typeof rideRequestResponseSchema>;
+
+/**
+ * `GET /rides/:rideRequestId/vehicle` — dove si trova il veicolo della propria corsa (M8, R3, R6;
+ * decisione D69).
+ *
+ * **Porta la posizione e non lo stato**, ed è la parte del contratto da non allargare per comodità.
+ * Lo stato del veicolo e quello della corsa sono ciò che R6 promette al passeggero e viaggiano sul
+ * canale push: se li portasse anche questa lettura, un client potrebbe scoprire una transizione
+ * interrogando invece di ascoltando, e la proprietà con cui il DD §4.3 dichiara soddisfatto NFR2 —
+ * «a state change reaches a connected client over the push channel **without the client polling**»
+ * — smetterebbe di essere verificabile: nessun test potrebbe più distinguere le due vie.
+ *
+ * `vehicle` è **annullabile** perché un veicolo non c'è sempre: una prenotazione accettata è
+ * riservata e non assegnata fino all'attivazione (decisione D9), e una richiesta rifiutata o
+ * annullata non ne ha mai avuto uno. Nessuno dei tre casi è un errore, quindi nessuno è un 404.
+ *
+ * L'unico istante nella risposta è **dentro** `vehicle`, ed è quello in cui la telemetria ha
+ * scritto quella posizione. Non c'è un istante della lettura al livello esterno di proposito:
+ * quando un veicolo non c'è, non ci sarebbe niente da datare e bisognerebbe inventare un valore.
+ */
+export const assignedVehicleResponseSchema = z.object({
+  vehicle: z
+    .object({
+      robotaxiId: z.string().min(1),
+      position: geoPointSchema,
+      /** Quando la telemetria ha scritto quella posizione (M7), non quando l'hai chiesta. */
+      updatedAt: z.iso.datetime(),
+    })
+    .nullable(),
+});
+export type AssignedVehicleResponse = z.infer<typeof assignedVehicleResponseSchema>;

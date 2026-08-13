@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AllocationModule } from '../allocation/allocation.module';
 import { AuthModule } from '../auth/auth.module';
+import { FleetModule } from '../fleet/fleet.module';
 import { ModeModule } from '../mode/mode.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PlatformModule } from '../platform/platform.module';
@@ -12,6 +13,7 @@ import { RidesModule } from '../rides/rides.module';
 import { AllocationController } from './allocation.controller';
 import { AuthController } from './auth.controller';
 import { ControlModeController } from './control-mode.controller';
+import { FleetController } from './fleet.controller';
 import { HealthController } from './health.controller';
 import { NotificationsGateway } from './notifications.gateway';
 import { RebalancingController } from './rebalancing.controller';
@@ -42,6 +44,14 @@ import { RidesController } from './rides.controller';
  * deregistra le sessioni dei client connessi (M5, R6, G7, NFR2). È il primo pezzo di gateway che
  * non è un controller HTTP, e resta fedele alla stessa regola: apre un trasporto e delega.
  *
+ * `FleetModule` arriva con M8 e gli dà `FleetMonitorPort`, con cui `FleetController` pubblica la
+ * panoramica in tempo reale che la dashboard disegna sulla mappa (R7, G8). È l'unico modulo che il
+ * gateway ha aspettato tre milestone prima di importare, e vale la pena dire perché: la porta
+ * esiste dal M2, ma finché nessun client la guardava una rotta che la esponesse sarebbe stata una
+ * funzionalità non richiesta. Vale qui la stessa disciplina di `notifications`: il gateway inietta
+ * la porta per **leggere**, e non chiama nessuna delle sue transizioni — un gateway che potesse
+ * assegnare o far partire un veicolo aggirerebbe le guardie della Figura 2.10.
+ *
  * `ModeModule` e `RebalancingModule` arrivano con M6. Il primo dà `ModePort`, con cui
  * `ControlModeController` legge il modo e riabilita Auto e con cui `AllocationController` inoltra
  * la scelta manuale dell'operatore — la `PUT` della strategia passa da `setManual()`, come la
@@ -67,6 +77,7 @@ import { RidesController } from './rides.controller';
     NotificationsModule,
     ModeModule,
     RebalancingModule,
+    FleetModule,
   ],
   controllers: [
     HealthController,
@@ -75,6 +86,7 @@ import { RidesController } from './rides.controller';
     RidesController,
     ControlModeController,
     RebalancingController,
+    FleetController,
   ],
   providers: [NotificationsGateway],
 })

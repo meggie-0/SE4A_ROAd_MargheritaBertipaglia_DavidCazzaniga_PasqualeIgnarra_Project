@@ -10,16 +10,24 @@ pattern, determinismo, tracciabilità — stanno in `CLAUDE.md`.
 
 ## Stato
 
-Milestone corrente: **M7 — ExternalServicesGateway reale e simulatore**. Il backend è completo nei
-suoi manager (M1–M6) e da questa milestone parla con fornitori veri invece che con mock: OSRM per
-percorsi e tempi di arrivo — con cache e ripiego sulla stima lineare quando non risponde — e un
-**simulatore di flotta** che guida i veicoli lungo la rotta comandata e ne pubblica la telemetria.
-È la telemetria a far avanzare le corse: il veicolo arriva al punto di ritiro, il passeggero sale,
-la corsa si chiude. Con `commandRoute()` disponibile si completa anche R14, l'annullamento, che ora
-è ammesso finché il passeggero non è a bordo. Restano i client (M8) e i test di sistema (M9).
+Milestone corrente: **M8 — Client**. Il backend è completo nei suoi manager (M1–M6) e parla con
+fornitori veri (M7): OSRM per percorsi e tempi di arrivo — con cache e ripiego sulla stima lineare
+quando non risponde — e un **simulatore di flotta** che guida i veicoli lungo la rotta comandata e
+ne pubblica la telemetria.
+
+Da questa milestone il sistema ha due interfacce vere. La **dashboard dell'operatore** (DD §3.2)
+mostra la flotta viva su una mappa Leaflet con i marker colorati per stato, il pannello strategia
+con il toggle Auto/Manual sempre visibile, gli alert degli switch automatici e dei riposizionamenti,
+e una status bar che riassume la flotta per stato. L'**app del passeggero** (DD §3.1) è centrata
+sulla mappa: si toccano ritiro e destinazione, si sceglie fra corsa immediata e programmata, si
+preme un pulsante solo — e da lì la stessa schermata diventa una vista di stato live, guidata dalle
+notifiche, che segue la corsa fino a destinazione — con il robotaxi che si avvicina, disegnato sulla
+mappa. Da entrambi i client si aggiornano i propri dati e la password (R2). Restano i test di
+sistema (M9).
 
 Il sistema funziona **senza rete**: se `OSRM_BASE_URL` è vuota o il fornitore non risponde, i
-percorsi si stimano in linea d'aria e nessuna richiesta di corsa va persa.
+percorsi si stimano in linea d'aria e nessuna richiesta di corsa va persa. I due client scaricano
+le tessere della mappa da OpenStreetMap: senza connessione restano usabili, con lo sfondo grigio.
 
 ## Struttura
 
@@ -81,9 +89,10 @@ Dopo `pnpm dev`:
 | Dashboard operatore | <http://localhost:5173> |
 | App passeggero | <http://localhost:5174> |
 
-I due client mostrano per ora una sola cosa: lo stato letto da `GET /health`. È poco per uno
-schermo, ma è la prova che la catena client → contratto HTTP → API funziona prima che venga scritta
-una riga di logica di dominio; le schermate vere arrivano con M8.
+Per entrare servono gli account seminati: l'operatore con `SEED_OPERATOR_*`, il passeggero con
+`SEED_PASSENGER_*` — o uno nuovo, creato dall'app passeggero stessa. In fondo a entrambe le
+schermate resta l'indicatore dello stato letto da `GET /health`: dice a colpo d'occhio se una
+schermata ferma è una flotta ferma o un backend spento.
 
 > `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
 > il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica
@@ -127,9 +136,9 @@ doppio. Senza Docker, `pnpm verify` fallisce ai passi `gate` e `integration`.
 | `pnpm trace` | matrice requisito → test |
 | `pnpm verify:e2e` | stack completo con Playwright; lento, a fine milestone |
 
-`pnpm verify:e2e` alza da solo i tre servizi e guida un browser vero; la prima volta i browser
-vanno scaricati con `pnpm exec playwright install chromium`. Gli screenshot finiscono in
-`e2e/screenshots/`. Serve perché esistono difetti che nessun controllo senza browser può vedere:
+`pnpm verify:e2e` prepara il database (Postgres, migrazioni e seed), alza da solo i tre servizi e
+guida un browser vero; la prima volta i browser vanno scaricati con
+`pnpm exec playwright install chromium`. Gli screenshot finiscono in `e2e/screenshots/`. Serve perché esistono difetti che nessun controllo senza browser può vedere:
 la prima versione di M0 passava tutto con `packages/shared` compilato solo in CommonJS, e falliva
 solo a runtime dentro la pagina.
 

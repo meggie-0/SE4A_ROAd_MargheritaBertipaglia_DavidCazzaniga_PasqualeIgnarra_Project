@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Il client passeggero è consegnato come applicazione web installabile e responsive
+      (DD §3.1 [v1.1], decisione D15): il manifest è ciò che rende vera la prima metà di quella
+      frase, il foglio di stile la seconda. Non c'è un service worker, quindi l'app non funziona
+      offline — e non deve: senza rete non c'è nessun robotaxi da chiamare.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <meta name="theme-color" content="#0f172a" />
     <title>ROAd — App passeggero</title>
   </head>
   <body>

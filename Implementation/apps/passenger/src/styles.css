@@ -1,57 +1,301 @@
+/*
+ * App passeggero (DD §3.1), consegnata come PWA responsive (decisione D15).
+ *
+ * Una colonna sola: intestazione, mappa, pannello. Su schermo largo la mappa cresce e il pannello
+ * le si affianca; su telefono restano impilati, che è il caso d'uso principale — «mobile app» nel
+ * DD si legge «passenger client», ma chi richiede una corsa lo fa quasi sempre da un telefono.
+ */
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font-family:
     system-ui,
     -apple-system,
     'Segoe UI',
     Roboto,
     sans-serif;
+
+  --surface: #111c33;
+  --surface-border: #1e293b;
+  --ink: #e2e8f0;
+  --ink-muted: #94a3b8;
+  --accent: #38bdf8;
+  --ok: #4ade80;
+  --error: #f87171;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
   background: #0f172a;
-  color: #e2e8f0;
+  color: var(--ink);
 }
 
-main {
-  width: min(36rem, 90vw);
-  padding: 2rem;
-  border: 1px solid #1e293b;
+.passenger-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.ride-map {
+  /* Leaflet ha bisogno di un'altezza esplicita: senza, il contenitore collassa e la mappa
+     non compare affatto. */
+  height: clamp(18rem, 45vh, 30rem);
+  width: 100%;
   border-radius: 0.75rem;
-  background: #111c33;
+  border: 1px solid var(--surface-border);
+  z-index: 0;
 }
 
-h1 {
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.panel h1,
+.panel h2 {
   margin-top: 0;
-  font-size: 1.5rem;
+  font-size: 1.15rem;
 }
 
-dl {
+.login-panel {
+  width: min(26rem, 100%);
+  margin: auto;
+}
+
+.login-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+input {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--surface-border);
+  background: #0b1424;
+  color: var(--ink);
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  padding: 0.6rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #06202e;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.link-button {
+  background: none;
+  color: var(--accent);
+  border: none;
+  padding: 0.25rem 0;
+  font-weight: 500;
+  text-align: left;
+}
+
+.hint {
+  color: var(--ink-muted);
+  margin: 0 0 0.75rem;
+}
+
+.points {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.35rem 1rem;
-  margin: 0;
+  gap: 0.3rem 1rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
 }
 
-dt {
-  color: #94a3b8;
+.points dt {
+  color: var(--ink-muted);
 }
 
-dd {
+.points dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
-.status-ok {
-  color: #4ade80;
+.kind {
+  border: 1px solid var(--surface-border);
+  border-radius: 0.5rem;
+  display: flex;
+  gap: 1.25rem;
+  padding: 0.5rem 0.9rem 0.7rem;
+  margin: 0 0 0.9rem;
+}
+
+.kind legend {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  padding: 0 0.35rem;
+}
+
+.kind label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink);
+}
+
+.kind input {
+  width: auto;
+}
+
+.schedule {
+  margin-bottom: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.phase {
+  font-size: 1.35rem;
   font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+}
+
+.eta {
+  margin: 0 0 0.9rem;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.progression {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.progression li {
+  padding-left: 1.4rem;
+  position: relative;
+  color: var(--ink-muted);
+}
+
+.progression li::before {
+  content: '○';
+  position: absolute;
+  left: 0;
+}
+
+.progression li.reached {
+  color: var(--ink);
+}
+
+.progression li.reached::before {
+  content: '●';
+  color: var(--ok);
+}
+
+.progression li[aria-current='step'] {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.progression li[aria-current='step']::before {
+  color: var(--accent);
+}
+
+.last-message {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
+.muted {
+  color: var(--ink-muted);
 }
 
 .status-error {
-  color: #f87171;
+  color: var(--error);
   font-weight: 600;
+}
+
+.app-footer {
+  margin-top: auto;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+@media (min-width: 52rem) {
+  .ride-map {
+    height: clamp(24rem, 55vh, 34rem);
+  }
+}
+
+.profile-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.status-saved {
+  color: var(--ok);
+  font-weight: 600;
+  margin: 0;
 }

@@ -27,6 +27,11 @@ export const API_ROUTES = {
   ridesImmediate: '/rides/immediate',
   ridesAdvance: '/rides/advance',
   rideCancel: '/rides/:rideRequestId/cancel',
+  // Dove si trova il veicolo della propria corsa (M8, RASD R3 e R6; decisione D69). Sotto-risorsa
+  // della richiesta e non una rotta di flotta, perché la domanda è «dov'è il veicolo della **mia**
+  // corsa»: porta con sé un controllo di appartenenza. Risponde *dove*, mai *in che stato* — lo
+  // stato viaggia sul canale push, e duplicarlo qui renderebbe NFR2 non più osservabile.
+  rideVehicle: '/rides/:rideRequestId/vehicle',
 
   // Modo di controllo Auto/Manual (M6, RASD R12, R13; NFR9, NFR10). Una risorsa sola: `GET` la
   // mostra sul pannello strategia della dashboard, `PUT` riabilita il modo Auto. Non c'è una rotta
@@ -37,6 +42,12 @@ export const API_ROUTES = {
   // Analisi della domanda (M6, RASD R10, G9). Sola lettura: il riposizionamento lo innesca lo
   // scheduler e lo si osserva sul canale push, come ogni altro movimento di flotta.
   rebalancingDemand: '/rebalancing/demand',
+
+  // Panoramica della flotta (M8, RASD R7, G8). Sola lettura, riservata all'operatore: è ciò che
+  // disegna la mappa e riempie la status bar della dashboard (DD §3.2). Le posizioni **non**
+  // viaggiano sul canale push — cambiano a ogni tick e lo inonderebbero (`recordPositions()`) —
+  // quindi la dashboard le rilegge da qui; gli eventi di stato continuano ad arrivare push.
+  fleetStatus: '/fleet/status',
 } as const;
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];
@@ -50,3 +61,7 @@ export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];
  */
 export const rideCancelRoute = (rideRequestId: string): string =>
   API_ROUTES.rideCancel.replace(':rideRequestId', encodeURIComponent(rideRequestId));
+
+/** L'indirizzo della posizione del veicolo di una corsa concreta. */
+export const rideVehicleRoute = (rideRequestId: string): string =>
+  API_ROUTES.rideVehicle.replace(':rideRequestId', encodeURIComponent(rideRequestId));

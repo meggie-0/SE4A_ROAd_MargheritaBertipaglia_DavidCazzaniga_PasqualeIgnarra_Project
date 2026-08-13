@@ -1,57 +1,364 @@
+/*
+ * Dashboard dell'operatore di flotta (DD §3.2).
+ *
+ * Una console di comando e controllo su una schermata sola: status bar in alto, mappa a sinistra,
+ * pannelli a destra. Nessuna navigazione, perché NFR6 chiede che modo e strategia si vedano al
+ * primo render — e ciò che sta dietro una scheda non si vede.
+ */
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font-family:
     system-ui,
     -apple-system,
     'Segoe UI',
     Roboto,
     sans-serif;
+
+  --surface: #111c33;
+  --surface-border: #1e293b;
+  --ink: #e2e8f0;
+  --ink-muted: #94a3b8;
+  --accent: #38bdf8;
+  --ok: #4ade80;
+  --warn: #facc15;
+  --error: #f87171;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
   background: #0f172a;
-  color: #e2e8f0;
+  color: var(--ink);
 }
 
-main {
-  width: min(36rem, 90vw);
-  padding: 2rem;
-  border: 1px solid #1e293b;
+.dashboard {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  max-width: 100rem;
+  margin: 0 auto;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.push-on {
+  color: var(--ok);
+}
+
+.push-off {
+  color: var(--warn);
+}
+
+/* --- status bar ---------------------------------------------------------- */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
   border-radius: 0.75rem;
-  background: #111c33;
+  padding: 0.7rem 1.1rem;
 }
 
-h1 {
-  margin-top: 0;
-  font-size: 1.5rem;
+.status-bar .total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding-right: 1.5rem;
+  border-right: 1px solid var(--surface-border);
 }
 
-dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.35rem 1rem;
-  margin: 0;
+.status-bar .tally {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-dt {
-  color: #94a3b8;
-}
-
-dd {
-  margin: 0;
+.status-bar .figure {
+  font-size: 1.2rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.status-ok {
-  color: #4ade80;
+.status-bar .caption {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
+.status-bar .swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-bar .stale {
+  color: var(--warn);
+  font-size: 0.82rem;
+  margin-left: auto;
+}
+
+/* --- corpo --------------------------------------------------------------- */
+
+.dashboard-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.fleet-map {
+  /* Leaflet ha bisogno di un'altezza esplicita: senza, il contenitore collassa. */
+  height: clamp(20rem, 60vh, 46rem);
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--surface-border);
+  z-index: 0;
+}
+
+.side-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.15rem;
+}
+
+.panel h1,
+.panel h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+/* --- pannello strategia -------------------------------------------------- */
+
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.mode-toggle .mode {
+  padding: 0.35rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.mode-toggle .mode.active {
+  background: var(--ok);
+  color: #06280f;
+}
+
+.mode-toggle .mode.active.manual {
+  background: var(--warn);
+  color: #2b2200;
+}
+
+.mode-explanation {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.8rem;
+}
+
+.readout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+}
+
+.readout dt {
+  color: var(--ink-muted);
+}
+
+.readout dd {
+  margin: 0;
   font-weight: 600;
 }
 
-.status-error {
-  color: #f87171;
+.strategy-buttons {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.strategy-buttons .chosen {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- alert --------------------------------------------------------------- */
+
+.alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.alert {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  font-size: 0.87rem;
+  border-left: 3px solid var(--surface-border);
+  padding-left: 0.6rem;
+}
+
+.alert-time {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.alert.high {
+  border-left-color: var(--error);
+}
+
+.alert.medium {
+  border-left-color: var(--warn);
+}
+
+.alert.rebalancing {
+  border-left-color: #a78bfa;
+}
+
+.alert.mode {
+  border-left-color: var(--accent);
+}
+
+/* --- form e controlli ---------------------------------------------------- */
+
+.login-panel {
+  width: min(26rem, 100%);
+  margin: auto;
+}
+
+.login-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+input {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--surface-border);
+  background: #0b1424;
+  color: var(--ink);
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #06202e;
   font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.link-button {
+  background: none;
+  color: var(--accent);
+  border: none;
+  padding: 0.25rem 0;
+  font-weight: 500;
+  text-align: left;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+.status-error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.app-footer {
+  margin-top: auto;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+@media (min-width: 68rem) {
+  .dashboard-body {
+    grid-template-columns: minmax(0, 2fr) minmax(22rem, 1fr);
+  }
+}
+
+.profile-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.status-saved {
+  color: var(--ok);
+  font-weight: 600;
+  margin: 0;
 }
