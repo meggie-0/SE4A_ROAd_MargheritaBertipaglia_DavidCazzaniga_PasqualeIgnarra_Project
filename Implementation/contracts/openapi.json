@@ -360,6 +360,53 @@
         ]
       }
     },
+    "/rides/{rideRequestId}/vehicle": {
+      "get": {
+        "description": "La posizione del veicolo assegnato, che l'app passeggero disegna sulla mappa mentre si avvicina (DD §3.1). **Non porta lo stato del veicolo né quello della corsa**: quelli sono ciò che R6 promette e viaggiano sul canale push. Duplicarli qui darebbe al client un secondo modo di scoprire una transizione, e NFR2 — «senza che il client interroghi» — non sarebbe più osservabile. La risposta porta `vehicle: null` finché un veicolo non c è: una prenotazione accettata è riservata, non assegnata.",
+        "operationId": "RidesController_getAssignedVehicle",
+        "parameters": [
+          {
+            "name": "rideRequestId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignedVehicleResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account passeggero."
+          },
+          "404": {
+            "description": "Nessuna richiesta con quell identificatore, per te."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dove si trova il robotaxi della propria corsa",
+        "tags": [
+          "rides"
+        ]
+      }
+    },
     "/mode": {
       "get": {
         "description": "NFR10: il modo corrente è sempre visibile sulla dashboard. I due valori vengono dal record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier applicativo rispondono la stessa cosa (NFR3).",
@@ -920,6 +967,51 @@
           "pickup",
           "destination",
           "scheduledPickup"
+        ]
+      },
+      "AssignedVehiclePositionDto": {
+        "type": "object",
+        "properties": {
+          "robotaxiId": {
+            "type": "string",
+            "example": "rt-07"
+          },
+          "position": {
+            "description": "L'ultima posizione osservata del veicolo.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-05-04T09:30:10.000Z",
+            "description": "Quando la telemetria ha scritto quella posizione, non quando l hai chiesta."
+          }
+        },
+        "required": [
+          "robotaxiId",
+          "position",
+          "updatedAt"
+        ]
+      },
+      "AssignedVehicleResponseDto": {
+        "type": "object",
+        "properties": {
+          "vehicle": {
+            "nullable": true,
+            "description": "Il veicolo che serve la corsa, oppure `null`: una prenotazione accettata è riservata e non assegnata fino all attivazione, e una richiesta rifiutata o annullata non ha mai avuto un veicolo. Nessuno dei tre casi è un errore.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssignedVehiclePositionDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "vehicle"
         ]
       },
       "ModeResponseDto": {

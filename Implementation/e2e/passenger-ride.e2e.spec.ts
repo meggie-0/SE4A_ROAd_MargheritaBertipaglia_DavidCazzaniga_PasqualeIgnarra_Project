@@ -105,19 +105,37 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
      * momento in cui la corsa è stata accettata. Se il client ripiegasse su un'interrogazione
      * periodica, questo contatore crescerebbe e il test fallirebbe pur con la schermata giusta.
      *
-     * Il traffico di `/socket.io/` è escluso dal conto, ed è il contrario di una scappatoia: **è**
-     * il canale push, e su un trasporto che ripiega su long-polling passa da richieste HTTP. Se
-     * contassero, il test fallirebbe per il funzionamento del canale invece che per la sua assenza,
-     * cioè accuserebbe esattamente il meccanismo che deve dimostrare.
+     * Due rotte sono escluse dal conto, e nessuna delle due è una scappatoia.
+     *
+     * `/socket.io/` **è** il canale push, e su un trasporto che ripiega su long-polling passa da
+     * richieste HTTP: se contasse, il test fallirebbe per il funzionamento del canale invece che
+     * per la sua assenza, cioè accuserebbe il meccanismo che deve dimostrare.
+     *
+     * `/rides/:id/vehicle` porta **solo la posizione** del veicolo, mai il suo stato né quello
+     * della corsa (decisione D69): è la ragione per cui quella rotta è stata progettata così, e il
+     * test lo verifica dal lato del cliente — la progressione `arriving → arrived → in_ride` che
+     * segue qui sotto non può venire di lì, perché di lì lo stato non passa. Il cancello di M8
+     * verifica la stessa proprietà dal lato della risposta, chiave per chiave.
      */
     const polled: string[] = [];
     await page.route(`${API_URL}/**`, async (route) => {
       const path = new URL(route.request().url()).pathname;
-      if (!path.startsWith('/socket.io/')) polled.push(path);
+      const isPushChannel = path.startsWith('/socket.io/');
+      const isVehiclePosition = /^\/rides\/[^/]+\/vehicle$/.test(path);
+      if (!isPushChannel && !isVehiclePosition) polled.push(path);
       await route.continue();
     });
 
     await expect(phase).toHaveAttribute('data-phase', 'arriving', { timeout: 90_000 });
+
+    /*
+     * Il robotaxi compare sulla mappa mentre si avvicina (DD §3.1 [v1.6], decisione D69).
+     *
+     * È l'unica cosa che la schermata interroga, ed è il motivo per cui `/rides/:id/vehicle` è
+     * escluso dal conteggio qui sopra: porta *dove* si trova il veicolo e non *in che stato* è,
+     * quindi la progressione che il test sta seguendo continua ad arrivare solo dal canale push.
+     */
+    await expect(page.locator('.ride-map path.robotaxi-marker')).toBeVisible({ timeout: 30_000 });
     await expect(phase).toHaveAttribute('data-phase', 'arrived', { timeout: 90_000 });
     await expect(phase).toHaveAttribute('data-phase', 'in_ride', { timeout: 90_000 });
 

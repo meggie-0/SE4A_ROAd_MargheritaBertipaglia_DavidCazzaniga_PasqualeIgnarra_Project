@@ -116,3 +116,35 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
     });
   });
 });
+
+test.describe('[R2][G1] L operatore aggiorna il proprio profilo', () => {
+  /**
+   * R2 attribuisce agli **utenti** — non ai soli passeggeri — la facoltà di aggiornare dati
+   * personali e credenziali, e un operatore è un utente (DD §3.2 [v1.6], decisione D70).
+   *
+   * Il test **non cambia la password**, di proposito: le credenziali dell'operatore vengono dal
+   * seed e sono le stesse che ogni altro scenario usa per entrare. Cambiarle qui renderebbe la
+   * suite dipendente dall'ordine di esecuzione, che è ciò che HARNESS.md §2 vieta.
+   */
+  test('il pannello profilo salva senza far sparire la superficie di monitoraggio', async ({
+    page,
+  }) => {
+    await signIn(page);
+
+    await page.getByTestId('open-profile').click();
+
+    // La mappa e la status bar restano visibili: il profilo prende il posto dei pannelli
+    // laterali, non della console. È ciò che R7 e NFR10 pretendono resti sempre sott'occhio.
+    await expect(page.locator('.fleet-map')).toBeVisible();
+    await expect(page.getByTestId('fleet-status-bar')).toBeVisible();
+    await expect(page.getByTestId('control-mode')).toHaveCount(0);
+
+    await page.getByTestId('profile-phone').fill('+39 02 1234567');
+    await page.getByTestId('save-profile').click();
+    await expect(page.getByTestId('profile-saved')).toBeVisible();
+
+    // Chiuso il pannello, il pannello strategia torna al suo posto.
+    await page.getByTestId('close-profile').click();
+    await expect(page.getByTestId('control-mode')).toBeVisible();
+  });
+});

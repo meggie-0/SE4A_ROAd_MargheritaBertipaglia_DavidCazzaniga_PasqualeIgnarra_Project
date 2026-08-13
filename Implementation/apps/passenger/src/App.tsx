@@ -5,9 +5,10 @@ import {
   type RideRequestKind,
   type RideRequestResponse,
 } from '@road/shared';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { requestAdvanceBooking, requestImmediateRide } from './api';
+import { fetchAssignedVehicle, requestAdvanceBooking, requestImmediateRide } from './api';
 import { apiBaseUrl } from './api-base-url';
 import { LoginScreen } from './components/LoginScreen';
 import { RequestPanel } from './components/RequestPanel';
@@ -35,7 +36,29 @@ import { useNotifications } from './use-notifications';
  * l'assenza di quella stringa in questo file, e un commento che la nominasse lo farebbe fallire
  * dicendo il falso.)
  */
+/**
+ * Ogni quanto rileggere dov'è il robotaxi che sta arrivando.
+ *
+ * Cinque secondi, come sulla dashboard e per la stessa ragione: il simulatore avanza ogni dieci e
+ * la telemetria si legge ogni dieci, quindi con questo passo nessun movimento resta invisibile più
+ * di un ciclo. L'intervallo lo tiene `@tanstack/react-query`; un `setInterval` scritto qui
+ * violerebbe la Regola 3, che vieta i timer nel sorgente delle applicazioni.
+ */
+const VEHICLE_REFRESH_MS = 5_000;
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+});
+
 export function App(): React.JSX.Element {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PassengerApp />
+    </QueryClientProvider>
+  );
+}
+
+function PassengerApp(): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [pickup, setPickup] = useState<GeoPoint | null>(null);
   const [destination, setDestination] = useState<GeoPoint | null>(null);
@@ -74,6 +97,26 @@ export function App(): React.JSX.Element {
       .filter((event) => event.rideRequestId === request.id)
       .reduce(applyNotification, initialView(request));
   }, [notifications, request]);
+
+  /**
+   * La posizione del robotaxi assegnato, mentre sta venendo a prendermi.
+   *
+   * **È l'unica cosa che questa schermata interroga**, e solo nelle tre fasi in cui c'è un veicolo
+   * in viaggio verso di me: prima non esiste, e da `in_ride` in poi il puntino sono io. Fuori da
+   * quella finestra la query è spenta, così l'app non chiede al backend cose che non mostrerebbe.
+   *
+   * Non porta lo stato della corsa e non potrebbe: la rotta non lo espone (decisione D69). La
+   * progressione continua ad arrivare dal canale push, che è ciò che NFR2 pretende.
+   */
+  const followingVehicle =
+    view !== null && ['assigned', 'arriving', 'arrived'].includes(view.phase);
+
+  const vehicle = useQuery({
+    queryKey: ['assigned-vehicle', request?.id ?? null],
+    enabled: session !== null && request !== null && followingVehicle,
+    refetchInterval: VEHICLE_REFRESH_MS,
+    queryFn: () => fetchAssignedVehicle(session?.accessToken as string, request?.id as string),
+  });
 
   function onAuthenticated(response: { accessToken: string; user: Session['user'] }): void {
     const next: Session = { accessToken: response.accessToken, user: response.user };
@@ -179,6 +222,7 @@ export function App(): React.JSX.Element {
           <RideMap
             pickup={pickup}
             destination={destination}
+            robotaxi={followingVehicle ? (vehicle.data?.vehicle?.position ?? null) : null}
             onPick={request === null ? onPick : null}
           />
 

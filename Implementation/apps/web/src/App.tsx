@@ -13,6 +13,7 @@ import { apiBaseUrl } from './api-base-url';
 import { AlertsPanel } from './components/AlertsPanel';
 import { FleetMap } from './components/FleetMap';
 import { LoginScreen } from './components/LoginScreen';
+import { ProfilePanel } from './components/ProfilePanel';
 import { StatusBar } from './components/StatusBar';
 import { StrategyPanel } from './components/StrategyPanel';
 import { clearSession, loadSession, saveSession, type Session } from './session';
@@ -60,6 +61,7 @@ function Dashboard(): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [commandError, setCommandError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   const health = useApiHealth();
   const queries = useQueryClient();
@@ -139,6 +141,7 @@ function Dashboard(): React.JSX.Element {
   function signOut(): void {
     clearSession();
     setSession(null);
+    setShowProfile(false);
     queries.clear();
   }
 
@@ -225,6 +228,14 @@ function Dashboard(): React.JSX.Element {
             {connection === 'connected' ? 'canale attivo' : 'canale non connesso'}
           </span>
           <span data-testid="operator-name">{session.user.name}</span>
+          <button
+            type="button"
+            className="link-button"
+            data-testid="open-profile"
+            onClick={() => setShowProfile(!showProfile)}
+          >
+            {showProfile ? 'Chiudi profilo' : 'Profilo'}
+          </button>
           <button type="button" className="link-button" data-testid="sign-out" onClick={signOut}>
             Esci
           </button>
@@ -237,15 +248,35 @@ function Dashboard(): React.JSX.Element {
         <FleetMap robotaxis={fleet.data?.robotaxis ?? []} />
 
         <div className="side-panels">
-          <StrategyPanel
-            mode={mode.data?.mode ?? null}
-            activeStrategy={mode.data?.activeStrategy ?? null}
-            busy={busy}
-            error={commandError}
-            onSelectStrategy={(strategy) => void chooseStrategy(strategy)}
-            onEnableAuto={() => void backToAuto()}
-          />
-          <AlertsPanel notifications={notifications} />
+          {/* Il profilo prende il posto dei pannelli laterali, non della mappa né della status
+              bar: la superficie di monitoraggio resta visibile (R7, NFR10). */}
+          {showProfile ? (
+            <ProfilePanel
+              profile={session.user}
+              token={session.accessToken}
+              onUpdated={(profile) => {
+                const next: Session = { accessToken: session.accessToken, user: profile };
+                saveSession(next);
+                setSession(next);
+              }}
+              onClose={() => setShowProfile(false)}
+              onSessionExpired={(failure) => {
+                if (failure instanceof ApiError && failure.status === 401) signOut();
+              }}
+            />
+          ) : (
+            <>
+              <StrategyPanel
+                mode={mode.data?.mode ?? null}
+                activeStrategy={mode.data?.activeStrategy ?? null}
+                busy={busy}
+                error={commandError}
+                onSelectStrategy={(strategy) => void chooseStrategy(strategy)}
+                onEnableAuto={() => void backToAuto()}
+              />
+              <AlertsPanel notifications={notifications} />
+            </>
+          )}
         </div>
       </div>
 

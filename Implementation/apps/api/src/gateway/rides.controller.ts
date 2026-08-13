@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -48,6 +49,7 @@ import {
 } from '../rides/rides.port';
 
 import {
+  AssignedVehicleResponseDto,
   RideRequestResponseDto,
   SubmitAdvanceBookingRequestDto,
   SubmitImmediateRideRequestDto,
@@ -179,6 +181,52 @@ export class RidesController {
       // scoprire quali corse esistono provando identificatori.
       if (error instanceof RideRequestNotFoundError) throw new NotFoundException(error.message);
       if (error instanceof RideNotCancellableError) throw new ConflictException(error.message);
+      throw error;
+    }
+  }
+
+  @Get(API_ROUTES.rideVehicle)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('PASSENGER')
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Dove si trova il robotaxi della propria corsa',
+    description:
+      "La posizione del veicolo assegnato, che l'app passeggero disegna sulla mappa mentre si " +
+      'avvicina (DD §3.1). **Non porta lo stato del veicolo né quello della corsa**: quelli sono ' +
+      'ciò che R6 promette e viaggiano sul canale push. Duplicarli qui darebbe al client un ' +
+      'secondo modo di scoprire una transizione, e NFR2 — «senza che il client interroghi» — non ' +
+      'sarebbe più osservabile. La risposta porta `vehicle: null` finché un veicolo non c è: una ' +
+      'prenotazione accettata è riservata, non assegnata.',
+  })
+  @ApiParam({ name: 'rideRequestId', format: 'uuid' })
+  @ApiOkResponse({ type: AssignedVehicleResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token assente, scaduto o non valido.' })
+  @ApiForbiddenResponse({ description: 'Serve un account passeggero.' })
+  @ApiNotFoundResponse({ description: 'Nessuna richiesta con quell identificatore, per te.' })
+  async getAssignedVehicle(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('rideRequestId') rideRequestId: string,
+  ): Promise<AssignedVehicleResponseDto> {
+    try {
+      const located = await this.rides.getAssignedVehicle(rideRequestId, user.id);
+
+      // L'unica trasformazione è la data, che diventa una stringa ISO 8601: il dominio lavora con
+      // `Date`, JSON no. Non c'è un istante della lettura da aggiungere — qui non c'è un orologio
+      // da cui prenderlo (CLAUDE.md Regola 3), e per un veicolo che non c'è non ci sarebbe niente
+      // da datare.
+      return {
+        vehicle:
+          located === null
+            ? null
+            : {
+                robotaxiId: located.robotaxiId,
+                position: located.position,
+                updatedAt: located.observedAt.toISOString(),
+              },
+      };
+    } catch (error) {
+      if (error instanceof RideRequestNotFoundError) throw new NotFoundException(error.message);
       throw error;
     }
   }

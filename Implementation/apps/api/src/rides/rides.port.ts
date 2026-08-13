@@ -232,4 +232,46 @@ export abstract class RideRequestPort {
    * qualcun altro. È ciò che completa R14, la cui copertura fino a M6 si fermava al veicolo fermo.
    */
   abstract cancel(rideRequestId: string, passengerId: string): Promise<RideCancellation>;
+
+  /**
+   * **Dove** si trova il veicolo che serve la propria corsa — e non in che stato è (M8,
+   * decisione D69).
+   *
+   * L'app passeggero mostra il robotaxi che si avvicina (DD §3.1), e non aveva modo di sapere dove
+   * fosse: `getFleetStatus()` è dell'operatore (D67) e sul canale push le posizioni non viaggiano,
+   * perché cambiano a ogni tick e lo inonderebbero (D61).
+   *
+   * **Sta su questa porta e non su `FleetMonitorPort`**, e la ragione è nella domanda: non è «dov'è
+   * il veicolo X» ma «dov'è il veicolo della **mia** corsa». Contiene un controllo di appartenenza,
+   * che compete a chi possiede la richiesta; farlo fare al gateway significherebbe mettere una
+   * regola di dominio in un controller. Come `cancel()`, `passengerId` è la prova che chi chiede è
+   * chi ha richiesto, e una corsa altrui non è un errore di autorizzazione da segnalare: è una
+   * richiesta che per quel passeggero non esiste (`RideRequestNotFoundError`).
+   *
+   * **Non restituisce lo stato del veicolo, ed è la parte che conta.** Lo stato è ciò che R6
+   * promette e viaggia sul canale push; se lo portasse anche questa lettura, il client avrebbe una
+   * seconda via per scoprire una transizione e la proprietà che NFR2 chiede — che un cambiamento
+   * raggiunga un client connesso *senza che lo chieda* — smetterebbe di essere osservabile, perché
+   * nessun test potrebbe più distinguere il canale dall'interrogazione.
+   *
+   * Restituisce `null` quando un veicolo non c'è: una prenotazione accettata e non ancora attivata
+   * è uno stato legittimo (decisione D9), non un errore.
+   */
+  abstract getAssignedVehicle(
+    rideRequestId: string,
+    passengerId: string,
+  ): Promise<AssignedVehicleLocation | null>;
+}
+
+/**
+ * Dove si trova il veicolo di una corsa, e quando lo si è osservato.
+ *
+ * È volutamente più povera di `RobotaxiSnapshot`: niente stato, niente zona. Ciò che il passeggero
+ * può sapere del veicolo che lo sta raggiungendo è dove si trova adesso.
+ */
+export interface AssignedVehicleLocation {
+  readonly robotaxiId: string;
+  readonly position: GeoPoint;
+  /** Quando la posizione è stata scritta dalla telemetria (M7). */
+  readonly observedAt: Date;
 }

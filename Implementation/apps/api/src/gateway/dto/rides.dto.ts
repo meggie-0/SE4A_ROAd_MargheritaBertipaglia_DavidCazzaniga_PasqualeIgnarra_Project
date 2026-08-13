@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   RIDE_REQUEST_KINDS,
   RIDE_REQUEST_STATUSES,
+  type AssignedVehicleResponse,
   type GeoPointPayload,
   type RideRequestKind,
   type RideRequestResponse,
@@ -110,4 +111,38 @@ export class RideRequestResponseDto implements RideRequestResponse {
 
   @ApiProperty({ format: 'date-time' })
   createdAt!: string;
+}
+
+/**
+ * La posizione del veicolo di una corsa (M8, decisione D69).
+ *
+ * **Non c'è un campo di stato, e non è una svista.** Lo stato del veicolo e quello della corsa
+ * viaggiano sul canale push (R6): duplicarli in una risposta che il client interroga gli darebbe
+ * un secondo modo di scoprire una transizione, e la proprietà che il DD §4.3 usa per NFR2 —
+ * «senza che il client interroghi» — non sarebbe più distinguibile in un test.
+ */
+export class AssignedVehiclePositionDto {
+  @ApiProperty({ example: 'rt-07' })
+  robotaxiId!: string;
+
+  @ApiProperty({ type: GeoPointDto, description: "L'ultima posizione osservata del veicolo." })
+  position!: GeoPointPayload;
+
+  @ApiProperty({
+    example: '2026-05-04T09:30:10.000Z',
+    description: 'Quando la telemetria ha scritto quella posizione, non quando l hai chiesta.',
+  })
+  updatedAt!: string;
+}
+
+export class AssignedVehicleResponseDto implements AssignedVehicleResponse {
+  @ApiProperty({
+    type: AssignedVehiclePositionDto,
+    nullable: true,
+    description:
+      'Il veicolo che serve la corsa, oppure `null`: una prenotazione accettata è riservata e ' +
+      'non assegnata fino all attivazione, e una richiesta rifiutata o annullata non ha mai avuto ' +
+      'un veicolo. Nessuno dei tre casi è un errore.',
+  })
+  vehicle!: AssignedVehiclePositionDto | null;
 }

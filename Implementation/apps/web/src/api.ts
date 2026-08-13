@@ -4,17 +4,20 @@ import {
   authResponseSchema,
   fleetStatusResponseSchema,
   modeResponseSchema,
+  userProfileSchema,
   type AuthResponse,
   type FleetStatusResponse,
   type LoginRequest,
   type ModeResponse,
   type StrategyName,
+  type UpdateProfileRequest,
+  type UserProfile,
 } from '@road/shared';
 
 import { apiBaseUrl } from './api-base-url';
 
 /**
- * Le quattro chiamate che la dashboard fa al backend (RASD R7, R8, R12, R13).
+ * Le cinque chiamate che la dashboard fa al backend (RASD R2, R7, R8, R12, R13).
  *
  * Come nell'app passeggero, ogni funzione è una riga di trasporto: rotta da `API_ROUTES`, risposta
  * validata con lo schema condiviso, nessuna logica. La dashboard non decide quale strategia sia
@@ -82,5 +85,24 @@ export async function enableAutoMode(token: string): Promise<ModeResponse> {
     token,
     body: { mode: 'AUTO' },
     schema: modeResponseSchema,
+  });
+}
+
+/**
+ * `PATCH /auth/me` — R2, G1: anche l'operatore è un utente (decisione D70).
+ *
+ * È la stessa operazione che usa l'app passeggero, sulla stessa rotta: R2 attribuisce agli
+ * **utenti** la facoltà di aggiornare dati personali e credenziali, e senza questa chiamata un
+ * operatore avrebbe potuto cambiare la propria password solo a mano.
+ */
+export async function updateProfile(
+  token: string,
+  patch: UpdateProfileRequest,
+): Promise<UserProfile> {
+  return apiRequest(apiBaseUrl, API_ROUTES.authProfile, {
+    method: 'PATCH',
+    token,
+    body: patch,
+    schema: userProfileSchema,
   });
 }

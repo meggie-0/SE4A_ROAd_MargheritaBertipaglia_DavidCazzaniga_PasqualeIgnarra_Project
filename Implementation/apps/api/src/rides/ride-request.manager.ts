@@ -25,6 +25,7 @@ import {
   RideRequestPort,
   ScheduledPickupNotInFutureError,
   type AdvanceBookingDraft,
+  type AssignedVehicleLocation,
   type RideCancellation,
   type RideRequestDraft,
   type RideRequestOutcome,
@@ -259,6 +260,47 @@ export class RideRequestManager extends RideRequestPort {
       releasedRobotaxiId,
       releasedReservations: reservations.length,
       booking: cancelledBooking,
+    };
+  }
+
+  /**
+   * Dove si trova il veicolo della **propria** corsa (M8, decisione D69).
+   *
+   * Due letture e nessuna scrittura: la richiesta, per stabilire che è di chi la chiede e che ha un
+   * veicolo, e la posizione di quel veicolo, che a `fleet` si chiede attraverso la sua porta come
+   * ogni altra cosa. Il controllo di appartenenza è lo stesso di `cancel()`, e per la stessa
+   * ragione: una corsa altrui non è un errore di autorizzazione, è una richiesta che per quel
+   * passeggero non esiste.
+   *
+   * **Ciò che questo metodo non fa** è raccontare lo stato del veicolo. La posizione la restituisce,
+   * lo stato no, e non è una dimenticanza: lo stato viaggia sul canale push (R6), e duplicarlo qui
+   * darebbe al client un secondo modo di scoprire una transizione — che è esattamente ciò che NFR2
+   * vieta di dover fare.
+   */
+  async getAssignedVehicle(
+    rideRequestId: string,
+    passengerId: string,
+  ): Promise<AssignedVehicleLocation | null> {
+    const [request] = await this.persistence.find('ride_request', {
+      where: { id: rideRequestId },
+      limit: 1,
+    });
+    if (request === undefined || request.passengerId !== passengerId) {
+      throw new RideRequestNotFoundError(rideRequestId);
+    }
+
+    // Nessun veicolo assegnato: una prenotazione accettata e non ancora attivata sta qui, e non è
+    // un errore (decisione D9). Lo stesso vale per una richiesta rifiutata o annullata.
+    if (request.assignedRobotaxiId === null) return null;
+
+    const status = await this.fleet.getFleetStatus();
+    const vehicle = status.robotaxis.find((one) => one.id === request.assignedRobotaxiId);
+    if (vehicle === undefined) return null;
+
+    return {
+      robotaxiId: vehicle.id,
+      position: { lat: vehicle.lat, lon: vehicle.lon },
+      observedAt: vehicle.updatedAt,
     };
   }
 

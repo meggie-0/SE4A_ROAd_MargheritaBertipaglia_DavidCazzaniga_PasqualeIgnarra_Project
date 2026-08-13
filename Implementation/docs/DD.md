@@ -129,7 +129,7 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.3 | August 12, 2026 | **[v1.3]** Decisions taken while implementing the notification channel (M5), and the resolution of the gap the document carried on its second subject: Section 2.3.3 draws `Ride` as a `Subject` with a `RideStatus`, but no table, no component operation and no flow ever created one — the entity existed in the RASD and nowhere in this design. Also: the four lifecycle transitions that had no way of being triggered, the two ports of `notifications`, the three arcs Figure 2.1 was missing, token verification outside the HTTP path, and the ordering rule between persisting a transition and notifying it. See decisions D36–D46 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.4 | August 12, 2026 | **[v1.4]** Decisions taken while implementing the control mode and the rebalancing cycle (M6): the conditional write that keeps an automatic switch from overwriting a human choice, the second port of `mode`, the three `DomainEvent` variants that have no `Subject`, the dead band that emits its alert on the crossing rather than on every reading, the one-vehicle-per-deficit-zone rule, the zone computed instead of read, the gateway becoming a facade with one adapter per provider, the two arcs Figure 2.1 was missing, the event `enableAuto()` emits when it does *not* switch, the reading order of `GET /mode`, and `Zone.demandLevel` left unrealised. See decisions D47–D58 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.5 | August 12, 2026 | **[v1.5]** Decisions taken while connecting the real external providers and the fleet simulator (M7), the ordering rule between fleet commands and lifecycle transitions that a design review made explicit (D65), the numeric ETA that D46 had deferred to this milestone (D66), and the completion of R14: `commandRoute()` now exists, so transitions 12 and 13 close the gap that v1.2 had documented and left open — cancellation is legal until the passenger boards. Also: the two `FleetMonitor` operations that telemetry makes possible (transition 9 had no trigger at all), the fourth port of `rides` that reads telemetry, the second port of `external` that advances the simulated world, and `getDemandData()` staying out of the port for the reason D47 gave rather than for the milestone it named. See decisions D59–D66 in [Appendice A](#appendice-a--registro-delle-decisioni). |
-| 1.6 | August 13, 2026 | **[v1.6]** Decisions taken while building the two clients (M8): the fleet overview endpoint the operator dashboard needs — the arc Figure 2.1 drew and no route realised — and the passenger session kept in the browser, without which the interaction budget of NFR6 is unreachable. See decisions D67–D68 in [Appendice A](#appendice-a--registro-delle-decisioni). |
+| 1.6 | August 13, 2026 | **[v1.6]** Decisions taken while building the two clients (M8): the fleet overview endpoint the operator dashboard needs — the arc Figure 2.1 drew and no route realised — the passenger session kept in the browser, without which the interaction budget of NFR6 is unreachable, the position of the assigned vehicle shown to the passenger without letting a polled route carry the state that NFR2 reserves to the push channel, and the operator's own profile, which R2 grants to users and no screen offered. See decisions D67–D70 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
 ## 1.4 Document Structure
 
@@ -1366,6 +1366,19 @@ single button. After the request, the same screen turns into a live status view 
 ride through its states (searching, assigned, arriving, arrived, in ride), driven by the Observer
 notifications.
 
+**[v1.6] The assigned vehicle on the map.** While the ride is being served, the status view also
+shows **where the assigned robotaxi is**, as a marker joined to the pickup point by a straight
+segment. The segment is a visual aid and not the route the vehicle will drive: the passenger client
+is never told the planned path, only the current position, and the two must not be confused.
+
+The position is **polled**, not pushed, for the same reason the dashboard polls it (decision D67):
+it changes at every tick of the fleet, and a channel built for the events of a ride would drown in
+it. What the passenger reads is deliberately **narrower** than what the operator reads — the
+endpoint answers *where the vehicle is*, and says nothing about *what state it is in*. The state is
+what R6 promises and it travels on the push channel; letting a polled route carry it as well would
+give the client a second way of learning the same fact, and the property NFR2 asks for — that a
+state change reaches a connected client without the client asking — would stop being observable.
+
 **[v1.1] Delivery form.** The passenger app is delivered as a **responsive progressive web
 application** rather than a native mobile build. Nothing in the RASD or in this document depends on
 a native runtime — R3, R4, R6 and NFR6 constrain the interaction, not the packaging — and a web
@@ -1386,6 +1399,13 @@ strategy panel where the operator sees the active allocation strategy and can sw
 system to Manual mode), and an alerts panel that surfaces automatic strategy switches and
 rebalancing suggestions. A status bar summarises the fleet by state. The Auto/Manual toggle makes
 the current control mode always visible (NFR10).
+
+**[v1.6] Account panel.** The dashboard also gives the operator access to **their own profile** —
+personal data and password — because R2 grants that to *users*, and an operator is one. It is not a
+fifth command-and-control panel and it is not part of the monitoring surface: it is reached from the
+header, it takes the place of the side panels while it is open, and it leaves the map and the status
+bar where they are. Without it, R2 would hold for passengers and, for the operators of this system,
+only through a call made by hand.
 
 #### Figure 3.2: Wireframe of the operator dashboard: fleet monitoring and strategy control
 
@@ -1562,7 +1582,7 @@ correspond to defects.
 # Appendice A — Registro delle decisioni
 
 Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento: D1–D26 sono di
-v1.1, D27–D33 di v1.2, D34–D46 di v1.3, D47–D58 di v1.4, D59–D66 di v1.5 e D67–D68 di v1.6.
+v1.1, D27–D33 di v1.2, D34–D46 di v1.3, D47–D58 di v1.4, D59–D66 di v1.5 e D67–D70 di v1.6.
 Serve a due cose:
 rigenerare il PDF a fine progetto senza rileggere il diff, e permettere a chi rivede il codice di
 capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove, e per quale ragione.
@@ -1642,6 +1662,10 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D67 | Il gateway pubblica **`GET /fleet/status`**, riservata all'operatore, e importa `FleetModule` per servirla | §2.2, §2.5, §3.2; RASD R7, G8 | `FleetMonitor.getFleetStatus()` esiste dal M2 e la vista di deployment disegna l'arco `APIGateway → FleetMonitor`, ma nessuna rotta lo realizzava: fino a M7 nessun client guardava la flotta, e un endpoint senza lettori sarebbe stato una funzionalità non richiesta. Con la dashboard di M8 R7 diventa osservabile — «a live overview of the fleet» che nessuno può vedere non è una panoramica — e la §3.2 ne ha bisogno per due dei suoi quattro pannelli, la mappa e la status bar. Le **posizioni** passano di qui e non dal canale push, come la D61 ha già stabilito: cambiano a ogni tick e lo inonderebbero. Le transizioni di stato continuano ad arrivare push, quindi la mappa ridipinge subito un marker e ne aggiorna le coordinate al giro successivo. Il gateway inietta la porta per **leggere**: nessuna rotta comanda una transizione, che aggirerebbe le guardie della Figura 2.10 |
 
 | D68 | **Entrambi i client** conservano l'access token nel deposito locale del browser, con una chiave distinta per client | §3.1, §3.2; RASD R1; NFR3, NFR6 | Per il passeggero è parte di un requisito: NFR6 nella formulazione della §4.3 chiede che una corsa si richieda «from a cold start of the client in at most four interactions», e con la sessione in sola memoria ogni avvio a freddo ripartirebbe da indirizzo e password — le due interazioni del login mangerebbero metà del bilancio prima di mostrare la mappa. Per l'operatore la ragione è più modesta e va detta per non lasciar credere che sia la stessa: una console di monitoraggio che chiede le credenziali a ogni ricaricamento è una console che si tiene aperta e non si ricarica mai. Le due chiavi sono distinte perché i due client possono girare sulla stessa origine, e una chiave condivisa farebbe entrare l'operatore con il token del passeggero. Non incrina NFR3: lo stato di sessione che quel requisito vieta è quello **lato server**, e qui non ne nasce nessuno — c'è una copia del token nel browser di chi lo possiede, e ogni istanza dell'applicazione continua a verificarlo con la sola chiave di firma. Alla scadenza il backend risponde 401 e **entrambi** i client tornano al login, comandi e letture comprese: una dashboard che trattasse il 401 di una lettura come un errore di rete lascerebbe l'operatore davanti a una mappa vuota senza dirgli di rifare l'accesso |
+
+| D69 | `IRideRequestService` acquisisce una **quarta operazione**, `getAssignedVehicle(rideRequestID, passengerID)`, che restituisce **dove** si trova il veicolo della propria corsa e **non in che stato è** | §2.2, §2.2.1, §3.1; RASD R3, R6; NFR2 | La §3.1 mostra il veicolo che si avvicina, e il passeggero non aveva modo di saperne la posizione: `GET /fleet/status` è dell'operatore (D67) e sul canale push le posizioni non viaggiano (D61). Sta su questa porta e non su `IFleetMonitorService` perché la domanda non è «dov'è il veicolo X» ma «dov'è il veicolo della **mia** corsa»: contiene un controllo di appartenenza, che è cosa di chi possiede la richiesta — chiederlo al gateway significherebbe mettere una regola di dominio in un controller, e `rides` dipende già da `fleet`, non viceversa. **L'omissione dello stato è la parte che conta**: se questa rotta lo portasse, il client avrebbe una seconda via per scoprire una transizione, e la proprietà che NFR2 chiede — che un cambiamento di stato raggiunga un client connesso senza che lo chieda — smetterebbe di essere osservabile, perché nessun test potrebbe più distinguere il canale dall'interrogazione. La rotta risponde `vehicle: null` finché un veicolo non c'è: una prenotazione accettata e non ancora attivata è uno stato legittimo (D9), non un errore |
+
+| D70 | La dashboard espone il **profilo dell'operatore**, con le stesse operazioni con cui il passeggero aggiorna il proprio | §3.2; RASD R2, G1 | R2 attribuisce agli **utenti** — non ai soli passeggeri — la facoltà di aggiornare dati personali e credenziali, e senza questo pannello un operatore poteva cambiare la propria password solo chiamando `PATCH /auth/me` a mano. Non aggiunge un quinto pannello di comando e controllo: si apre dall'intestazione, prende il posto dei pannelli laterali finché resta aperto e lascia dove sono la mappa e la status bar, che sono la superficie di monitoraggio. La registrazione resta invece **assente da entrambi i client** per l'operatore, ed è un'altra cosa: il RASD §1.4 prevede l'iscrizione dei soli passeggeri, quindi gli account operatore continuano a nascere dall'amministrazione |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
 D38, D39, D40, D41, D47, D49, D54 e D64 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

@@ -1,5 +1,13 @@
 import { MILAN_ZONES, type GeoPoint } from '@road/shared';
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMapEvents } from 'react-leaflet';
+import {
+  CircleMarker,
+  MapContainer,
+  Polyline,
+  Popup,
+  TileLayer,
+  Tooltip,
+  useMapEvents,
+} from 'react-leaflet';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -24,19 +32,33 @@ const INITIAL_ZOOM = 13;
 export interface RideMapProps {
   readonly pickup: GeoPoint | null;
   readonly destination: GeoPoint | null;
+  /**
+   * Dove si trova il robotaxi assegnato, quando ce n'è uno e sta ancora venendo a prendermi.
+   *
+   * Arriva da `GET /rides/:id/vehicle`, riletta a intervalli: è la sola cosa che l'app interroga
+   * dopo la richiesta, perché una posizione cambia a ogni tick e sul canale push inonderebbe tutto
+   * (decisione D69). Lo **stato** del veicolo non arriva di lì e non deve: quello è ciò che le
+   * notifiche raccontano.
+   */
+  readonly robotaxi?: GeoPoint | null;
   /** Riceve il punto toccato. `null` quando la schermata non accetta più scelte (corsa in corso). */
   readonly onPick: ((point: GeoPoint) => void) | null;
 }
 
 /**
- * Sulla mappa del passeggero **non** compare il robotaxi in movimento, ed è una scelta, non una
- * dimenticanza: la posizione dei veicoli si legge da `GET /fleet/status`, che è riservata
- * all'operatore (R7), e non viaggia sul canale push perché cambia a ogni tick. Il passeggero segue
- * la corsa attraverso le notifiche — assegnato, in avvicinamento con i minuti stimati, arrivato —
- * che è esattamente ciò che R6 gli promette. Mostrargli il puntino richiederebbe una rotta nuova,
- * cioè una funzionalità che nessun requisito chiede.
+ * Il segmento fra il robotaxi e il punto di ritiro **non è il percorso** che il veicolo farà.
+ *
+ * È una linea retta, tratteggiata proprio per non sembrare una strada: dice «viene da lì» e nulla
+ * più. Il percorso vero lo conosce il fornitore di mappe e non esce dal backend, e disegnare una
+ * polilinea che sembrasse la rotta prometterebbe al passeggero una precisione che il dato non ha —
+ * lo stesso errore che la decisione D46 vieta per l'ETA, applicato alla mappa.
  */
-export function RideMap({ pickup, destination, onPick }: RideMapProps): React.JSX.Element {
+export function RideMap({
+  pickup,
+  destination,
+  robotaxi,
+  onPick,
+}: RideMapProps): React.JSX.Element {
   return (
     <MapContainer
       className="ride-map"
@@ -82,6 +104,27 @@ export function RideMap({ pickup, destination, onPick }: RideMapProps): React.JS
         >
           <Popup>Destinazione</Popup>
         </CircleMarker>
+      )}
+      {robotaxi !== null && robotaxi !== undefined && (
+        <>
+          {pickup !== null && (
+            <Polyline
+              positions={[
+                [robotaxi.lat, robotaxi.lon],
+                [pickup.lat, pickup.lon],
+              ]}
+              pathOptions={{ color: '#38bdf8', weight: 2, opacity: 0.6, dashArray: '6 8' }}
+            />
+          )}
+          <CircleMarker
+            center={[robotaxi.lat, robotaxi.lon]}
+            radius={9}
+            className="robotaxi-marker"
+            pathOptions={{ color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 3 }}
+          >
+            <Popup>Il tuo robotaxi</Popup>
+          </CircleMarker>
+        </>
       )}
     </MapContainer>
   );

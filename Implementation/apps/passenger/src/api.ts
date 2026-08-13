@@ -1,6 +1,7 @@
 import {
   API_ROUTES,
   apiRequest,
+  assignedVehicleResponseSchema,
   authResponseSchema,
   rideRequestResponseSchema,
   userProfileSchema,
@@ -8,9 +9,11 @@ import {
   type GeoPoint,
   type LoginRequest,
   type RegisterRequest,
+  type AssignedVehicleResponse,
   type RideRequestResponse,
   type UpdateProfileRequest,
   type UserProfile,
+  rideVehicleRoute,
 } from '@road/shared';
 
 import { apiBaseUrl } from './api-base-url';
@@ -105,5 +108,25 @@ export async function requestAdvanceBooking(
       scheduledPickup: draft.scheduledPickup,
     },
     schema: rideRequestResponseSchema,
+  });
+}
+
+/**
+ * `GET /rides/:id/vehicle` — dove si trova il robotaxi che sta venendo a prendermi (M8, D69).
+ *
+ * È l'unica cosa che l'app **interroga** dopo aver richiesto la corsa, e la sola che possa
+ * interrogare: la posizione cambia a ogni tick della flotta e sul canale push inonderebbe tutto
+ * (decisione D61), esattamente come per la dashboard (D67).
+ *
+ * Ciò che **non** arriva da qui è lo stato: la progressione della corsa continua ad arrivare push,
+ * ed è la ragione per cui la risposta non ha un campo di stato da cui il client potrebbe dedurla.
+ */
+export async function fetchAssignedVehicle(
+  token: string,
+  rideRequestId: string,
+): Promise<AssignedVehicleResponse> {
+  return apiRequest(apiBaseUrl, rideVehicleRoute(rideRequestId), {
+    token,
+    schema: assignedVehicleResponseSchema,
   });
 }

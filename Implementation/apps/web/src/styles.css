@@ -350,3 +350,15 @@ button:disabled {
     grid-template-columns: minmax(0, 2fr) minmax(22rem, 1fr);
   }
 }
+
+.profile-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.status-saved {
+  color: var(--ok);
+  font-weight: 600;
+  margin: 0;
+}

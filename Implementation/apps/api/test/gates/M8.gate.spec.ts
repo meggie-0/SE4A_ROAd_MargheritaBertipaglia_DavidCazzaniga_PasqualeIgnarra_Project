@@ -15,7 +15,9 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   API_ROUTES,
+  assignedVehicleResponseSchema,
   fleetStatusResponseSchema,
+  rideVehicleRoute,
   modeResponseSchema,
   ROBOTAXI_STATES,
   type UserRole,
@@ -115,6 +117,15 @@ async function signIn(account: {
     .send({ email: account.email, password: account.password })
     .expect(200);
   return (response.body as { accessToken: string }).accessToken;
+}
+
+/** Ogni nome di chiave dentro un oggetto, comunque annidato. */
+function keysIn(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(keysIn);
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, nested]) => [key, ...keysIn(nested)]);
+  }
+  return [];
 }
 
 /** Ogni file sorgente di un client, ricorsivamente. */
@@ -257,6 +268,8 @@ describe('[M8] Cancello: i due client', () => {
       [API_ROUTES.authLogin, 'post'],
       [API_ROUTES.ridesImmediate, 'post'],
       [API_ROUTES.ridesAdvance, 'post'],
+      [API_ROUTES.rideVehicle, 'get'],
+      [API_ROUTES.authProfile, 'patch'],
       [API_ROUTES.fleetStatus, 'get'],
       [API_ROUTES.mode, 'get'],
       [API_ROUTES.mode, 'put'],
@@ -264,8 +277,17 @@ describe('[M8] Cancello: i due client', () => {
       [API_ROUTES.allocationStrategy, 'put'],
     ];
 
+    /**
+     * Dal segnaposto di Nest a quello dell'OpenAPI: `:rideRequestId` diventa `{rideRequestId}`.
+     *
+     * `API_ROUTES` porta la forma che il decoratore di Nest si aspetta, il contratto pubblicato
+     * quella dello standard. Convertire qui, in un punto solo, evita di scrivere gli indirizzi due
+     * volte — che è precisamente ciò che questo blocco di test esiste per impedire.
+     */
+    const openApiPath = (route: string): string => route.replace(/:(\w+)/g, '{$1}');
+
     it.each(required)('dichiara %s (%s)', (path, method) => {
-      expect(openapi.paths[path]?.[method]).toBeDefined();
+      expect(openapi.paths[openApiPath(path)]?.[method]).toBeDefined();
     });
   });
 
@@ -318,6 +340,79 @@ describe('[M8] Cancello: i due client', () => {
         .expect(403);
 
       await request(api.getHttpServer()).get(API_ROUTES.fleetStatus).expect(401);
+    });
+  });
+
+  describe('[R3][R6] GET /rides/:id/vehicle: dove si trova il robotaxi della propria corsa', () => {
+    /**
+     * La rotta che l'app passeggero interroga per disegnare il veicolo che si avvicina
+     * (decisione D69).
+     *
+     * Il test che conta è il terzo: la risposta **non deve portare lo stato**. È una proprietà
+     * negativa, e le proprietà negative si perdono con la prima aggiunta fatta in buona fede — un
+     * campo `state` messo lì «perché era comodo» renderebbe NFR2 non più verificabile, perché
+     * nessun test potrebbe più distinguere una transizione arrivata push da una scoperta
+     * interrogando.
+     */
+    async function requestRide(): Promise<string> {
+      const response = await request(api.getHttpServer())
+        .post(API_ROUTES.ridesImmediate)
+        .set('Authorization', `Bearer ${passengerToken}`)
+        .send({ pickup: { lat: 45.4642, lon: 9.19 }, destination: { lat: 45.4781, lon: 9.227 } })
+        .expect(201);
+      return (response.body as { id: string }).id;
+    }
+
+    it('risponde con la posizione del veicolo assegnato', async () => {
+      const rideRequestId = await requestRide();
+
+      const response = await request(api.getHttpServer())
+        .get(rideVehicleRoute(rideRequestId))
+        .set('Authorization', `Bearer ${passengerToken}`)
+        .expect(200);
+
+      const parsed = assignedVehicleResponseSchema.safeParse(response.body);
+      expect(parsed.success).toBe(true);
+      // L'unico veicolo allocabile del fixture è `rt-01`: gli altri due sono in corsa e in
+      // manutenzione, quindi la scelta non è ambigua.
+      expect(parsed.success && parsed.data.vehicle?.robotaxiId).toBe('rt-01');
+      expect(parsed.success && parsed.data.vehicle?.position).toEqual({ lat: 45.4642, lon: 9.19 });
+    });
+
+    it('non porta lo stato del veicolo né quello della corsa', async () => {
+      const rideRequestId = await requestRide();
+
+      const response = await request(api.getHttpServer())
+        .get(rideVehicleRoute(rideRequestId))
+        .set('Authorization', `Bearer ${passengerToken}`)
+        .expect(200);
+
+      // Si guardano **tutte** le chiavi, comunque annidate: un campo di stato aggiunto in fondo a
+      // un oggetto interno sfuggirebbe a un controllo sul solo livello esterno.
+      const keys = keysIn(response.body).map((key) => key.toLowerCase());
+      expect(keys).not.toContain('state');
+      expect(keys).not.toContain('status');
+      expect(keys).not.toContain('ridestatus');
+      expect(keys).not.toContain('robotaxistate');
+    });
+
+    it('la corsa di un altro passeggero non esiste', async () => {
+      const rideRequestId = await requestRide();
+
+      await harness.auth.register({ ...PASSEGGERA, email: 'altra.passeggera@example.com' });
+      const altro = await signIn({ ...PASSEGGERA, email: 'altra.passeggera@example.com' });
+
+      // 404 e non 403: distinguere «non è tua» da «non esiste» permetterebbe di scoprire quali
+      // corse esistono provando identificatori. È la stessa scelta di `cancel()`.
+      await request(api.getHttpServer())
+        .get(rideVehicleRoute(rideRequestId))
+        .set('Authorization', `Bearer ${altro}`)
+        .expect(404);
+
+      await request(api.getHttpServer())
+        .get(rideVehicleRoute(rideRequestId))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(403);
     });
   });
 
