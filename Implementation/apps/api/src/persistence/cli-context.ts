@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { AuthModule } from '../auth/auth.module';
+import { PlatformModule } from '../platform/platform.module';
 
 import { PersistenceModule } from './persistence.module';
 
@@ -21,6 +22,8 @@ import { PersistenceModule } from './persistence.module';
  * privata, il dato seminato potrebbe non essere quello che il resto del sistema sa leggere — qui
  * significherebbe un hash che al login non corrisponde. Questo file è un punto di composizione,
  * non logica di `persistence`, quindi l'arco non è una dipendenza fra i due moduli.
+ *
+ * Da M9 serve anche a `pnpm db:demo`, che è il terzo comando che vive qui dentro.
  */
 @Module({
   imports: [
@@ -29,6 +32,11 @@ import { PersistenceModule } from './persistence.module';
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     PersistenceModule,
     AuthModule,
+    // `PlatformModule` serve a `pnpm db:demo`, che deve sapere che ora è per collocare l'evento
+    // adesso — e l'ora si chiede a `ClockPort`, mai a `new Date()` (CLAUDE.md Regola 3).
+    // `PersistenceModule` lo importa già, ma non lo riesporta: esporta solo la propria porta, ed è
+    // giusto così — un modulo non deve diventare la via d'accesso alle dipendenze di un altro.
+    PlatformModule,
   ],
 })
 class PersistenceCliModule {}

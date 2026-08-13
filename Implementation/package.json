@@ -24,7 +24,8 @@
     "verify:e2e": "node tools/e2e/run.mjs",
     "dev": "node tools/dev/dev.mjs",
     "db:migrate": "node tools/db/migrate.mjs",
-    "db:seed": "node tools/db/seed.mjs"
+    "db:seed": "node tools/db/seed.mjs",
+    "db:demo": "node tools/db/demo.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
