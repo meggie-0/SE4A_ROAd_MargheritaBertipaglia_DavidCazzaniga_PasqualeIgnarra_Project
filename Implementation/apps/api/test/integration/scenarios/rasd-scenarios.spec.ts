@@ -23,7 +23,11 @@ import {
 import { ClockPort } from '../../../src/platform/clock.port';
 import { RebalancingPort } from '../../../src/rebalancing/rebalancing.port';
 import { AdvanceBookingActivatorPort } from '../../../src/rides/advance-booking.port';
-import { FleetTelemetryPort, type TelemetryStep } from '../../../src/rides/fleet-telemetry.port';
+import {
+  BOARDING_SECONDS,
+  FleetTelemetryPort,
+  type TelemetryStep,
+} from '../../../src/rides/fleet-telemetry.port';
 import { recordOperator, recordPassenger } from '../../support/notifications';
 import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
@@ -298,7 +302,16 @@ describe('[R3][R5][R6][R7][G2][G4][G6][G7] Scenario 1 — Corsa immediata e cicl
     await driveUntil(richiesta.id, 'PICKUP_REACHED');
     expect(await stateOf('RT-VICINO')).toBe('ARRIVED');
 
-    // «Alice boards the robotaxi, changing its state to in-ride.»
+    /*
+     * «Alice boards the robotaxi, changing its state to in-ride.»
+     *
+     * Il RASD dice «Alice boards», e il sistema non ha modo di saperlo: la guardia
+     * `isPassengerOnBoard()` è l'unica della Figura 2.10 che nessun sensore risolve, e la decisione
+     * D63 la scioglie aspettando una sosta al punto di ritiro. La salita di Alice è quindi
+     * **tempo che passa**, ed è così che il test la mette in scena — portando avanti l'orologio,
+     * non contando giri.
+     */
+    harness.clock.advance(BOARDING_SECONDS * 1000);
     await driveUntil(richiesta.id, 'RIDE_STARTED');
     expect(await stateOf('RT-VICINO')).toBe('IN_RIDE');
 
@@ -357,6 +370,7 @@ describe('[R3][R5][R6][R7][G2][G4][G6][G7] Scenario 1 — Corsa immediata e cicl
     await driveUntil(richiesta.id, 'PICKUP_REACHED');
     expect(await dovEIlVeicolo()).not.toBeNull();
 
+    harness.clock.advance(BOARDING_SECONDS * 1000); // il passeggero sale (decisione D63)
     await driveUntil(richiesta.id, 'RIDE_STARTED');
     expect(await stateOf('RT-01')).toBe('IN_RIDE');
 

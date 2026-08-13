@@ -8,7 +8,7 @@ import type { FleetSimulationPort } from '../../src/external/fleet-simulation.po
 import type { FleetMonitorPort } from '../../src/fleet/fleet-monitor.port';
 import type { PersistencePort } from '../../src/persistence/persistence.port';
 import type { RebalancingPort } from '../../src/rebalancing/rebalancing.port';
-import type { FleetTelemetryPort } from '../../src/rides/fleet-telemetry.port';
+import { BOARDING_SECONDS, type FleetTelemetryPort } from '../../src/rides/fleet-telemetry.port';
 import type { RideRequestPort } from '../../src/rides/rides.port';
 import { recordPassenger } from '../support/notifications';
 import { startApiHarness, type ApiHarness } from '../support/postgres';
@@ -266,7 +266,10 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       ]);
       expect(await stateOf('RT-01')).toBe('ARRIVED');
 
-      // Il passeggero sale e si parte (transizione 6), con la rotta verso la destinazione.
+      // Il passeggero sale e si parte (transizione 6), con la rotta verso la destinazione. La
+      // salita è una sosta al punto di ritiro, non un giro di telemetria (decisione D63): la si fa
+      // scadere portando avanti l'orologio finto, di quanto la porta dichiara.
+      harness.clock.advance(BOARDING_SECONDS * 1000);
       const third = await telemetry.runOnce();
       expect(third.advanced).toEqual([
         { rideRequestId, robotaxiId: 'RT-01', step: 'RIDE_STARTED' },

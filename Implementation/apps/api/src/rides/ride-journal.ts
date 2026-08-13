@@ -54,6 +54,7 @@ export class RideJournal {
       pickupLon: request.pickupLon,
       destinationLat: request.destinationLat,
       destinationLon: request.destinationLon,
+      pickupReachedAt: null,
       startedAt: null,
       endedAt: null,
       createdAt: at,
@@ -80,9 +81,9 @@ export class RideJournal {
   /**
    * Porta la corsa a un nuovo stato e lo notifica.
    *
-   * `startedAt` ed `endedAt` seguono lo stato invece di essere argomenti: sono le due marche
-   * temporali che il RASD §2.2.3 dà a `Ride`, e il momento in cui valorizzarle è definito dallo
-   * stato in cui si entra. Lasciarle decidere al chiamante avrebbe reso possibile una corsa
+   * `pickupReachedAt`, `startedAt` ed `endedAt` seguono lo stato invece di essere argomenti: sono
+   * le marche temporali della corsa, e il momento in cui valorizzarle è definito dallo stato in cui
+   * si entra. Lasciarle decidere al chiamante avrebbe reso possibile una corsa
    * `COMPLETED` senza fine e una `IN_PROGRESS` senza inizio, e il database **non** le fermerebbe:
    * `ride_period_is_ordered` impone solo che le due marche, quando ci sono entrambe, siano in
    * ordine — di più non può pretendere, o vieterebbe l'annullamento di una corsa mai partita. Qui
@@ -102,6 +103,8 @@ export class RideJournal {
 
     const updated = await this.persistence.update('ride', current.id, {
       status: ride.currentStatus,
+      // L'arrivo al ritiro: è da qui che si conta la sosta prima della salita (decisione D63).
+      ...(status === 'WAITING_FOR_PICKUP' ? { pickupReachedAt: at } : {}),
       ...(status === 'IN_PROGRESS' ? { startedAt: at } : {}),
       ...(status === 'COMPLETED' || status === 'CANCELLED' ? { endedAt: at } : {}),
     });

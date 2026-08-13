@@ -8,6 +8,7 @@ import { PersistencePort, type RideRequestRecord } from '../persistence/persiste
 import { ClockPort } from '../platform/clock.port';
 
 import {
+  BOARDING_SECONDS,
   FleetTelemetryPort,
   type TelemetryCycle,
   type TelemetryProgress,
@@ -89,6 +90,7 @@ export class FleetTelemetry extends FleetTelemetryPort {
         vehicle.state,
         { lat: vehicle.lat, lon: vehicle.lon },
         readings.get(robotaxiId),
+        observedAt,
       );
       if (step !== null) advanced.push({ rideRequestId: request.id, robotaxiId, step });
     }
@@ -119,9 +121,11 @@ export class FleetTelemetry extends FleetTelemetryPort {
    *   questo ramo la corsa resterebbe ferma per sempre.
    * - `ARRIVED` — il passeggero sale e si parte. La guardia `isPassengerOnBoard()` della Figura 2.10
    *   è l'unica che **nessun sensore risolve**: né il simulatore né una flotta vera sanno dire se
-   *   qualcuno è salito. Il prototipo assume che il passeggero salga al giro successivo all'arrivo,
-   *   ed è un'assunzione dichiarata (decisione D63) — in un sistema reale la risolverebbe un'azione
-   *   del passeggero sull'app, che nessun requisito di ROAd prevede.
+   *   qualcuno è salito. Il prototipo assume che il passeggero salga dopo `BOARDING_SECONDS` dal
+   *   momento in cui il veicolo è arrivato al ritiro, ed è un'assunzione dichiarata (decisione D63)
+   *   — in un sistema reale la risolverebbe un'azione del passeggero sull'app, che nessun requisito
+   *   di ROAd prevede. Finché la sosta non è scaduta il ramo non fa nulla, che è il caso normale dei
+   *   giri fra l'arrivo e la partenza e non un passo mancato.
    * - `IN_RIDE` — a destinazione raggiunta la corsa si chiude e la rotta si revoca, così il veicolo
    *   torna disponibile senza portarsi dietro un percorso concluso.
    */
@@ -142,12 +146,39 @@ export class FleetTelemetry extends FleetTelemetryPort {
     return estimate?.etaMinutes ?? null;
   }
 
+  /**
+   * Vero quando la sosta al punto di ritiro è scaduta, cioè quando si assume che il passeggero sia
+   * salito (decisione D63).
+   *
+   * **L'assunzione è espressa in secondi e non in cicli.** Fino a M8 la partenza avveniva «al giro
+   * successivo all'arrivo», e finché un giro durava dieci secondi le due formulazioni si
+   * assomigliavano abbastanza da non distinguersi. Con la telemetria a mezzo secondo si
+   * distinguono: legata al ciclo, la sosta durerebbe mezzo secondo, e il passeggero non farebbe in
+   * tempo a leggere che il suo robotaxi è arrivato. Legata al tempo, dura quanto una salita — e
+   * quanti giri di telemetria ci stiano dentro smette di essere una cosa che qualcuno debba sapere.
+   *
+   * `null` come istante di arrivo significa «non risulta arrivato»: è il caso di una corsa aperta
+   * prima della migrazione che ha introdotto la colonna, e di una che il giornale non ha ancora
+   * scritto. Si aspetta invece di partire — la sosta scadrà quando ci sarà un arrivo da cui
+   * contarla, e il giro successivo ci riproverà.
+   */
+  private async boardingTimeHasElapsed(rideRequestId: string, observedAt: Date): Promise<boolean> {
+    const [ride] = await this.persistence.find('ride', { where: { rideRequestId }, limit: 1 });
+
+    const reachedAt = ride?.pickupReachedAt ?? null;
+    if (reachedAt === null) return false;
+
+    const waitedMs = observedAt.getTime() - reachedAt.getTime();
+    return waitedMs >= BOARDING_SECONDS * 1000;
+  }
+
   private async advance(
     request: RideRequestRecord,
     robotaxiId: string,
     state: RobotaxiState,
     position: GeoPoint,
     reading: VehicleTelemetry | undefined,
+    observedAt: Date,
   ): Promise<TelemetryStep | null> {
     const pickup = { lat: request.pickupLat, lon: request.pickupLon };
     const destination = { lat: request.destinationLat, lon: request.destinationLon };
@@ -189,6 +220,10 @@ export class FleetTelemetry extends FleetTelemetryPort {
       }
 
       if (state === 'ARRIVED') {
+        // La sosta al ritiro non è ancora scaduta: il passeggero sta salendo. Non è un errore e non
+        // è un passo — è il caso normale dei giri fra l'arrivo e la partenza.
+        if (!(await this.boardingTimeHasElapsed(request.id, observedAt))) return null;
+
         await this.lifecycle.startRide(request.id);
         await this.external.commandRoute(robotaxiId, { from, to: destination });
         return 'RIDE_STARTED';

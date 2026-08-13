@@ -20,6 +20,36 @@
  * l'avanzamento di una corsa dipenderebbe da quanto ha impiegato il test precedente.
  */
 
+/**
+ * Quanto il sistema aspetta, al punto di ritiro, prima di assumere che il passeggero sia salito.
+ *
+ * **Dieci secondi**, ed è un'assunzione dichiarata del prototipo come la velocità media della stima
+ * lineare: la guardia `isPassengerOnBoard()` della Figura 2.10 è l'unica che nessun sensore risolve
+ * — né un simulatore né una flotta vera sanno dire se qualcuno è salito — e in un sistema reale la
+ * scioglierebbe un'azione del passeggero sull'app, che nessun requisito di ROAd prevede
+ * (decisione D63).
+ *
+ * **È un tempo e non un numero di cicli**, ed è la sola cosa cambiata rispetto a M8. Finché un giro
+ * di telemetria durava dieci secondi, «al giro successivo all'arrivo» e «dopo dieci secondi»
+ * significavano la stessa cosa; con il giro sceso a mezzo secondo la prima formulazione faceva
+ * durare lo stato `arrived` mezzo secondo, cioè il passeggero non faceva in tempo a leggere che il
+ * suo robotaxi era arrivato. Legata al tempo, la sosta dura quanto una salita, e quanti giri ci
+ * stiano dentro smette di essere una cosa che qualcuno debba sapere.
+ *
+ * Sono secondi di **tempo reale**, presi da `ClockPort`, e non di mondo simulato: chi aspetta è una
+ * persona davanti a uno schermo, non un veicolo su una strada.
+ *
+ * Sta sulla porta perché è **osservabile da fuori**: chi guida `runOnce()` — i test, gli scenari di
+ * sistema — deve poter far scadere la sosta invece di indovinarla, e lo fa portando avanti
+ * l'orologio finto di questa quantità. Una costante nascosta nell'implementazione avrebbe costretto
+ * a riscriverne il valore in ogni test, che è il modo in cui due verità cominciano a divergere.
+ *
+ * È una costante e non una variabile d'ambiente, per la stessa ragione di
+ * `DEFAULT_RESERVATION_TIMING`: nessun componente la configura, e una variabile in `.env.example`
+ * che nessuno legge è una promessa falsa.
+ */
+export const BOARDING_SECONDS = 10;
+
 /** Il passo che un giro di telemetria ha fatto compiere a una corsa. */
 export type TelemetryStep =
   'PICKUP_NAVIGATION_STARTED' | 'PICKUP_REACHED' | 'RIDE_STARTED' | 'RIDE_COMPLETED';
