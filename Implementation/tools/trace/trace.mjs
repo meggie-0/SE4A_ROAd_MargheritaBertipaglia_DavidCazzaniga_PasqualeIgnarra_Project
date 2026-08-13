@@ -49,9 +49,54 @@ function collectSpecFiles(root, found = []) {
   return found;
 }
 
-/** Toglie commenti di riga e di blocco, così i tag citati in un commento non contano come test. */
+/**
+ * Toglie commenti di riga e di blocco, così i tag citati in un commento non contano come test.
+ *
+ * **Salta le stringhe**, e non è pignoleria: la versione a due espressioni regolari trattava una
+ * barra seguita da un asterisco *dentro una stringa* come l'apertura di un commento, e cancellava
+ * tutto fino alla prima chiusura di commento successiva — cioè fino alla fine del blocco di
+ * documentazione che veniva dopo, `describe` compreso. Il caso reale che l'ha fatta emergere è il
+ * glob di Playwright con cui `e2e/passenger-ride.e2e.spec.ts` conta le richieste all'API: il
+ * `describe` che seguiva spariva dalla scansione e NFR6 risultava scoperto pur avendo il suo test.
+ *
+ * (Nessuna delle due sequenze compare scritta per esteso in questo commento, per la stessa
+ * ragione: la citazione riprodurrebbe il difetto invece di descriverlo.)
+ *
+ * È esattamente il difetto contro cui mette in guardia HARNESS.md §5 — «un tracciatore che conta
+ * male è peggio di nessun tracciatore, perché dichiara scoperto un requisito che ha i test e porta
+ * a inseguire un difetto che non esiste».
+ */
 function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  let out = '';
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+
+    // Una stringa si copia per intero: quello che c'è dentro non è codice, e non è un commento.
+    if (`'"\``.includes(char)) {
+      const end = endOfLiteral(source, i);
+      out += source.slice(i, end + 1);
+      i = end;
+      continue;
+    }
+
+    if (char === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 1;
+      continue;
+    }
+
+    if (char === '/' && source[i + 1] === '/') {
+      const end = source.indexOf('\n', i);
+      // La riga a capo si conserva: le espressioni regolari a valle ragionano per riga.
+      i = end === -1 ? source.length : end - 1;
+      continue;
+    }
+
+    out += char;
+  }
+
+  return out;
 }
 
 /** Estrae i tag `[R5]`, `[NFR7]`, `[G2]` da un titolo di describe. */
