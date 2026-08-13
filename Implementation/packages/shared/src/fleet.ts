@@ -24,6 +24,25 @@ import { geoPointSchema } from './rides.js';
  */
 
 /**
+ * Ogni quanto la posizione dei veicoli si rinnova, in millisecondi.
+ *
+ * **È una sola cadenza, e per questo sta qui.** Tre cose devono batterla insieme, o il movimento che
+ * si vede a schermo non è quello che il sistema conosce: il mondo simulato che avanza
+ * (`SimulatorSchedule`), la telemetria che lo legge e scrive le posizioni (`FleetTelemetrySchedule`)
+ * e i due client che le rileggono. Tenere il numero in tre file lo avrebbe fatto divergere al primo
+ * che qualcuno tocca — con l'esito peggiore, che non è un errore ma un veicolo che scatta.
+ *
+ * Mezzo secondo: sotto la soglia oltre la quale l'occhio smette di leggere una serie di posizioni
+ * come un movimento e comincia a vedere dei salti. È anche il motivo per cui **non** passa dal
+ * canale push: dieci posizioni al secondo per venti veicoli sono un flusso, e il canale esiste per
+ * gli eventi della corsa (R6). Chi vuole la posizione la chiede; chi vuole lo stato lo riceve.
+ *
+ * Non è la velocità del mondo simulato, che resta quella di prima: un passo più corto, ripetuto più
+ * spesso, copre la stessa strada nello stesso tempo reale (vedi `DEFAULT_SIMULATOR_SETTINGS`).
+ */
+export const FLEET_POSITION_REFRESH_MS = 500;
+
+/**
  * Un veicolo come lo vede la dashboard.
  *
  * È la proiezione pubblica di `RobotaxiSnapshot`, e come quella **non** porta metodi di

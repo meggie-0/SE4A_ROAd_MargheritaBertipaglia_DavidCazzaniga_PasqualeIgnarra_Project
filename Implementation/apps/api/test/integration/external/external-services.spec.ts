@@ -88,7 +88,7 @@ async function composeExternal(baseUrl: string): Promise<ExternalHarness> {
   process.env.OSRM_TIMEOUT_MS = '2000';
   process.env.OSRM_CACHE_TTL_SECONDS = '60';
   process.env.SIMULATOR_SPEED_KMH = '20';
-  process.env.SIMULATOR_TICK_MINUTES = '3';
+  process.env.SIMULATOR_TICK_SECONDS = '180';
 
   const moduleRef: TestingModule = await Test.createTestingModule({ imports: [ExternalModule] })
     .overrideProvider(ClockPort)

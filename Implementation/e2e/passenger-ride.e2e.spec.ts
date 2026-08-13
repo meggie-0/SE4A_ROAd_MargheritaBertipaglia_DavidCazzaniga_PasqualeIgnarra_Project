@@ -93,9 +93,18 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
     await expect(phase).toBeVisible();
     await expect(page.getByTestId('request-ride')).toHaveCount(0);
 
-    // Un veicolo è stato assegnato: è l'esito di R5, visto dal passeggero.
-    await expect(phase).toHaveAttribute('data-phase', 'assigned');
+    // Un veicolo è stato assegnato: è l'esito di R5, visto dal passeggero. Si guarda **quale**
+    // veicolo e non in che fase sia — l'identificatore resta lì per tutta la corsa, la fase no.
     await expect(page.getByTestId('ride-robotaxi')).not.toHaveText('—');
+
+    /*
+     * Il robotaxi compare sulla mappa già da adesso (DD §3.1 [v1.6], decisione D69).
+     *
+     * È l'unica cosa che la schermata interroga, ed è il motivo per cui `/rides/:id/vehicle` è
+     * escluso dal conteggio qui sotto: porta *dove* si trova il veicolo e non *in che stato* è,
+     * quindi la progressione che il test sta seguendo continua ad arrivare solo dal canale push.
+     */
+    await expect(page.locator('.ride-map path.robotaxi-marker')).toBeVisible({ timeout: 30_000 });
 
     /*
      * Da qui in poi **nessuna richiesta parte dal client**: la progressione arriva sul canale push.
@@ -126,18 +135,58 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
       await route.continue();
     });
 
-    await expect(phase).toHaveAttribute('data-phase', 'arriving', { timeout: 90_000 });
+    /*
+     * **La progressione si osserva, non si fotografa.**
+     *
+     * La prima versione asseriva una fase per volta con `toHaveAttribute`, e funzionava per un
+     * motivo che non era una proprietà del sistema: la telemetria girava ogni dieci secondi, quindi
+     * ogni fase restava a schermo abbastanza a lungo perché un'asserzione la cogliesse. Da quando
+     * le posizioni si rinnovano due volte al secondo, `arrived` dura **un ciclo** — mezzo secondo —
+     * e un'asserzione puntuale fallisce non perché la fase non ci sia stata, ma perché è già
+     * passata. Un test che dipende da quanto è lento il sistema sotto misura è instabile per
+     * costruzione, e HARNESS.md §2 dice che un test instabile è peggio di nessun test.
+     *
+     * Qui si campiona l'attributo mentre cambia e si tiene l'elenco delle fasi **distinte** nella
+     * loro sequenza. È anche la traduzione più fedele del criterio di M8 — «vede lo stato
+     * aggiornarsi fino a `in_ride`» —, che parla di una progressione e non di un fotogramma.
+     */
+    const osservate: string[] = [];
+    await expect
+      .poll(
+        async () => {
+          const corrente = await phase.getAttribute('data-phase');
+          if (corrente !== null && osservate.at(-1) !== corrente) osservate.push(corrente);
+          return corrente;
+        },
+        { timeout: 90_000, intervals: [50] },
+      )
+      .toBe('in_ride');
+
+    // La stessa cosa detta una seconda volta, con l'asserzione diretta: la fase adesso è quella, e
+    // non lo è per un istante fortunato.
+    await expect(phase).toHaveAttribute('data-phase', 'in_ride');
 
     /*
-     * Il robotaxi compare sulla mappa mentre si avvicina (DD §3.1 [v1.6], decisione D69).
+     * Le fasi viste sono **in ordine** e non ne inventano nessuna.
      *
-     * È l'unica cosa che la schermata interroga, ed è il motivo per cui `/rides/:id/vehicle` è
-     * escluso dal conteggio qui sopra: porta *dove* si trova il veicolo e non *in che stato* è,
-     * quindi la progressione che il test sta seguendo continua ad arrivare solo dal canale push.
+     * `filter`+`indexOf` verifica che l'elenco osservato sia una sottosequenza della progressione
+     * legale: quali fotogrammi il campionamento abbia colto dipende da quanto durano, ma il loro
+     * ordine no — quello è ciò che la Figura 2.10 prescrive, ed è la sola cosa che il test deve
+     * pretendere. Se la corsa passasse da `assigned` a `in_ride` saltando l'avvicinamento, o
+     * tornasse indietro, questa asserzione fallirebbe.
      */
-    await expect(page.locator('.ride-map path.robotaxi-marker')).toBeVisible({ timeout: 30_000 });
-    await expect(phase).toHaveAttribute('data-phase', 'arrived', { timeout: 90_000 });
-    await expect(phase).toHaveAttribute('data-phase', 'in_ride', { timeout: 90_000 });
+    const PROGRESSIONE = ['searching', 'assigned', 'arriving', 'arrived', 'in_ride'];
+    const posizioni = osservate.map((fase) => PROGRESSIONE.indexOf(fase));
+    expect(posizioni).not.toContain(-1);
+    expect([...posizioni].sort((a, b) => a - b)).toEqual(posizioni);
+
+    // E almeno una fase intermedia è stata vista: senza, «vede lo stato aggiornarsi» sarebbe
+    // soddisfatto da una schermata che salta direttamente all'esito.
+    expect(osservate).toContain('arriving');
+
+    // Il puntino **resta** a passeggero a bordo: la mappa non si svuota nell'istante in cui la
+    // corsa comincia, che è ciò che farebbe sembrare l'app scollegata proprio mentre si viaggia.
+    await expect(page.locator('.ride-map path.robotaxi-marker')).toBeVisible();
 
     // L'elenco e non il contatore: se fallisse, il messaggio dice *quale* rotta è stata
     // interrogata, che è l'informazione con cui si corregge il difetto.

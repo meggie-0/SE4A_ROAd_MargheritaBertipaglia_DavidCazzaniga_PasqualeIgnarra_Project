@@ -196,7 +196,7 @@ beforeAll(async () => {
   process.env.OSRM_TIMEOUT_MS = '2000';
   process.env.OSRM_CACHE_TTL_SECONDS = '60';
   process.env.SIMULATOR_SPEED_KMH = '20';
-  process.env.SIMULATOR_TICK_MINUTES = '3';
+  process.env.SIMULATOR_TICK_SECONDS = '180';
 
   harness = await startApiHarness(NOW.toISOString());
   persistence = harness.persistence;
@@ -216,7 +216,7 @@ afterAll(async () => {
   // `OSRM_BASE_URL` puntata a un server ormai chiuso accoppierebbe questo file ai successivi.
   delete process.env.OSRM_BASE_URL;
   delete process.env.SIMULATOR_SPEED_KMH;
-  delete process.env.SIMULATOR_TICK_MINUTES;
+  delete process.env.SIMULATOR_TICK_SECONDS;
 }, HOOK_TIMEOUT_MS);
 
 beforeEach(async () => {

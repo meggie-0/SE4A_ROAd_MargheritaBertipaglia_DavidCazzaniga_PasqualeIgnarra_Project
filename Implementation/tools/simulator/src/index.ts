@@ -12,6 +12,7 @@
  */
 export {
   DEFAULT_SIMULATOR_SETTINGS,
+  SIMULATED_TIME_SCALE,
   FleetSimulator,
   ticksToCover,
   type FleetSimulatorSettings,

@@ -1,5 +1,6 @@
 import {
   ApiError,
+  FLEET_POSITION_REFRESH_MS,
   fetchHealth,
   type AuthResponse,
   type ModeResponse,
@@ -38,12 +39,14 @@ import { useNotifications } from './use-notifications';
 /**
  * Ogni quanto rileggere la fotografia della flotta.
  *
- * Cinque secondi: il simulatore avanza ogni dieci e la telemetria si legge ogni dieci
- * (`FleetTelemetrySchedule`), quindi con questo passo nessun movimento resta invisibile più di un
- * ciclo. L'intervallo lo tiene `@tanstack/react-query`: un `setInterval` scritto qui violerebbe la
- * Regola 3, che vieta i timer nel codice sorgente delle applicazioni.
+ * La cadenza è quella con cui il backend le posizioni le **produce** — mezzo secondo — e arriva da
+ * `@road/shared` invece di essere scelta qui: il simulatore avanza e la telemetria scrive a quel
+ * passo (`FleetTelemetrySchedule`), quindi rileggere più di rado mostrerebbe una flotta che scatta
+ * da un punto all'altro, e più spesso ripeterebbe la stessa risposta. L'intervallo lo tiene
+ * `@tanstack/react-query`: un `setInterval` scritto qui violerebbe la Regola 3, che vieta i timer
+ * nel codice sorgente delle applicazioni.
  */
-const FLEET_REFRESH_MS = 5_000;
+const FLEET_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },

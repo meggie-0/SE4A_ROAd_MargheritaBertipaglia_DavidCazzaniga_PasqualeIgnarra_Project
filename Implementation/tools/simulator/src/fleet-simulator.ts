@@ -1,4 +1,4 @@
-import { haversineKm, type GeoPoint } from '@road/shared';
+import { FLEET_POSITION_REFRESH_MS, haversineKm, type GeoPoint } from '@road/shared';
 
 /**
  * Il **simulatore di flotta** di M7: i veicoli che ROAd comanda, quando i veicoli veri non ci sono.
@@ -26,13 +26,36 @@ export interface FleetSimulatorSettings {
    * tick servono per arrivare, non chi arriva prima.
    */
   readonly speedKmH: number;
-  /** Quanti minuti di mondo simulato vale un `tick()`. */
-  readonly tickMinutes: number;
+  /**
+   * Quanti **secondi** di mondo simulato vale un `tick()`.
+   *
+   * L'unità è il secondo e non il minuto perché il passo è sceso sotto il minuto: con i tick a mezzo
+   * secondo di distanza (`FLEET_POSITION_REFRESH_MS`), il valore in minuti sarebbe una frazione, e
+   * una configurazione che chiede `0.05` è una configurazione che nessuno rilegge senza sbagliarla.
+   */
+  readonly tickSeconds: number;
 }
 
+/**
+ * Quante volte il mondo simulato scorre più in fretta di quello vero.
+ *
+ * Sei: è la scelta che rende guardabile una dimostrazione — un veicolo attraversa Milano in un paio
+ * di minuti invece che in mezz'ora — senza rendere il sistema irrealistico, perché ciò che cambia è
+ * la velocità del mondo, non il rapporto fra le sue parti. Un veicolo più vicino resta più vicino.
+ */
+export const SIMULATED_TIME_SCALE = 6;
+
+/**
+ * I parametri di default: mezzo secondo di tempo reale a tick, tre secondi di mondo simulato.
+ *
+ * Il passo si **deriva** dalla cadenza con cui il resto del sistema guarda la flotta invece di
+ * essere un numero a sé: sono la stessa scelta vista da due lati, e scriverli separati vorrebbe dire
+ * che un giorno il mondo avanzerebbe più in fretta di quanto lo si osserva — cioè che fra due
+ * letture il veicolo sarebbe saltato — senza che nulla lo segnali.
+ */
 export const DEFAULT_SIMULATOR_SETTINGS: FleetSimulatorSettings = {
   speedKmH: 20,
-  tickMinutes: 1,
+  tickSeconds: (FLEET_POSITION_REFRESH_MS / 1000) * SIMULATED_TIME_SCALE,
 };
 
 /**
@@ -127,7 +150,7 @@ export class FleetSimulator {
   }
 
   /**
-   * Un passo del mondo simulato: ogni veicolo con una rotta avanza di `speedKmH × tickMinutes`.
+   * Un passo del mondo simulato: ogni veicolo con una rotta avanza di `speedKmH × tickSeconds`.
    *
    * Il budget di percorrenza si consuma segmento per segmento, quindi un tick lungo può
    * attraversare più punti della polyline e un tick corto fermarsi a metà di un segmento. Chi
@@ -135,7 +158,7 @@ export class FleetSimulator {
    * rotta successiva, che comincerà dal tick dopo.
    */
   tick(): void {
-    const stepKm = (this.settings.speedKmH * this.settings.tickMinutes) / 60;
+    const stepKm = (this.settings.speedKmH * this.settings.tickSeconds) / 3600;
 
     for (const vehicle of this.vehicles.values()) {
       if (vehicle.remaining.length === 0) continue;
@@ -210,7 +233,7 @@ export class FleetSimulator {
  * ricalcolasse a modo suo verificherebbe la propria aritmetica invece di quella del simulatore.
  */
 export function ticksToCover(routeKm: number, settings: FleetSimulatorSettings): number {
-  const stepKm = (settings.speedKmH * settings.tickMinutes) / 60;
+  const stepKm = (settings.speedKmH * settings.tickSeconds) / 3600;
   return Math.ceil(routeKm / stepKm);
 }
 

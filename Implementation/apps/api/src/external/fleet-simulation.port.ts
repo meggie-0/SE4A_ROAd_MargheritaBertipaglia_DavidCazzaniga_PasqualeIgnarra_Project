@@ -26,7 +26,7 @@ export abstract class FleetSimulationPort {
   /**
    * Avanza il mondo simulato di `times` passi.
    *
-   * Un passo vale `SIMULATOR_TICK_MINUTES` minuti di mondo, percorsi alla velocità di crociera
+   * Un passo vale `SIMULATOR_TICK_SECONDS` secondi di mondo, percorsi alla velocità di crociera
    * configurata: quanti ne servano per arrivare da qualche parte è quindi una divisione, ed è ciò
    * che permette al cancello di M7 di pretendere «un numero **deterministico** di tick» invece di
    * aspettare che qualcosa accada.

@@ -1,7 +1,8 @@
-import { haversineKm, type GeoPoint } from '@road/shared';
+import { FLEET_POSITION_REFRESH_MS, haversineKm, type GeoPoint } from '@road/shared';
 
 import {
   DEFAULT_SIMULATOR_SETTINGS,
+  SIMULATED_TIME_SCALE,
   FleetSimulator,
   ticksToCover,
   type FleetSimulatorSettings,
@@ -24,8 +25,8 @@ const DUOMO: GeoPoint = { lat: 45.4642, lon: 9.19 };
 const CADORNA: GeoPoint = { lat: 45.468, lon: 9.175 };
 const GARIBALDI: GeoPoint = { lat: 45.4847, lon: 9.1874 };
 
-/** Un passo tondo: 20 km/h per 3 minuti fa esattamente un chilometro a tick. */
-const ONE_KM_PER_TICK: FleetSimulatorSettings = { speedKmH: 20, tickMinutes: 3 };
+/** Un passo tondo: 20 km/h per 180 secondi fa esattamente un chilometro a tick. */
+const ONE_KM_PER_TICK: FleetSimulatorSettings = { speedKmH: 20, tickSeconds: 180 };
 
 describe('[NFR8] Il simulatore di flotta avanza solo su tick espliciti', () => {
   it('un veicolo di cui non si sa nulla non compare nella telemetria', () => {
@@ -153,7 +154,7 @@ describe('[NFR8] Il simulatore di flotta avanza solo su tick espliciti', () => {
     ]);
   });
 
-  it('con i parametri di default un tick vale un minuto a velocità urbana', () => {
+  it('con i parametri di default un tick vale tre secondi a velocità urbana', () => {
     const simulator = new FleetSimulator();
     simulator.followRoute('RT-01', DUOMO, [GARIBALDI]);
 
@@ -161,6 +162,18 @@ describe('[NFR8] Il simulatore di flotta avanza solo su tick espliciti', () => {
     for (let step = 0; step < expected; step += 1) simulator.tick();
 
     expect(simulator.reading('RT-01')?.hasArrived).toBe(true);
+  });
+
+  it('un passo di default copre esattamente il tempo reale fra due letture, moltiplicato per la scala', () => {
+    /*
+     * L'invariante che tiene insieme le tre cadenze: il mondo avanza di tanto quanto ne è passato
+     * fra due osservazioni. Se il passo fosse più lungo, fra una lettura e l'altra il veicolo
+     * salterebbe un pezzo di strada che nessuno vede; se fosse più corto, il mondo rallenterebbe
+     * senza che nessuno l'abbia chiesto. Nessuno dei due difetti fa fallire qualcosa da sé.
+     */
+    expect(DEFAULT_SIMULATOR_SETTINGS.tickSeconds).toBe(
+      (FLEET_POSITION_REFRESH_MS / 1000) * SIMULATED_TIME_SCALE,
+    );
   });
 
   it('due simulatori con la stessa rotta e gli stessi tick finiscono nello stesso punto', () => {
