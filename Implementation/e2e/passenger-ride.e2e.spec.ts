@@ -45,8 +45,13 @@ function freshPassenger(): { email: string; password: string; name: string; surn
 const PICKUP_FRACTION = { x: 0.45, y: 0.5 };
 const DESTINATION_FRACTION = { x: 0.62, y: 0.42 };
 
-/** Registra un passeggero attraverso l'HTTP pubblico e lascia la sessione nel browser. */
-async function signIn(page: Page): Promise<void> {
+/**
+ * Registra un passeggero dall'interfaccia e lascia la sessione nel browser.
+ *
+ * Restituisce le credenziali usate: servono al solo scenario che ha bisogno di **rientrare** con lo
+ * stesso account per distinguere ciò che il backend ha scritto da ciò che il browser ricorda.
+ */
+async function signIn(page: Page): Promise<ReturnType<typeof freshPassenger>> {
   await page.goto(PASSENGER_URL);
 
   await page.getByTestId('toggle-auth-mode').click();
@@ -58,6 +63,7 @@ async function signIn(page: Page): Promise<void> {
   await page.getByTestId('submit-auth').click();
 
   await expect(page.getByTestId('passenger-name')).toHaveText(passenger.name);
+  return passenger;
 }
 
 /** Tocca la mappa nel punto indicato, in frazioni del suo riquadro. */
@@ -98,10 +104,16 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
      * change by issuing a new request» —, e si controlla contando le richieste all'API dal
      * momento in cui la corsa è stata accettata. Se il client ripiegasse su un'interrogazione
      * periodica, questo contatore crescerebbe e il test fallirebbe pur con la schermata giusta.
+     *
+     * Il traffico di `/socket.io/` è escluso dal conto, ed è il contrario di una scappatoia: **è**
+     * il canale push, e su un trasporto che ripiega su long-polling passa da richieste HTTP. Se
+     * contassero, il test fallirebbe per il funzionamento del canale invece che per la sua assenza,
+     * cioè accuserebbe esattamente il meccanismo che deve dimostrare.
      */
-    let apiCalls = 0;
+    const polled: string[] = [];
     await page.route(`${API_URL}/**`, async (route) => {
-      apiCalls += 1;
+      const path = new URL(route.request().url()).pathname;
+      if (!path.startsWith('/socket.io/')) polled.push(path);
       await route.continue();
     });
 
@@ -109,7 +121,9 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
     await expect(phase).toHaveAttribute('data-phase', 'arrived', { timeout: 90_000 });
     await expect(phase).toHaveAttribute('data-phase', 'in_ride', { timeout: 90_000 });
 
-    expect(apiCalls).toBe(0);
+    // L'elenco e non il contatore: se fallisse, il messaggio dice *quale* rotta è stata
+    // interrogata, che è l'informazione con cui si corregge il difetto.
+    expect(polled).toEqual([]);
 
     // Lo screenshot resta a disposizione: serve a controllare il risultato visivo senza
     // rieseguire lo stack (HARNESS.md §1).
@@ -117,6 +131,41 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
       path: 'e2e/screenshots/passeggero-corsa-in-corso.png',
       fullPage: true,
     });
+  });
+});
+
+test.describe('[R2][G1] Il passeggero aggiorna il proprio profilo', () => {
+  /**
+   * R2: «users will be able to update their personal information **and credentials**».
+   *
+   * Il backend lo realizza dal M1b, ma fino a M8 non c'era modo di raggiungerlo se non chiamando
+   * `PATCH /auth/me` a mano: `MILESTONES.md` §M8 elenca R2 fra i requisiti coperti dai client, ed è
+   * questa schermata a coprirlo.
+   */
+  test('il nome cambiato sopravvive a un nuovo accesso', async ({ page }) => {
+    const passenger = await signIn(page);
+
+    await page.getByTestId('open-profile').click();
+    await page.getByTestId('profile-name').fill('Elisabetta');
+    await page.getByTestId('save-profile').click();
+
+    await expect(page.getByTestId('profile-saved')).toBeVisible();
+    // L'intestazione mostra subito il nome nuovo: la sessione conservata è stata riscritta.
+    await expect(page.getByTestId('passenger-name')).toHaveText('Elisabetta');
+
+    /*
+     * E il cambiamento è nel **backend**, non solo nel deposito del browser.
+     *
+     * Il modo di distinguere le due cose è uscire e rientrare: un semplice ricaricamento
+     * rileggerebbe la sessione conservata e mostrerebbe il nome nuovo anche se la `PATCH` non
+     * avesse scritto niente. Rifare l'accesso costringe il nome a tornare dal database.
+     */
+    await page.getByTestId('sign-out').click();
+    await page.getByTestId('email').fill(passenger.email);
+    await page.getByTestId('password').fill(passenger.password);
+    await page.getByTestId('submit-auth').click();
+
+    await expect(page.getByTestId('passenger-name')).toHaveText('Elisabetta');
   });
 });
 
@@ -141,21 +190,28 @@ test.describe('[NFR6] La richiesta di una corsa costa al più quattro interazion
     await page.reload();
     await expect(page.getByTestId('request-ride')).toBeVisible();
 
-    let interactions = 0;
+    /*
+     * Le interazioni sono **un elenco eseguito**, non un contatore incrementato a mano.
+     *
+     * La differenza è che qui il numero non si può sbagliare: `interactions.length` è il numero di
+     * azioni che il test compie davvero, quindi chi un domani dovesse aggiungere un passo per far
+     * funzionare lo scenario dovrebbe aggiungerlo a questo elenco, e l'asserzione lo coglierebbe.
+     * Un contatore scritto a parte, invece, resta al valore che l'autore gli assegna: era
+     * un'asserzione che non poteva fallire.
+     */
+    const interactions: readonly (() => Promise<void>)[] = [
+      () => tapMap(page, PICKUP_FRACTION),
+      () => tapMap(page, DESTINATION_FRACTION),
+      () => page.getByTestId('request-ride').click(),
+    ];
 
-    await tapMap(page, PICKUP_FRACTION);
-    interactions += 1;
-
-    await tapMap(page, DESTINATION_FRACTION);
-    interactions += 1;
-
-    // La corsa immediata è già selezionata: sceglierla non costa un'interazione.
+    // La corsa immediata è già selezionata: sceglierla non costa un'interazione, e se un giorno
+    // smettesse di essere il default il bilancio salirebbe a quattro senza che nessuno se ne accorga.
     await expect(page.getByTestId('kind-immediate')).toBeChecked();
 
-    await page.getByTestId('request-ride').click();
-    interactions += 1;
+    for (const interaction of interactions) await interaction();
 
     await expect(page.getByTestId('ride-phase')).toBeVisible();
-    expect(interactions).toBeLessThanOrEqual(4);
+    expect(interactions.length).toBeLessThanOrEqual(4);
   });
 });

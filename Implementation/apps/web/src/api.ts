@@ -2,11 +2,9 @@ import {
   API_ROUTES,
   apiRequest,
   authResponseSchema,
-  demandAnalysisResponseSchema,
   fleetStatusResponseSchema,
   modeResponseSchema,
   type AuthResponse,
-  type DemandAnalysisResponse,
   type FleetStatusResponse,
   type LoginRequest,
   type ModeResponse,
@@ -16,11 +14,16 @@ import {
 import { apiBaseUrl } from './api-base-url';
 
 /**
- * Le cinque chiamate che la dashboard fa al backend (RASD R7, R8, R10, R12, R13).
+ * Le quattro chiamate che la dashboard fa al backend (RASD R7, R8, R12, R13).
  *
  * Come nell'app passeggero, ogni funzione è una riga di trasporto: rotta da `API_ROUTES`, risposta
  * validata con lo schema condiviso, nessuna logica. La dashboard non decide quale strategia sia
- * giusta né quali zone siano scoperte — le chiede.
+ * giusta — la chiede.
+ *
+ * **`GET /rebalancing/demand` non è fra queste**, benché la rotta esista dal M6: il DD §3.2 elenca
+ * quattro pannelli e nessuno mostra la domanda per zona, quindi una funzione che la leggesse non
+ * avrebbe chiamanti. I riposizionamenti l'operatore li vede accadere nel pannello alert, che è la
+ * forma in cui il DD glieli mostra.
  *
  * **Non c'è una `PUT /mode` con `MANUAL`**, e non è una dimenticanza del client: R13 lega il modo
  * Manual alla scelta di una politica, quindi ci si entra da `setActiveStrategy()`. Il contratto non
@@ -79,13 +82,5 @@ export async function enableAutoMode(token: string): Promise<ModeResponse> {
     token,
     body: { mode: 'AUTO' },
     schema: modeResponseSchema,
-  });
-}
-
-/** `GET /rebalancing/demand` — R10, G9: le zone per domanda attesa decrescente. */
-export async function fetchDemand(token: string): Promise<DemandAnalysisResponse> {
-  return apiRequest(apiBaseUrl, API_ROUTES.rebalancingDemand, {
-    token,
-    schema: demandAnalysisResponseSchema,
   });
 }

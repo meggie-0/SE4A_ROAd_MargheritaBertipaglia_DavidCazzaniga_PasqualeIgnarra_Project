@@ -1,0 +1,20 @@
+{
+  "name": "ROAd — App passeggero",
+  "short_name": "ROAd",
+  "description": "Richiedi un robotaxi a Milano e segui la tua corsa.",
+  "lang": "it",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

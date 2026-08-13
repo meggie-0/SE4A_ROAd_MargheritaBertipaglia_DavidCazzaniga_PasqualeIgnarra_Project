@@ -50,17 +50,88 @@ function collectSpecFiles(root, found = []) {
 }
 
 /**
- * Toglie commenti di riga e di blocco, così i tag citati in un commento non contano come test.
+ * Le parole dopo le quali una barra apre un'espressione regolare e non è una divisione.
  *
- * **Salta le stringhe**, e non è pignoleria: la versione a due espressioni regolari trattava una
- * barra seguita da un asterisco *dentro una stringa* come l'apertura di un commento, e cancellava
- * tutto fino alla prima chiusura di commento successiva — cioè fino alla fine del blocco di
- * documentazione che veniva dopo, `describe` compreso. Il caso reale che l'ha fatta emergere è il
- * glob di Playwright con cui `e2e/passenger-ride.e2e.spec.ts` conta le richieste all'API: il
- * `describe` che seguiva spariva dalla scansione e NFR6 risultava scoperto pur avendo il suo test.
+ * Distinguere i due casi in JavaScript richiede il token precedente, e questa è la forma ridotta
+ * che basta a dei file di test: dopo un identificatore, un numero o una parentesi chiusa la barra
+ * divide; dopo un operatore, una parentesi aperta, una virgola o una di queste parole, apre.
+ */
+const REGEX_KEYWORDS = new Set([
+  'return',
+  'typeof',
+  'instanceof',
+  'case',
+  'in',
+  'of',
+  'do',
+  'else',
+  'yield',
+  'await',
+  'new',
+  'delete',
+  'void',
+]);
+
+/** Vero se la barra in `index` apre un'espressione regolare invece di dividere. */
+function opensRegex(source, index) {
+  let i = index - 1;
+  while (i >= 0 && /\s/.test(source[i])) i -= 1;
+  if (i < 0) return true;
+
+  const previous = source[i];
+  // Dopo un identificatore, una cifra, `)` o `]` una barra è una divisione — tranne che dopo una
+  // delle parole chiave qui sopra, che identificatori non sono.
+  if (/[\w$]/.test(previous)) {
+    let start = i;
+    while (start >= 0 && /[\w$]/.test(source[start])) start -= 1;
+    return REGEX_KEYWORDS.has(source.slice(start + 1, i + 1));
+  }
+  return previous !== ')' && previous !== ']';
+}
+
+/** L'indice della barra che chiude l'espressione regolare aperta in `start`. */
+function endOfRegex(source, start) {
+  let inClass = false;
+
+  for (let i = start + 1; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === '\\') {
+      i += 1;
+      continue;
+    }
+    // Dentro una classe `[...]` la barra non chiude niente: `/[/]/` è un'espressione valida.
+    if (char === '[') inClass = true;
+    else if (char === ']') inClass = false;
+    else if (char === '/' && !inClass) return i;
+    // Un'espressione regolare non attraversa una riga a capo: se la incontra, non lo era.
+    else if (char === '\n') return start;
+  }
+  return start;
+}
+
+/**
+ * Normalizza il sorgente per la scansione: via i commenti, neutro il contenuto delle espressioni
+ * regolari, intatte le stringhe.
  *
- * (Nessuna delle due sequenze compare scritta per esteso in questo commento, per la stessa
- * ragione: la citazione riprodurrebbe il difetto invece di descriverlo.)
+ * Le stringhe restano intere perché è da lì che si legge il titolo di un `describe`. Tutto il
+ * resto è stato imparato a spese di due difetti veri, entrambi della stessa famiglia — un pezzo di
+ * sorgente che *sembra* un'altra cosa:
+ *
+ *  - la versione a due espressioni regolari trattava una barra seguita da un asterisco **dentro
+ *    una stringa** come l'apertura di un commento, e cancellava fino alla chiusura successiva:
+ *    spariva il blocco di documentazione che veniva dopo e, con lui, il `describe` che apriva. Il
+ *    caso reale è il glob di Playwright di `e2e/passenger-ride.e2e.spec.ts`, che faceva risultare
+ *    NFR6 **scoperto** pur avendo il suo test;
+ *  - saltare le sole stringhe non bastava, perché un apice **dentro un'espressione regolare** —
+ *    `toMatch(/fetch['"]x/)`, che sta nel cancello di M8 — veniva preso per l'inizio di una
+ *    stringa, e la ricerca dell'apice di chiusura si mangiava tutto fino a quello successivo nel
+ *    file. Lì l'effetto era il peggiore dei due: non un requisito scoperto ma un requisito
+ *    **attribuito male**, con NFR8 contato 11 volte invece di 3 perché il suo `describe` non
+ *    veniva più chiuso.
+ *
+ * Il corpo dell'espressione regolare si azzera invece di essere copiato: dentro non c'è solo il
+ * rischio degli apici, ci sono anche le graffe dei quantificatori — `\d{2}` — che falserebbero la
+ * profondità con cui `scan` decide quando un `describe` finisce.
  *
  * È esattamente il difetto contro cui mette in guardia HARNESS.md §5 — «un tracciatore che conta
  * male è peggio di nessun tracciatore, perché dichiara scoperto un requisito che ha i test e porta
@@ -91,6 +162,16 @@ function stripComments(source) {
       // La riga a capo si conserva: le espressioni regolari a valle ragionano per riga.
       i = end === -1 ? source.length : end - 1;
       continue;
+    }
+
+    if (char === '/' && opensRegex(source, i)) {
+      const end = endOfRegex(source, i);
+      if (end > i) {
+        // Delimitatori sì, corpo no: a `scan` serve sapere che lì c'era qualcosa, non cosa.
+        out += '/x/';
+        i = end;
+        continue;
+      }
     }
 
     out += char;

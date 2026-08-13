@@ -21,7 +21,8 @@ con il toggle Auto/Manual sempre visibile, gli alert degli switch automatici e d
 e una status bar che riassume la flotta per stato. L'**app del passeggero** (DD §3.1) è centrata
 sulla mappa: si toccano ritiro e destinazione, si sceglie fra corsa immediata e programmata, si
 preme un pulsante solo — e da lì la stessa schermata diventa una vista di stato live, guidata dalle
-notifiche, che segue la corsa fino a destinazione. Restano i test di sistema (M9).
+notifiche, che segue la corsa fino a destinazione. Dalla stessa schermata si aggiornano i propri
+dati e la password (R2). Restano i test di sistema (M9).
 
 Il sistema funziona **senza rete**: se `OSRM_BASE_URL` è vuota o il fornitore non risponde, i
 percorsi si stimano in linea d'aria e nessuna richiesta di corsa va persa. I due client scaricano

@@ -23,7 +23,8 @@ import { FleetStatusResponseDto } from './dto/fleet.dto';
  * non cambia qui: fino a M7 però nessun client la guardava, e una rotta senza lettori sarebbe stata
  * una funzionalità non richiesta. Con la dashboard di M8 R7 diventa osservabile — «a live overview
  * of the fleet», che nessuno può vedere, non è una panoramica — e questo è l'arco
- * `APIGateway → FleetMonitor` che il DD disegna nella vista di deployment.
+ * `APIGateway → FleetMonitor` che il DD disegna già nella vista dei componenti (Figura 2.1) e
+ * ripete in quella di deployment (§2.5): era disegnato e non realizzato.
  *
  * **Non c'è una rotta per muovere un veicolo, e non ci sarà.** Le transizioni le innescano la
  * telemetria (M7), il ciclo di riposizionamento (M6) e la catena della corsa (M4): un endpoint che

@@ -287,3 +287,15 @@ button:disabled {
     height: clamp(24rem, 55vh, 34rem);
   }
 }
+
+.profile-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.status-saved {
+  color: var(--ok);
+  font-weight: 600;
+  margin: 0;
+}

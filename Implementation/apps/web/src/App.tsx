@@ -6,7 +6,7 @@ import {
   type StrategyName,
 } from '@road/shared';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { enableAutoMode, fetchFleetStatus, fetchMode, setActiveStrategy } from './api';
 import { apiBaseUrl } from './api-base-url';
@@ -66,6 +66,10 @@ function Dashboard(): React.JSX.Element {
   const token = session?.accessToken ?? null;
   const { notifications, connection } = useNotifications(token);
 
+  /** L'ultimo evento già applicato a ciascuno dei due pannelli, per non riapplicarlo a ogni render. */
+  const lastModeEventRef = useRef<string | null>(null);
+  const lastFleetEventRef = useRef<string | null>(null);
+
   const fleet = useQuery({
     queryKey: ['fleet-status'],
     enabled: token !== null,
@@ -82,19 +86,48 @@ function Dashboard(): React.JSX.Element {
   /**
    * Modo e strategia si aggiornano dal **canale push**, non ri-chiedendoli.
    *
-   * È la metà di NFR2 che riguarda la dashboard: uno switch automatico deciso dal `ModeController`
+   * È metà di ciò che NFR2 chiede alla dashboard: uno switch automatico deciso dal `ModeController`
    * deve comparire nel pannello senza che l'operatore ricarichi. La notifica porta i valori già
    * strutturati (M6), quindi non serve nemmeno rileggere — si scrive ciò che è appena successo
    * nella cache della query, e il pannello si ridipinge.
+   *
+   * **L'istante decide chi vince.** Fra una notifica e la risposta di una `PUT` può arrivare prima
+   * l'una o l'altra, e senza un confronto un evento vecchio di un secondo sovrascriverebbe il
+   * risultato di un comando appena eseguito. Si applica solo ciò che è più recente di quanto già
+   * mostrato: `occurredAt` è l'istante del cambiamento, non quello della consegna.
    */
   useEffect(() => {
     const last = [...notifications].reverse().find((event) => event.mode !== null);
     if (last === undefined || last.mode === null) return;
+    if (lastModeEventRef.current !== null && last.occurredAt <= lastModeEventRef.current) return;
 
+    lastModeEventRef.current = last.occurredAt;
     queries.setQueryData(['mode'], (previous: ModeResponse | undefined) => ({
       mode: last.mode ?? previous?.mode ?? 'AUTO',
       activeStrategy: last.strategy ?? previous?.activeStrategy ?? 'NEAREST_AVAILABLE',
     }));
+  }, [notifications, queries]);
+
+  /**
+   * Una transizione di stato **ridipinge subito la mappa**, senza aspettare il giro successivo.
+   *
+   * È l'altra metà di NFR2, ed è quella che si dimentica: la §4.3 lo dichiara violato quando «the
+   * client only learns of the change by issuing a new request», e senza questa riga un veicolo che
+   * entra in manutenzione comparirebbe sulla dashboard fino a cinque secondi dopo — e solo perché
+   * il client ha ri-chiesto. Le transizioni sul canale ci sono già; mancava chi le ascoltasse.
+   *
+   * Si **invalida** invece di scrivere in cache, ed è la differenza fra le due metà: la notifica di
+   * modo porta il valore nuovo per intero, quella di flotta parla di un veicolo solo e la mappa ha
+   * bisogno di tutti. Il costo è una richiesta per transizione, non per tick — che è precisamente
+   * la ragione per cui le *posizioni* non viaggiano sul canale (decisione D67).
+   */
+  useEffect(() => {
+    const last = [...notifications].reverse().find((event) => event.robotaxiState !== null);
+    if (last === undefined) return;
+    if (lastFleetEventRef.current === last.occurredAt) return;
+
+    lastFleetEventRef.current = last.occurredAt;
+    void queries.invalidateQueries({ queryKey: ['fleet-status'] });
   }, [notifications, queries]);
 
   function onAuthenticated(response: AuthResponse): void {
@@ -117,6 +150,25 @@ function Dashboard(): React.JSX.Element {
     }
     setCommandError(failure instanceof Error ? failure.message : String(failure));
   }
+
+  /**
+   * Una sessione scaduta riporta al login **anche quando a scoprirlo è una lettura**.
+   *
+   * Senza questo, un token scaduto si manifestava soltanto come «dati non aggiornati» sulla status
+   * bar: l'operatore restava davanti a una mappa vuota, senza sapere che bastava rifare l'accesso,
+   * e solo un comando — cioè un'azione che nessuno ha ragione di tentare davanti a una dashboard
+   * che sembra rotta — lo avrebbe rimandato al login.
+   */
+  useEffect(() => {
+    for (const failure of [fleet.error, mode.error]) {
+      if (failure instanceof ApiError && failure.status === 401) {
+        signOut();
+        return;
+      }
+    }
+    // Dipende dai due errori e non da `signOut`, che è ricreata a ogni render: ciò che deve far
+    // ripartire l'effetto è il cambiare dell'esito delle letture, non l'identità della funzione.
+  }, [fleet.error, mode.error]);
 
   async function chooseStrategy(strategy: StrategyName): Promise<void> {
     if (token === null) return;

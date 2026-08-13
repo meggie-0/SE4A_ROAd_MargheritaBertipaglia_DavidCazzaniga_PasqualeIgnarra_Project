@@ -12,6 +12,17 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.spec.ts',
   fullyParallel: false,
+  /**
+   * Un solo worker, e non è ridondante con `fullyParallel: false`.
+   *
+   * Quella opzione serializza i test *dentro un file*; i file restano distribuiti sui worker. I tre
+   * file di scenari condividono un database, il record `system_mode` e — da M7 — il mondo del
+   * simulatore, che vive in memoria: un operatore che porta il sistema in Manual mentre l'altro
+   * scenario alloca è un intreccio che nessuno dei due test descrive. Serializzare costa una
+   * cinquantina di secondi e toglie una classe di fallimenti intermittenti, che sono la cosa
+   * peggiore che possa capitare a una suite (HARNESS.md §2).
+   */
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
   /**
@@ -53,6 +64,12 @@ export default defineConfig({
      * Ciò che questo **non** fa è rendere il test dipendente da un tempo: la velocità cambia
      * quanti tick servono, non quale veicolo viene scelto né in quale ordine avvengono le
      * transizioni. La progressione resta quella che la Figura 2.10 prescrive.
+     *
+     * Attenzione a un caso locale: con `reuseExistingServer` la variabile **non** raggiunge un
+     * `pnpm dev` già avviato a mano, che continuerà con il valore del proprio `.env`. Gli scenari
+     * passano lo stesso — un ritiro dentro Milano si raggiunge in una decina di tick, e i limiti
+     * qui sotto li assorbono — ma la corsa impiega un minuto invece di trenta secondi. In CI non
+     * si dà: lì `reuseExistingServer` è falso e il server lo avvia Playwright.
      */
     env: { SIMULATOR_TICK_MINUTES: '15' },
   },

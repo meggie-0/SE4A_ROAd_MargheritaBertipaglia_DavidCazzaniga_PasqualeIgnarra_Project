@@ -1,5 +1,7 @@
 import type { NotificationPush } from '@road/shared';
 
+import { alertCategoryOf } from '../alerts';
+
 /**
  * Il pannello degli alert (DD §3.2: «pannello alert per switch automatici e suggerimenti di
  * rebalancing»; RASD R11, R12; G9).
@@ -24,7 +26,14 @@ const VISIBLE_ALERTS = 12;
 
 export function AlertsPanel({ notifications }: AlertsPanelProps): React.JSX.Element {
   // Gli alert dal più recente: chi guarda una console vuole sapere cos'è appena successo.
-  const alerts = notifications.filter(isAlert).slice(-VISIBLE_ALERTS).reverse();
+  const alerts = notifications
+    .map((event) => ({ event, category: alertCategoryOf(event) }))
+    .filter(
+      (one): one is { event: NotificationPush; category: NonNullable<typeof one.category> } =>
+        one.category !== null,
+    )
+    .slice(-VISIBLE_ALERTS)
+    .reverse();
 
   return (
     <section className="panel alerts-panel">
@@ -36,36 +45,16 @@ export function AlertsPanel({ notifications }: AlertsPanelProps): React.JSX.Elem
         </p>
       ) : (
         <ul className="alerts" data-testid="alerts">
-          {alerts.map((alert, index) => (
-            <li key={`${alert.occurredAt}-${index}`} className={`alert ${categoryOf(alert)}`}>
-              <span className="alert-time">{formatTime(alert.occurredAt)}</span>
-              <span className="alert-message">{alert.message}</span>
+          {alerts.map(({ event, category }, index) => (
+            <li key={`${event.occurredAt}-${index}`} className={`alert ${category}`}>
+              <span className="alert-time">{formatTime(event.occurredAt)}</span>
+              <span className="alert-message">{event.message}</span>
             </li>
           ))}
         </ul>
       )}
     </section>
   );
-}
-
-/**
- * Un evento è un alert per l'operatore se parla di traffico, di modo, di strategia o di
- * riposizionamento.
- *
- * `REBALANCING_ALERT` è l'unico tipo dell'enum del RASD che riguarda l'operatore; gli altri quattro
- * sono notifiche al passeggero e non hanno niente da fare qui. Gli eventi di modo arrivano con
- * `type: null` e si riconoscono dai campi strutturati (decisione D42).
- */
-function isAlert(event: NotificationPush): boolean {
-  if (event.type === 'REBALANCING_ALERT') return true;
-  return event.trafficLevel !== null || event.mode !== null || event.strategy !== null;
-}
-
-function categoryOf(event: NotificationPush): string {
-  if (event.type === 'REBALANCING_ALERT') return 'rebalancing';
-  if (event.trafficLevel === 'HIGH') return 'high';
-  if (event.trafficLevel === 'MEDIUM') return 'medium';
-  return 'mode';
 }
 
 /** Solo l'orario: la data di un alert di pochi minuti fa è rumore. */

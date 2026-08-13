@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -180,14 +188,34 @@ describe('[M8] Cancello: i due client', () => {
     it.each(clients.map((client) => [client.name, client.dir]))(
       '%s prende dal pacchetto condiviso le rotte e gli schemi',
       (_name, dir) => {
-        const sources = sourceFilesOf(dir).map((file) => readFileSync(file, 'utf8'));
-        const everything = sources.join('\n');
+        /*
+         * **File per file**, non su tutto il sorgente concatenato.
+         *
+         * La prima versione univa i venti file in una stringa sola e poi chiedeva che *quella*
+         * contenesse `@road/shared` e `API_ROUTES.`: bastava un file su venti a soddisfare
+         * l'asserzione per l'intera applicazione, e diciannove che scrivevano gli indirizzi a mano
+         * sarebbero passati. Qui si guarda ogni file che parla con la rete e gli si chiede di
+         * prendere la rotta da dove va presa.
+         */
+        const talksToTheNetwork = sourceFilesOf(dir)
+          .map((file) => ({ file, source: readFileSync(file, 'utf8') }))
+          .filter(({ source }) => /apiRequest\(|fetch\(|io\(/.test(source));
 
-        expect(everything).toContain("from '@road/shared'");
-        // Le rotte non si scrivono a mano: `API_ROUTES` è l'unica sede, e un indirizzo copiato
-        // diverge al primo cambio del contratto senza che nulla se ne accorga.
-        expect(everything).toMatch(/API_ROUTES\./);
-        expect(everything).not.toMatch(/fetch\(\s*['"`]https?:\/\/[^'"`]*\/(auth|rides|fleet)/);
+        expect(talksToTheNetwork.length).toBeGreaterThan(0);
+
+        for (const { file, source } of talksToTheNetwork) {
+          // Le rotte non si scrivono a mano: `API_ROUTES` (o le costanti del canale push) sono
+          // l'unica sede, e un indirizzo copiato diverge al primo cambio del contratto senza che
+          // nulla se ne accorga.
+          expect({ file, shared: source.includes("from '@road/shared'") }).toEqual({
+            file,
+            shared: true,
+          });
+          expect({
+            file,
+            hardcoded: /['"`]https?:\/\/[^'"`]*\/(auth|rides|fleet|mode)/.test(source),
+          }).toEqual({ file, hardcoded: false });
+        }
       },
     );
   });
@@ -208,8 +236,11 @@ describe('[M8] Cancello: i due client', () => {
           encoding: 'utf8',
         });
 
-        expect(`${result.stdout ?? ''}${result.stderr ?? ''}`).not.toMatch(/error/i);
+        // Il codice di uscita e l'artefatto, non una ricerca di «error» nell'output: Vite esce
+        // diverso da zero quando fallisce, e cercare quella parola avrebbe fatto fallire il
+        // cancello al primo file di sorgente che si chiamasse `…Error….`
         expect(result.status).toBe(0);
+        expect(existsSync(join(dir, 'dist', 'index.html'))).toBe(true);
       },
       HOOK_TIMEOUT_MS,
     );
@@ -307,6 +338,21 @@ describe('[M8] Cancello: i due client', () => {
     });
   });
 
+  /**
+   * **Che cosa questa sezione dimostra, e che cosa no.**
+   *
+   * Il criterio di M8 è uno scenario guidato da un browser, e `pnpm verify` non ne alza uno
+   * (HARNESS.md §1). Quello che si può controllare da qui è che gli scenari *esistano, dicano la
+   * cosa giusta e siano eseguibili*: che nominino `in_ride` e il modo Manual, che salvino gli
+   * screenshot, che nessuno li abbia disattivati e che il runner li raccolga. Che poi **passino** lo
+   * dice `pnpm verify:e2e`, e nient'altro.
+   *
+   * È una distinzione che vale la pena tenere esplicita invece di lasciarla intendere: il verde di
+   * `pnpm gate M8` significa «le premesse ci sono tutte», non «il criterio è soddisfatto». Le
+   * premesse però sono verificate sul serio — la rotta di flotta su HTTP vero con i ruoli, i due
+   * bundle, il contratto — perché sono ciò che, rompendosi, farebbe fallire gli scenari senza dire
+   * perché.
+   */
   describe('Gli scenari end-to-end del criterio di completamento', () => {
     const e2eDir = join(repoRoot, 'e2e');
     const specOf = (file: string): string => readFileSync(join(e2eDir, file), 'utf8');
@@ -328,6 +374,24 @@ describe('[M8] Cancello: i due client', () => {
       expect(spec).toMatch(/data-mode['"],\s*['"]MANUAL['"]/);
       expect(spec).toMatch(/screenshot\(\{\s*path:/);
     });
+
+    it.each(['passenger-ride.e2e.spec.ts', 'operator-dashboard.e2e.spec.ts'])(
+      '%s non ha scenari disattivati',
+      (file) => {
+        const spec = specOf(file);
+
+        /*
+         * Senza questo controllo il cancello sarebbe soddisfatto da uno scenario `test.skip`: le
+         * asserzioni qui sopra leggono il **testo** del file, e il testo di un test disattivato è
+         * identico a quello di un test che gira. È la scorciatoia più facile da prendere quando uno
+         * scenario diventa fastidioso, ed è quella che CLAUDE.md vieta in tante parole.
+         *
+         * `.only` è l'altra faccia: farebbe passare la suite eseguendo un test solo.
+         */
+        expect(spec).not.toMatch(/\b(test|describe)\.(skip|fixme|only)\b/);
+        expect(spec).not.toMatch(/\btest\.setTimeout\b/);
+      },
+    );
 
     it('gli scenari sono raccolti da pnpm verify:e2e', () => {
       const config = readFileSync(join(repoRoot, 'playwright.config.ts'), 'utf8');

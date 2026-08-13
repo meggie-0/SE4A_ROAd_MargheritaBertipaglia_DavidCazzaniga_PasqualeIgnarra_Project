@@ -5,12 +5,13 @@ import {
   type RideRequestKind,
   type RideRequestResponse,
 } from '@road/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { requestAdvanceBooking, requestImmediateRide } from './api';
 import { apiBaseUrl } from './api-base-url';
 import { LoginScreen } from './components/LoginScreen';
 import { RequestPanel } from './components/RequestPanel';
+import { ProfilePanel } from './components/ProfilePanel';
 import { RideMap } from './components/RideMap';
 import { StatusPanel } from './components/StatusPanel';
 import { applyNotification, initialView, type RideView } from './ride-phase';
@@ -41,38 +42,38 @@ export function App(): React.JSX.Element {
   const [kind, setKind] = useState<RideRequestKind>('IMMEDIATE');
   const [scheduledPickup, setScheduledPickup] = useState('');
   const [request, setRequest] = useState<RideRequestResponse | null>(null);
-  const [view, setView] = useState<RideView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
 
   const health = useApiHealth();
   const { notifications, connection } = useNotifications(session?.accessToken ?? null);
 
   /**
-   * Quante notifiche sono già state applicate alla vista.
+   * La vista di stato è **derivata**, non accumulata: si ricalcola ogni volta riducendo tutte le
+   * notifiche di questa corsa a partire dallo stato in cui la richiesta è tornata.
    *
-   * L'hook consegna l'elenco completo e cresce in coda: qui interessa solo la parte nuova che
-   * riguarda **questa** richiesta. Il filtro per `rideRequestId` non è una regola di dominio
-   * spostata sul client — il backend consegna a un passeggero solo le proprie corse (DD §2.3.3) —
-   * ma la separazione fra la corsa che sto guardando e le altre mie.
+   * La prima versione teneva un cursore sull'elenco — «quante ne ho già applicate» — e aveva due
+   * difetti, entrambi silenziosi. L'elenco è a lunghezza fissa e scarta le più vecchie: appena
+   * saturava, la sua lunghezza smetteva di crescere e il cursore non avanzava più, quindi **la
+   * schermata si congelava mentre la corsa proseguiva**. E ogni evento arrivato fra il ritorno
+   * della richiesta e la comparsa della vista veniva contato come già applicato, cioè perso: con un
+   * veicolo vicino, la transizione ad `ARRIVING` che porta l'ETA sta proprio in quella finestra.
+   *
+   * Ridurre da capo non ha nessuno dei due problemi, ed è possibile perché `applyNotification` è
+   * una funzione pura di due valori: riapplicare la stessa notifica dà lo stesso risultato.
+   *
+   * Il filtro per `rideRequestId` non è una regola di dominio spostata sul client — il backend
+   * consegna a un passeggero solo le proprie corse (DD §2.3.3) — ma la separazione fra la corsa che
+   * sto guardando e le altre mie.
    */
-  const [appliedCount, setAppliedCount] = useState(0);
+  const view: RideView | null = useMemo(() => {
+    if (request === null) return null;
 
-  useEffect(() => {
-    if (request === null || view === null) {
-      setAppliedCount(notifications.length);
-      return;
-    }
-    if (notifications.length <= appliedCount) return;
-
-    const updated = notifications
-      .slice(appliedCount)
+    return notifications
       .filter((event) => event.rideRequestId === request.id)
-      .reduce(applyNotification, view);
-
-    setAppliedCount(notifications.length);
-    if (updated !== view) setView(updated);
-  }, [notifications, appliedCount, request, view]);
+      .reduce(applyNotification, initialView(request));
+  }, [notifications, request]);
 
   function onAuthenticated(response: { accessToken: string; user: Session['user'] }): void {
     const next: Session = { accessToken: response.accessToken, user: response.user };
@@ -82,7 +83,6 @@ export function App(): React.JSX.Element {
 
   function resetRequest(): void {
     setRequest(null);
-    setView(null);
     setPickup(null);
     setDestination(null);
     setError(null);
@@ -92,6 +92,20 @@ export function App(): React.JSX.Element {
     clearSession();
     setSession(null);
     resetRequest();
+    setShowProfile(false);
+  }
+
+  /**
+   * Un token scaduto non è un errore da mostrare in un riquadro rosso: è la fine della sessione, e
+   * la risposta giusta è tornare al login invece di lasciare l'utente davanti a un pulsante che non
+   * funzionerà più. Vale per la richiesta di una corsa come per il salvataggio del profilo.
+   */
+  function signOutIfExpired(failure: unknown): boolean {
+    if (failure instanceof ApiError && failure.status === 401) {
+      signOut();
+      return true;
+    }
+    return false;
   }
 
   /** Il tocco sulla mappa riempie il primo posto libero: prima il ritiro, poi la destinazione. */
@@ -121,15 +135,8 @@ export function App(): React.JSX.Element {
             });
 
       setRequest(submitted);
-      setView(initialView(submitted));
     } catch (failure) {
-      // Un token scaduto non è un errore da mostrare in un riquadro rosso: è la fine della
-      // sessione, e la risposta giusta è tornare al login invece di lasciare l'utente a premere un
-      // pulsante che non funzionerà più.
-      if (failure instanceof ApiError && failure.status === 401) {
-        signOut();
-        return;
-      }
+      if (signOutIfExpired(failure)) return;
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setBusy(false);
@@ -146,6 +153,18 @@ export function App(): React.JSX.Element {
             <h1>ROAd — App passeggero</h1>
             <div className="who">
               <span data-testid="passenger-name">{session.user.name}</span>
+              {/* Il profilo è raggiungibile solo quando non c'è una corsa da seguire: durante la
+                  corsa lo schermo è la vista di stato, come il DD §3.1 prescrive. */}
+              {request === null && (
+                <button
+                  type="button"
+                  className="link-button"
+                  data-testid="open-profile"
+                  onClick={() => setShowProfile(!showProfile)}
+                >
+                  {showProfile ? 'Chiudi profilo' : 'Profilo'}
+                </button>
+              )}
               <button
                 type="button"
                 className="link-button"
@@ -163,7 +182,21 @@ export function App(): React.JSX.Element {
             onPick={request === null ? onPick : null}
           />
 
-          {request === null || view === null ? (
+          {showProfile && request === null ? (
+            <ProfilePanel
+              profile={session.user}
+              token={session.accessToken}
+              onUpdated={(profile) => {
+                // Il profilo aggiornato si riscrive nella sessione: il token resta quello, ma il
+                // nome mostrato nell'intestazione è quello nuovo.
+                const next: Session = { accessToken: session.accessToken, user: profile };
+                saveSession(next);
+                setSession(next);
+              }}
+              onClose={() => setShowProfile(false)}
+              onSessionExpired={signOutIfExpired}
+            />
+          ) : request === null || view === null ? (
             <RequestPanel
               pickup={pickup}
               destination={destination}

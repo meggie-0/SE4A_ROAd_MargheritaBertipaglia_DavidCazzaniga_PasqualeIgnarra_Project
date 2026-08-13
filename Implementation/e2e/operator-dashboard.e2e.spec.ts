@@ -103,8 +103,12 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
       await expect(page.getByTestId(`tally-${state}`)).toBeVisible();
     }
 
-    // I marker dei veicoli sono sulla mappa: la flotta si *vede*, che è ciò che R7 chiede.
-    await expect(page.locator('.fleet-map path.leaflet-interactive').first()).toBeVisible();
+    // I marker dei **veicoli** sono sulla mappa: la flotta si *vede*, che è ciò che R7 chiede.
+    // Il selettore nomina la classe dei robotaxi e non `path.leaflet-interactive`, che sarebbe
+    // soddisfatto anche dai soli cerchi delle sedici zone — cioè passerebbe con la flotta vuota.
+    const markers = page.locator('.fleet-map path.robotaxi-marker');
+    await expect(markers.first()).toBeVisible();
+    expect(await markers.count()).toBe(Number.parseInt((await total.innerText()).trim(), 10));
 
     await page.screenshot({
       path: 'e2e/screenshots/dashboard-operatore-flotta.png',

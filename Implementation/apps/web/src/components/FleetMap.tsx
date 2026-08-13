@@ -62,6 +62,13 @@ export function FleetMap({ robotaxis }: FleetMapProps): React.JSX.Element {
             key={vehicle.id}
             center={[vehicle.position.lat, vehicle.position.lon]}
             radius={8}
+            /*
+             * La classe distingue un veicolo da una zona, che sulla mappa sono entrambi dei cerchi.
+             * Serve a chi guarda il DOM — il test di sistema, che senza di essa asseriva «i marker
+             * dei veicoli ci sono» su un selettore soddisfatto dalle sole sedici zone, e sarebbe
+             * passato con la flotta vuota.
+             */
+            className="robotaxi-marker"
             pathOptions={{
               color: appearance.color,
               fillColor: appearance.color,

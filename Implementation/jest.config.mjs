@@ -39,6 +39,21 @@ export default {
         // Il simulatore di flotta (M7) è un pacchetto, non un modulo dell'API: i suoi test lo
         // costruiscono direttamente, come quelli di @road/shared, e non attraversano nessuna porta.
         '<rootDir>/tools/*/test/**/*.spec.ts',
+        /*
+         * I due client (M8), nominati uno per uno e non con `apps/*`: quel jolly prenderebbe anche
+         * `apps/api/test/integration` e `apps/api/test/gates`, che sono altri due progetti e
+         * pretendono Docker — finirebbero eseguiti due volte, e il passo `unit` smetterebbe di
+         * essere quello veloce senza I/O.
+         *
+         * Ciò che si prova è la logica **pura** dei client: la proiezione delle due macchine a
+         * stati sulla vista del passeggero e la classificazione degli alert dell'operatore.
+         * Nessuno dei due test monta un componente — non c'è un DOM in questo progetto, e non
+         * serve: ciò che può sbagliare in silenzio è il calcolo, non il markup. Il difetto che ha
+         * motivato il secondo è proprio di quel genere — un filtro troppo stretto non solleva,
+         * mostra di meno.
+         */
+        '<rootDir>/apps/web/test/**/*.spec.ts',
+        '<rootDir>/apps/passenger/test/**/*.spec.ts',
       ],
     },
     {

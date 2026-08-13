@@ -3,11 +3,14 @@ import {
   apiRequest,
   authResponseSchema,
   rideRequestResponseSchema,
+  userProfileSchema,
   type AuthResponse,
   type GeoPoint,
   type LoginRequest,
   type RegisterRequest,
   type RideRequestResponse,
+  type UpdateProfileRequest,
+  type UserProfile,
 } from '@road/shared';
 
 import { apiBaseUrl } from './api-base-url';
@@ -37,6 +40,28 @@ export async function register(registration: RegisterRequest): Promise<AuthRespo
     method: 'POST',
     body: registration,
     schema: authResponseSchema,
+  });
+}
+
+/**
+ * `PATCH /auth/me` — R2, G1: «update their personal information **and credentials**».
+ *
+ * Il corpo porta i soli campi che si vogliono cambiare, e almeno uno dev'esserci: lo schema
+ * condiviso rifiuta una modifica vuota, perché non è un aggiornamento riuscito di niente.
+ * `phoneNumber: null` cancella il numero, ometterlo lo lascia com'è.
+ *
+ * La risposta è il profilo aggiornato, **senza** la password in nessuna forma: `userProfileSchema`
+ * è costruito elencando i campi ammessi, non togliendo quelli vietati.
+ */
+export async function updateProfile(
+  token: string,
+  patch: UpdateProfileRequest,
+): Promise<UserProfile> {
+  return apiRequest(apiBaseUrl, API_ROUTES.authProfile, {
+    method: 'PATCH',
+    token,
+    body: patch,
+    schema: userProfileSchema,
   });
 }
 
