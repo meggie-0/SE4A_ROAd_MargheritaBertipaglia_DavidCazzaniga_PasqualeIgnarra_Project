@@ -472,6 +472,40 @@
           "rebalancing"
         ]
       }
+    },
+    "/fleet/status": {
+      "get": {
+        "description": "R7: la vista in tempo reale che la dashboard disegna sulla mappa, più il riepilogo per stato della status bar (DD §3.2). Le posizioni non viaggiano sul canale push — cambiano a ogni tick e lo inonderebbero — quindi la dashboard le rilegge da qui; le transizioni di stato continuano ad arrivare push, come ogni altro evento di flotta.",
+        "operationId": "FleetController_getFleetStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetStatusResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Legge posizione e stato di ogni veicolo della flotta",
+        "tags": [
+          "fleet"
+        ]
+      }
     }
   },
   "info": {
@@ -1004,6 +1038,100 @@
         "required": [
           "analyzedAt",
           "zones"
+        ]
+      },
+      "FleetVehicleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "rt-07",
+            "description": "L'identificatore del veicolo."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "ASSIGNED",
+              "ARRIVING",
+              "ARRIVED",
+              "IN_RIDE",
+              "REBALANCING",
+              "MAINTENANCE"
+            ],
+            "example": "ARRIVING",
+            "description": "Lo stato corrente secondo la macchina a sette stati del DD §2.6.3, Figura 2.10. È ciò che decide il colore del marker sulla mappa."
+          },
+          "position": {
+            "description": "L'ultima posizione osservata del veicolo.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeoPointDto"
+              }
+            ]
+          },
+          "zoneId": {
+            "type": "string",
+            "nullable": true,
+            "example": "duomo",
+            "description": "La zona di Milano in cui il veicolo si trova."
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-05-04T09:30:10.000Z",
+            "description": "Quando la riga del veicolo è stata scritta l'ultima volta."
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "position",
+          "zoneId",
+          "updatedAt"
+        ]
+      },
+      "FleetStatusResponseDto": {
+        "type": "object",
+        "properties": {
+          "observedAt": {
+            "type": "string",
+            "example": "2026-05-04T09:30:12.000Z",
+            "description": "L'istante a cui la fotografia si riferisce, letto da ClockPort."
+          },
+          "total": {
+            "type": "number",
+            "example": 20,
+            "description": "Quanti veicoli compongono la flotta."
+          },
+          "countsByState": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "example": {
+              "AVAILABLE": 14,
+              "ASSIGNED": 2,
+              "ARRIVING": 1,
+              "ARRIVED": 0,
+              "IN_RIDE": 2,
+              "REBALANCING": 1,
+              "MAINTENANCE": 0
+            },
+            "description": "Un contatore per ognuno dei sette stati, zeri compresi: è il riepilogo che la status bar della dashboard mostra (DD §3.2)."
+          },
+          "robotaxis": {
+            "description": "I veicoli della flotta, in ordine di identificatore crescente com'esce dalla porta.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetVehicleDto"
+            }
+          }
+        },
+        "required": [
+          "observedAt",
+          "total",
+          "countsByState",
+          "robotaxis"
         ]
       }
     }

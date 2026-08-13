@@ -37,6 +37,12 @@ export const API_ROUTES = {
   // Analisi della domanda (M6, RASD R10, G9). Sola lettura: il riposizionamento lo innesca lo
   // scheduler e lo si osserva sul canale push, come ogni altro movimento di flotta.
   rebalancingDemand: '/rebalancing/demand',
+
+  // Panoramica della flotta (M8, RASD R7, G8). Sola lettura, riservata all'operatore: è ciò che
+  // disegna la mappa e riempie la status bar della dashboard (DD §3.2). Le posizioni **non**
+  // viaggiano sul canale push — cambiano a ogni tick e lo inonderebbero (`recordPositions()`) —
+  // quindi la dashboard le rilegge da qui; gli eventi di stato continuano ad arrivare push.
+  fleetStatus: '/fleet/status',
 } as const;
 
 export type ApiRoute = (typeof API_ROUTES)[keyof typeof API_ROUTES];
