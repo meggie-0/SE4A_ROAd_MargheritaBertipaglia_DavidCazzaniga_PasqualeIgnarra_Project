@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Interval } from '@nestjs/schedule';
+import { FLEET_POSITION_REFRESH_MS } from '@road/shared';
 
 import { FleetSimulationPort } from './fleet-simulation.port';
 
@@ -13,10 +14,15 @@ import { FleetSimulationPort } from './fleet-simulation.port';
  * `AppModule` — trasforma in esecuzioni. Un test che compone `external` non lo importa, quindi
  * nessun veicolo si muove finché un test non lo chiede.
  *
- * **Ogni dieci secondi**, con un tick che vale un minuto di mondo simulato: la flotta si muove sei
- * volte più in fretta del tempo reale. È la scelta che rende guardabile una demo — un veicolo
- * attraversa Milano in un paio di minuti invece che in mezz'ora — senza rendere il sistema
- * irrealistico, perché ciò che cambia è la velocità del mondo, non il rapporto fra le sue parti.
+ * **Ogni mezzo secondo** (`FLEET_POSITION_REFRESH_MS`), con un tick che vale tre secondi di mondo
+ * simulato: la flotta continua a muoversi sei volte più in fretta del tempo reale, come quando il
+ * passo era di dieci secondi per un minuto di mondo. Ciò che è cambiato non è la velocità ma la
+ * **grana**: la stessa strada, percorsa in venti passi invece che in uno, è un veicolo che scorre
+ * sulla mappa invece di saltare da un punto all'altro.
+ *
+ * `@Interval` e non `@Cron`, perché un'espressione cron non scende sotto il secondo. È lo stesso
+ * meccanismo — una dichiarazione che `ScheduleModule` trasforma in esecuzioni, e che senza di esso
+ * resta inerte — quindi nei test nulla si muove finché un test non lo chiede (CLAUDE.md Regola 3).
  */
 @Injectable()
 export class SimulatorSchedule {
@@ -24,7 +30,7 @@ export class SimulatorSchedule {
 
   constructor(private readonly simulation: FleetSimulationPort) {}
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @Interval(FLEET_POSITION_REFRESH_MS)
   advanceSimulatedFleet(): void {
     try {
       this.simulation.tick();

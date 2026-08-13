@@ -10,20 +10,28 @@ pattern, determinismo, tracciabilità — stanno in `CLAUDE.md`.
 
 ## Stato
 
-Milestone corrente: **M8 — Client**. Il backend è completo nei suoi manager (M1–M6) e parla con
-fornitori veri (M7): OSRM per percorsi e tempi di arrivo — con cache e ripiego sulla stima lineare
-quando non risponde — e un **simulatore di flotta** che guida i veicoli lungo la rotta comandata e
-ne pubblica la telemetria.
+Milestone corrente: **M9 — Test di sistema e demo**, l'ultima. Il backend è completo nei suoi
+manager (M1–M6) e parla con fornitori veri (M7): OSRM per percorsi e tempi di arrivo — con cache e
+ripiego sulla stima lineare quando non risponde — e un **simulatore di flotta** che guida i veicoli
+lungo la rotta comandata e ne pubblica la telemetria.
 
-Da questa milestone il sistema ha due interfacce vere. La **dashboard dell'operatore** (DD §3.2)
-mostra la flotta viva su una mappa Leaflet con i marker colorati per stato, il pannello strategia
-con il toggle Auto/Manual sempre visibile, gli alert degli switch automatici e dei riposizionamenti,
-e una status bar che riassume la flotta per stato. L'**app del passeggero** (DD §3.1) è centrata
-sulla mappa: si toccano ritiro e destinazione, si sceglie fra corsa immediata e programmata, si
-preme un pulsante solo — e da lì la stessa schermata diventa una vista di stato live, guidata dalle
-notifiche, che segue la corsa fino a destinazione — con il robotaxi che si avvicina, disegnato sulla
-mappa. Da entrambi i client si aggiornano i propri dati e la password (R2). Restano i test di
-sistema (M9).
+Il sistema ha due interfacce vere (M8). La **dashboard dell'operatore** (DD §3.2) mostra la flotta
+viva su una mappa Leaflet con i marker colorati per stato, il pannello strategia con il toggle
+Auto/Manual sempre visibile, gli alert degli switch automatici e dei riposizionamenti, e una status
+bar che riassume la flotta per stato. L'**app del passeggero** (DD §3.1) è centrata sulla mappa: si
+toccano ritiro e destinazione, si sceglie fra corsa immediata e programmata, si preme un pulsante
+solo — e da lì la stessa schermata diventa una vista di stato live, guidata dalle notifiche, che
+segue la corsa fino a destinazione, con il robotaxi disegnato sulla mappa dall'assegnazione fino
+all'arrivo. Da entrambi i client si aggiornano i propri dati e la password (R2).
+
+Con M9 arrivano i **quattro scenari del RASD** eseguiti dall'inizio alla fine
+(`apps/api/test/integration/scenarios/`), il test di concorrenza sull'ultimo veicolo disponibile e
+il dataset di dimostrazione della serata a San Siro.
+
+La posizione dei veicoli si rinnova **due volte al secondo**: il simulatore avanza, la telemetria
+scrive e i due client rileggono alla stessa cadenza — una sola costante, `FLEET_POSITION_REFRESH_MS`
+in `packages/shared`. La velocità del mondo simulato non è cambiata (sei volte il tempo reale): è il
+passo a essersi accorciato, e un veicolo che prima saltava da un punto all'altro ora scorre.
 
 Il sistema funziona **senza rete**: se `OSRM_BASE_URL` è vuota o il fornitore non risponde, i
 percorsi si stimano in linea d'aria e nessuna richiesta di corsa va persa. I due client scaricano
@@ -89,10 +97,53 @@ Dopo `pnpm dev`:
 | Dashboard operatore | <http://localhost:5173> |
 | App passeggero | <http://localhost:5174> |
 
-Per entrare servono gli account seminati: l'operatore con `SEED_OPERATOR_*`, il passeggero con
-`SEED_PASSENGER_*` — o uno nuovo, creato dall'app passeggero stessa. In fondo a entrambe le
-schermate resta l'indicatore dello stato letto da `GET /health`: dice a colpo d'occhio se una
-schermata ferma è una flotta ferma o un backend spento.
+### Credenziali di accesso
+
+Le due schermate chiedono di entrare. `pnpm db:seed` crea questi due account, prendendo indirizzo e
+password dall'ambiente: sono i valori di `.env.example`, quindi chi non ha toccato il file trova
+esattamente questi.
+
+| Dove | Indirizzo | Email | Password |
+|---|---|---|---|
+| Dashboard operatore (<http://localhost:5173>) | `SEED_OPERATOR_EMAIL` | `operatore@road.example` | `operatore-di-sviluppo` |
+| App passeggero (<http://localhost:5174>) | `SEED_PASSENGER_EMAIL` | `passeggero@road.example` | `passeggero-di-sviluppo` |
+
+> **Sono credenziali di sviluppo, scritte in chiaro qui perché servono a far partire una
+> dimostrazione su una macchina locale.** Ovunque non sia quello, vanno cambiate nel `.env` prima di
+> seminare — insieme a `JWT_SECRET` — e questa tabella smette di valere: il seed legge l'ambiente,
+> non questo file.
+
+Dal lato passeggero un account nuovo si può anche creare dall'app stessa («Registrati»): il RASD
+prevede la registrazione dei soli passeggeri, quindi l'operatore esiste **solo** se il seed è stato
+eseguito. Se la schermata dell'operatore rifiuta le credenziali, quasi sempre manca `pnpm db:seed`.
+
+In fondo a entrambe le schermate resta l'indicatore dello stato letto da `GET /health`: dice a colpo
+d'occhio se una schermata ferma è una flotta ferma o un backend spento.
+
+### La dimostrazione: una serata con la partita a San Siro
+
+```bash
+# a `pnpm dev` fermo, e dopo `pnpm db:seed`
+pnpm db:demo
+pnpm dev
+```
+
+Arrangia lo scenario 4 del RASD sul momento in cui lo si esegue: scrive un evento di domanda attivo
+**adesso** allo stadio; abbassa la domanda della sola fascia oraria corrente nelle altre zone, così
+qualcuna ha veicoli da cedere e San Siro resta l'unica zona scoperta; riporta tutti i robotaxi
+disponibili e ne sposta via chi stava allo stadio; e ripulisce le corse della dimostrazione
+precedente. È ripetibile.
+
+> **A `pnpm dev` fermo.** Da M7 le posizioni dei veicoli vivono nella memoria del processo API — il
+> simulatore *è* la flotta — e questo comando non lo raggiunge: con l'API accesa i veicoli che
+> stavano percorrendo una rotta la riprendono, e la telemetria riscrive entro mezzo secondo le
+> posizioni appena sistemate. Fermare, eseguire, riavviare.
+
+Poi si guarda la dashboard. Il ciclo di riposizionamento gira **ogni dieci minuti** e manda un
+veicolo per zona scoperta, quindi il primo movimento arriva entro dieci minuti dall'avvio e i
+successivi uno ogni dieci: è la cadenza scelta in M6, e una dimostrazione dal vivo conviene
+avviarla in anticipo. Quando parte, un veicolo inattivo si mette in viaggio verso lo stadio — il suo
+marker passa al colore di `REBALANCING` e nel pannello alert compare la riga corrispondente.
 
 > `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
 > il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica
@@ -107,6 +158,14 @@ schermata ferma è una flotta ferma o un backend spento.
 > non un obbligo. È la scelta giusta per un prototipo, ma va detta: con il tier applicativo
 > replicato (NFR3), due istanze che partono insieme su un database non migrato le eseguirebbero in
 > parallelo. In un deploy vero le migrazioni sono un passo a sé, prima di avviare le repliche.
+>
+> Per la stessa ragione, in un deploy replicato **il lavoro periodico va acceso su un'istanza sola**
+> (decisione D72). Ciò che NFR3 chiede replicabile è il cammino delle richieste — nessuno stato di
+> sessione lato server, un token emesso da un'istanza accettato da un'altra — non i cinque `@Cron` e
+> `@Interval`. Attivazione prenotazioni e riposizionamento su due repliche farebbero lavoro doppio
+> senza incoerenze, perché ogni transizione è condizionata sullo stato letto; il **simulatore** no:
+> vive nella memoria del processo, quindi due repliche avrebbero due flotte simulate diverse che
+> scrivono le stesse righe. In locale, con un processo solo, la questione non si pone.
 
 ## Verifica
 
@@ -135,6 +194,7 @@ doppio. Senza Docker, `pnpm verify` fallisce ai passi `gate` e `integration`.
 | `pnpm gate <M>` | il cancello di una milestone, es. `pnpm gate M1` |
 | `pnpm trace` | matrice requisito → test |
 | `pnpm verify:e2e` | stack completo con Playwright; lento, a fine milestone |
+| `pnpm db:demo` | arrangia la serata con la partita a San Siro, per la dimostrazione |
 
 `pnpm verify:e2e` prepara il database (Postgres, migrazioni e seed), alza da solo i tre servizi e
 guida un browser vero; la prima volta i browser vanno scaricati con

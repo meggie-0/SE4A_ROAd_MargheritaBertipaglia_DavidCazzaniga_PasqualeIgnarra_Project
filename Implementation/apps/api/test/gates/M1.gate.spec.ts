@@ -354,7 +354,7 @@ describe('[M1] Cancello: schema e PersistenceManager', () => {
         expect(seed.status).toBe(0);
 
         expect(await harness.countRows('zone')).toBe(16);
-        expect(await harness.countRows('robotaxi')).toBe(20);
+        expect(await harness.countRows('robotaxi')).toBe(64);
         // 16 zone × 7 giorni × 24 ore: una settimana intera di domanda di base.
         expect(await harness.countRows('demand_sample')).toBe(16 * 7 * 24);
         expect(await harness.countRows('demand_event')).toBe(3);
@@ -369,7 +369,7 @@ describe('[M1] Cancello: schema e PersistenceManager', () => {
           lon: number;
           zone_id: string;
         }>(`SELECT "id", "lat", "lon", "zone_id" FROM "robotaxi" ORDER BY "id"`);
-        expect(fleet).toHaveLength(20);
+        expect(fleet).toHaveLength(64);
         for (const robotaxi of fleet) {
           expect(nearestZone(robotaxi, MILAN_ZONES)?.id).toBe(robotaxi.zone_id);
         }

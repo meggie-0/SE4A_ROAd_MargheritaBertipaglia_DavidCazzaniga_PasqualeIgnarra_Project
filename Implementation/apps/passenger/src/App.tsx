@@ -1,5 +1,6 @@
 import {
   ApiError,
+  FLEET_POSITION_REFRESH_MS,
   fetchHealth,
   type GeoPoint,
   type RideRequestKind,
@@ -37,14 +38,15 @@ import { useNotifications } from './use-notifications';
  * dicendo il falso.)
  */
 /**
- * Ogni quanto rileggere dov'è il robotaxi che sta arrivando.
+ * Ogni quanto rileggere dov'è il robotaxi.
  *
- * Cinque secondi, come sulla dashboard e per la stessa ragione: il simulatore avanza ogni dieci e
- * la telemetria si legge ogni dieci, quindi con questo passo nessun movimento resta invisibile più
- * di un ciclo. L'intervallo lo tiene `@tanstack/react-query`; un `setInterval` scritto qui
+ * La cadenza è quella con cui il backend le posizioni le **produce** — mezzo secondo — e arriva da
+ * `@road/shared` invece di essere scelta qui: il simulatore avanza e la telemetria scrive a quel
+ * passo, quindi rileggere più di rado mostrerebbe un veicolo che scatta, e più spesso ripeterebbe la
+ * stessa risposta. L'intervallo lo tiene `@tanstack/react-query`; un `setInterval` scritto qui
  * violerebbe la Regola 3, che vieta i timer nel sorgente delle applicazioni.
  */
-const VEHICLE_REFRESH_MS = 5_000;
+const VEHICLE_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -99,17 +101,30 @@ function PassengerApp(): React.JSX.Element {
   }, [notifications, request]);
 
   /**
-   * La posizione del robotaxi assegnato, mentre sta venendo a prendermi.
+   * La posizione del robotaxi della corsa, finché la corsa c'è.
    *
-   * **È l'unica cosa che questa schermata interroga**, e solo nelle tre fasi in cui c'è un veicolo
-   * in viaggio verso di me: prima non esiste, e da `in_ride` in poi il puntino sono io. Fuori da
+   * **È l'unica cosa che questa schermata interroga**, e solo nelle quattro fasi in cui un veicolo
+   * mio esiste: prima non c'è nessuno da seguire, e dopo `in_ride` la corsa è finita. Fuori da
    * quella finestra la query è spenta, così l'app non chiede al backend cose che non mostrerebbe.
+   *
+   * `in_ride` era escluso, con la motivazione che a bordo «il puntino sono io»: vero, ma il puntino
+   * *non c'era*: il marker spariva proprio nel momento in cui la corsa comincia, e una mappa che si
+   * svuota mentre si viaggia sembra un'app che ha perso il segnale. A bordo la posizione del veicolo
+   * è la propria, ed è l'unica cosa che si vuole guardare mentre si va a destinazione.
    *
    * Non porta lo stato della corsa e non potrebbe: la rotta non lo espone (decisione D69). La
    * progressione continua ad arrivare dal canale push, che è ciò che NFR2 pretende.
    */
   const followingVehicle =
-    view !== null && ['assigned', 'arriving', 'arrived'].includes(view.phase);
+    view !== null && ['assigned', 'arriving', 'arrived', 'in_ride'].includes(view.phase);
+
+  /**
+   * A bordo la linea tratteggiata cambia capo: non più «viene da lì», ma «stiamo andando là».
+   *
+   * È la stessa informazione — dove il veicolo è diretto — letta nella fase in cui il passeggero si
+   * trova. Tenerla puntata sul ritiro dopo la salita indicherebbe un punto che si è già lasciato.
+   */
+  const onBoard = view?.phase === 'in_ride';
 
   const vehicle = useQuery({
     queryKey: ['assigned-vehicle', request?.id ?? null],
@@ -223,6 +238,7 @@ function PassengerApp(): React.JSX.Element {
             pickup={pickup}
             destination={destination}
             robotaxi={followingVehicle ? (vehicle.data?.vehicle?.position ?? null) : null}
+            robotaxiHeadingTo={onBoard ? 'destination' : 'pickup'}
             onPick={request === null ? onPick : null}
           />
 

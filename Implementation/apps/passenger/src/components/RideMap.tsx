@@ -33,7 +33,7 @@ export interface RideMapProps {
   readonly pickup: GeoPoint | null;
   readonly destination: GeoPoint | null;
   /**
-   * Dove si trova il robotaxi assegnato, quando ce n'è uno e sta ancora venendo a prendermi.
+   * Dove si trova il robotaxi della corsa, quando ce n'è uno.
    *
    * Arriva da `GET /rides/:id/vehicle`, riletta a intervalli: è la sola cosa che l'app interroga
    * dopo la richiesta, perché una posizione cambia a ogni tick e sul canale push inonderebbe tutto
@@ -41,24 +41,33 @@ export interface RideMapProps {
    * notifiche raccontano.
    */
   readonly robotaxi?: GeoPoint | null;
+  /**
+   * Verso quale dei due capi il veicolo sta andando: il ritiro prima della salita, la destinazione
+   * dopo. Decide dove punta il segmento tratteggiato, e nient'altro.
+   */
+  readonly robotaxiHeadingTo?: 'pickup' | 'destination';
   /** Riceve il punto toccato. `null` quando la schermata non accetta più scelte (corsa in corso). */
   readonly onPick: ((point: GeoPoint) => void) | null;
 }
 
 /**
- * Il segmento fra il robotaxi e il punto di ritiro **non è il percorso** che il veicolo farà.
+ * Il segmento fra il robotaxi e il punto verso cui è diretto **non è il percorso** che farà.
  *
- * È una linea retta, tratteggiata proprio per non sembrare una strada: dice «viene da lì» e nulla
- * più. Il percorso vero lo conosce il fornitore di mappe e non esce dal backend, e disegnare una
- * polilinea che sembrasse la rotta prometterebbe al passeggero una precisione che il dato non ha —
- * lo stesso errore che la decisione D46 vieta per l'ETA, applicato alla mappa.
+ * È una linea retta, tratteggiata proprio per non sembrare una strada: dice «viene da lì» prima
+ * della salita e «stiamo andando là» dopo, e nulla più. Il percorso vero lo conosce il fornitore di
+ * mappe e non esce dal backend, e disegnare una polilinea che sembrasse la rotta prometterebbe al
+ * passeggero una precisione che il dato non ha — lo stesso errore che la decisione D46 vieta per
+ * l'ETA, applicato alla mappa.
  */
 export function RideMap({
   pickup,
   destination,
   robotaxi,
+  robotaxiHeadingTo = 'pickup',
   onPick,
 }: RideMapProps): React.JSX.Element {
+  const heading = robotaxiHeadingTo === 'destination' ? destination : pickup;
+
   return (
     <MapContainer
       className="ride-map"
@@ -107,11 +116,11 @@ export function RideMap({
       )}
       {robotaxi !== null && robotaxi !== undefined && (
         <>
-          {pickup !== null && (
+          {heading !== null && (
             <Polyline
               positions={[
                 [robotaxi.lat, robotaxi.lon],
-                [pickup.lat, pickup.lon],
+                [heading.lat, heading.lon],
               ]}
               pathOptions={{ color: '#38bdf8', weight: 2, opacity: 0.6, dashArray: '6 8' }}
             />

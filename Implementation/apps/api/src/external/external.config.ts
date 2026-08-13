@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import { DEFAULT_SIMULATOR_SETTINGS, type FleetSimulatorSettings } from '@road/simulator';
 
 /**
  * La configurazione dei fornitori esterni, letta **solo** dall'ambiente (CLAUDE.md, «Cose da non
@@ -55,23 +56,29 @@ export function readOsrmSettings(config: ConfigService): OsrmSettings {
 }
 
 /**
- * I parametri del simulatore di flotta.
+ * I parametri del simulatore di flotta, che sono quelli del pacchetto.
  *
  * La velocità è la stessa assunzione dichiarata che regge la stima lineare degli ETA: cambiandola
  * cambia quanti tick servono per arrivare, non chi arriva prima.
  */
-export interface SimulatorSettings {
-  readonly speedKmH: number;
-  readonly tickMinutes: number;
-}
+export type SimulatorSettings = FleetSimulatorSettings;
 
-export const DEFAULT_SIMULATOR_SPEED_KMH = 20;
-export const DEFAULT_SIMULATOR_TICK_MINUTES = 1;
+/**
+ * I default **sono quelli del pacchetto**, non una seconda copia degli stessi numeri.
+ *
+ * Prima erano scritti due volte, qui e in `DEFAULT_SIMULATOR_SETTINGS`, e finché erano due costanti
+ * indipendenti la duplicazione era innocua solo per coincidenza: da quando il passo del simulatore
+ * si deriva dalla cadenza con cui il sistema guarda la flotta, una copia rimasta indietro farebbe
+ * avanzare il mondo più in fretta di quanto lo si osserva. L'import è lecito perché questo file sta
+ * in `src/external/`, l'unico posto da cui `@road/simulator` si raggiunge (HARNESS.md §3).
+ */
+export const DEFAULT_SIMULATOR_SPEED_KMH = DEFAULT_SIMULATOR_SETTINGS.speedKmH;
+export const DEFAULT_SIMULATOR_TICK_SECONDS = DEFAULT_SIMULATOR_SETTINGS.tickSeconds;
 
 export function readSimulatorSettings(config: ConfigService): SimulatorSettings {
   return {
     speedKmH: positiveInteger(config, 'SIMULATOR_SPEED_KMH', DEFAULT_SIMULATOR_SPEED_KMH),
-    tickMinutes: positiveInteger(config, 'SIMULATOR_TICK_MINUTES', DEFAULT_SIMULATOR_TICK_MINUTES),
+    tickSeconds: positiveInteger(config, 'SIMULATOR_TICK_SECONDS', DEFAULT_SIMULATOR_TICK_SECONDS),
   };
 }
 

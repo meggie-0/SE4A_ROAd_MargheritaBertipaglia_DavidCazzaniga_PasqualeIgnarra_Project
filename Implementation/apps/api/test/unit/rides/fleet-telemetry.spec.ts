@@ -1,3 +1,4 @@
+import { BOARDING_SECONDS } from '../../../src/rides/fleet-telemetry.port';
 import { composeRides, type RidesHarness } from '../../support/rides';
 
 /**
@@ -31,6 +32,16 @@ const vehicle = (id: string) => ({
   zoneId: 'duomo',
   updatedAt: NOW,
 });
+
+/**
+ * Fa scadere la sosta al punto di ritiro (decisione D63).
+ *
+ * L'orologio si porta avanti della quantità che la porta dichiara, non di un numero scritto qui:
+ * cambiare `BOARDING_SECONDS` deve far cambiare i test insieme al codice, non farli fallire.
+ */
+function boardingTimeElapses(): void {
+  harness.clock.advance(BOARDING_SECONDS * 1000);
+}
 
 async function givenAcceptedRide(): Promise<string> {
   const outcome = await harness.rides.submitImmediate({
@@ -82,6 +93,7 @@ describe('[R6][G7] La telemetria fa avanzare la corsa', () => {
     await harness.fleetTelemetry.runOnce(); // → ARRIVING, rotta verso il ritiro
     harness.external.arrive('RT-01'); // il veicolo raggiunge il ritiro
     await harness.fleetTelemetry.runOnce(); // → ARRIVED
+    boardingTimeElapses(); // il passeggero sale (decisione D63)
     await harness.fleetTelemetry.runOnce(); // → IN_RIDE, rotta verso la destinazione
     harness.external.arrive('RT-01'); // il veicolo raggiunge la destinazione
     const last = await harness.fleetTelemetry.runOnce(); // → corsa completata
@@ -114,12 +126,69 @@ describe('[R6][G7] La telemetria fa avanzare la corsa', () => {
     await harness.fleetTelemetry.runOnce();
     harness.external.arrive('RT-01');
     await harness.fleetTelemetry.runOnce();
+    boardingTimeElapses();
     // Il veicolo è fermo al ritiro e la telemetria continua a dire «arrivato»: se il giro
     // guardasse solo quel campo, e non **dove**, farebbe partire e concludere la corsa in un colpo.
     const cycle = await harness.fleetTelemetry.runOnce();
 
     expect(cycle.advanced).toEqual([expect.objectContaining({ step: 'RIDE_STARTED' })]);
     expect(harness.fleet.stateOf('RT-01')).toBe('IN_RIDE');
+  });
+
+  describe('[R6][NFR5] La sosta al punto di ritiro dura un tempo, non un giro', () => {
+    /**
+     * La decisione D63 assume che il passeggero salga da sé, perché nessun sensore sa dire se sia
+     * salito davvero. Fino a M8 quell'assunzione era espressa in **cicli** — «al giro successivo
+     * all'arrivo» — e con la telemetria a mezzo secondo faceva durare lo stato `arrived` mezzo
+     * secondo: il passeggero non faceva in tempo a leggere che il suo robotaxi era arrivato.
+     *
+     * Questi tre casi sono la nuova formulazione, e il primo è quello che la vecchia non superava.
+     */
+    async function givenVehicleWaitingAtPickup(): Promise<void> {
+      await givenAcceptedRide();
+      await harness.fleetTelemetry.runOnce();
+      harness.external.arrive('RT-01');
+      await harness.fleetTelemetry.runOnce();
+      expect(harness.fleet.stateOf('RT-01')).toBe('ARRIVED');
+    }
+
+    it('finché la sosta non è scaduta la corsa non parte, per quanti giri passino', async () => {
+      await givenVehicleWaitingAtPickup();
+
+      // Venti giri: con il passo di mezzo secondo sono dieci secondi di telemetria, ma l'orologio
+      // non si è mosso. È il numero di giri a non contare, ed è il punto.
+      for (let giro = 0; giro < 20; giro += 1) {
+        expect((await harness.fleetTelemetry.runOnce()).advanced).toEqual([]);
+      }
+      expect(harness.fleet.stateOf('RT-01')).toBe('ARRIVED');
+    });
+
+    it('un istante prima della scadenza è ancora presto', async () => {
+      await givenVehicleWaitingAtPickup();
+
+      // Il valore di frontiera dal lato che non deve passare: senza, un confronto scritto con `>`
+      // invece che con `>=` — o con l'unità sbagliata — passerebbe inosservato.
+      harness.clock.advance(BOARDING_SECONDS * 1000 - 1);
+
+      expect((await harness.fleetTelemetry.runOnce()).advanced).toEqual([]);
+      expect(harness.fleet.stateOf('RT-01')).toBe('ARRIVED');
+    });
+
+    it('scaduta la sosta, il primo giro utile fa partire la corsa', async () => {
+      await givenVehicleWaitingAtPickup();
+      boardingTimeElapses();
+
+      const cycle = await harness.fleetTelemetry.runOnce();
+
+      expect(cycle.advanced).toEqual([expect.objectContaining({ step: 'RIDE_STARTED' })]);
+      expect(harness.fleet.stateOf('RT-01')).toBe('IN_RIDE');
+      // E la rotta verso la destinazione parte con la corsa, non prima: un veicolo mandato a
+      // destinazione mentre il passeggero sale se ne andrebbe senza di lui.
+      expect(harness.external.routeCommands.at(-1)).toEqual({
+        robotaxiId: 'RT-01',
+        destination: CENTRALE,
+      });
+    });
   });
 
   it('un veicolo in avvicinamento che ha perso la rotta la riceve di nuovo', async () => {

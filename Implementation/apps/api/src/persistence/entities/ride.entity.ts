@@ -51,6 +51,16 @@ export class RideEntity implements RideRecord {
   @Column({ name: 'destination_lon', type: 'double precision' })
   destinationLon!: number;
 
+  /**
+   * Quando il veicolo è arrivato al punto di ritiro: la corsa passa a `WAITING_FOR_PICKUP` (M9).
+   *
+   * È il momento da cui si conta la sosta della decisione D63 — quanto il sistema aspetta prima di
+   * assumere che il passeggero sia salito. Nulla finché il veicolo non è arrivato, e nulla per le
+   * corse che precedono la migrazione che l'ha introdotta.
+   */
+  @Column({ name: 'pickup_reached_at', type: 'timestamptz', nullable: true })
+  pickupReachedAt!: Date | null;
+
   /** Quando il passeggero è salito: la corsa passa a `IN_PROGRESS` (RASD §1.2.2). */
   @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
   startedAt!: Date | null;

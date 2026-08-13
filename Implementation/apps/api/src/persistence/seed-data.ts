@@ -3,7 +3,7 @@ import { MILAN_ZONES, zoneById } from '@road/shared';
 import type { NewRecord } from './persistence.port';
 
 /**
- * I dati di partenza del prototipo (MILESTONES.md §M1): le 16 zone di Milano, 20 robotaxi, una
+ * I dati di partenza del prototipo (MILESTONES.md §M1): le 16 zone di Milano, 64 robotaxi, una
  * settimana di domanda di base e tre eventi di esempio.
  *
  * L'elenco delle zone non è qui ma in `@road/shared`: lo usano anche `nearestZone()` e, da M8, la
@@ -91,30 +91,63 @@ const VENUE: DemandProfile = {
   weekend: [1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 1],
 };
 
-/** Il profilo di ciascuna zona e quanto pesa rispetto al suo archetipo (`0.7` = più tranquilla). */
+/** Il profilo di ciascuna zona e quanto pesa rispetto al suo archetipo (`0.1` = dieci volte meno). */
 interface ZoneDemand {
   readonly profile: DemandProfile;
   readonly scale: number;
 }
 
-/** La colonna "profilo di domanda" della tabella di MILESTONES.md §M1, tradotta in numeri. */
+/**
+ * Quanta della domanda archetipica il prototipo simula.
+ *
+ * Gli archetipi qui sopra descrivono la *forma* della giornata — quando una zona si riempie e
+ * quando si svuota — su una scala che è quella di una città vera. Questo fattore la porta alla
+ * scala della **flotta del prototipo**, che è di sessantaquattro veicoli: senza, la domanda di
+ * base supererebbe il numero di veicoli in ogni zona e a ogni ora, nessuna zona avrebbe mai un
+ * veicolo da cedere, e il riposizionamento — che presta solo ciò che a una zona avanza — non
+ * avrebbe **mai** niente da spostare fra le sette del mattino e le undici di sera.
+ *
+ * Non è un dettaglio di taratura: era il motivo per cui R11 funzionava nei test e non si vedeva
+ * mai nel sistema in esecuzione (decisione D73).
+ */
+const DEMAND_LEVEL = 0.5;
+
+/**
+ * La colonna "profilo di domanda" della tabella di MILESTONES.md §M1, tradotta in numeri.
+ *
+ * **Le scale sono volutamente molto distanti fra loro**, ed è la scelta che rende osservabile il
+ * riposizionamento. Tre zone fanno da calamita — il centro, la stazione e i Navigli la sera —
+ * mentre il resto della città chiede dieci volte meno; la flotta invece parte **distribuita in
+ * modo uniforme**, quattro veicoli per zona. Così ogni squilibrio che si vede sulla mappa viene
+ * dalla domanda e non da dove sono stati parcheggiati i veicoli, che è esattamente ciò che il
+ * riposizionamento dovrebbe correggere (R11, G9).
+ *
+ * I due impianti per eventi — stadio e polo fieristico — hanno una scala **alta** con una forma
+ * piatta e bassa: fuori dagli eventi non ci va quasi nessuno, e il picco arriva da `demand_event`,
+ * che è il punto del modello a due livelli (decisione D12). La scala alta serve a un'altra cosa: a
+ * tenere la loro base sopra lo zero, perché un moltiplicatore su una base microscopica dovrebbe
+ * valere centinaia per contare qualcosa.
+ */
 export const ZONE_DEMAND: Readonly<Record<string, ZoneDemand>> = {
+  // Le tre calamite.
   duomo: { profile: CENTRAL, scale: 1 },
-  'stazione-centrale': { profile: STATION, scale: 1 },
-  'porta-garibaldi': { profile: COMMUTER, scale: 1 },
-  isola: { profile: EVENING, scale: 0.8 },
-  navigli: { profile: NIGHTLIFE, scale: 1 },
-  'san-siro': { profile: VENUE, scale: 1 },
-  citylife: { profile: OFFICE, scale: 1 },
-  'politecnico-leonardo': { profile: CAMPUS, scale: 1 },
-  'politecnico-bovisa': { profile: CAMPUS, scale: 0.7 },
-  bicocca: { profile: CAMPUS, scale: 0.9 },
-  lambrate: { profile: COMMUTER, scale: 0.7 },
-  'porta-romana': { profile: EVENING, scale: 0.7 },
-  'porta-venezia': { profile: EVENING, scale: 0.9 },
-  cadorna: { profile: COMMUTER, scale: 0.9 },
-  linate: { profile: AIRPORT, scale: 1 },
-  'rho-fiera': { profile: VENUE, scale: 0.8 },
+  'stazione-centrale': { profile: STATION, scale: 0.9 },
+  navigli: { profile: NIGHTLIFE, scale: 0.8 },
+  // Gli impianti per eventi: base bassa e piatta, picco dall'evento.
+  'san-siro': { profile: VENUE, scale: 1.2 },
+  'rho-fiera': { profile: VENUE, scale: 1 },
+  // Il resto della città: tranquillo, e con veicoli da prestare.
+  linate: { profile: AIRPORT, scale: 0.3 },
+  'porta-garibaldi': { profile: COMMUTER, scale: 0.15 },
+  citylife: { profile: OFFICE, scale: 0.15 },
+  'politecnico-leonardo': { profile: CAMPUS, scale: 0.15 },
+  'porta-venezia': { profile: EVENING, scale: 0.15 },
+  cadorna: { profile: COMMUTER, scale: 0.15 },
+  isola: { profile: EVENING, scale: 0.1 },
+  'politecnico-bovisa': { profile: CAMPUS, scale: 0.1 },
+  bicocca: { profile: CAMPUS, scale: 0.1 },
+  lambrate: { profile: COMMUTER, scale: 0.1 },
+  'porta-romana': { profile: EVENING, scale: 0.1 },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -130,53 +163,57 @@ export const ZONE_RECORDS: readonly NewRecord<'zone'>[] = MILAN_ZONES.map((zone)
 }));
 
 /**
- * Dove parte ciascuno dei 20 robotaxi. Le zone più dense ne ricevono più di uno; `rho-fiera` non
- * ne riceve nessuno, il che dà al rebalancing di M6 qualcosa di vero da fare.
+ * Quanti robotaxi parte da ciascuna zona: **quattro, ovunque**.
+ *
+ * La distribuzione uniforme è una scelta, non una semplificazione. Il riposizionamento esiste per
+ * correggere lo scarto fra dove sono i veicoli e dove serviranno; se la flotta partisse già
+ * distribuita secondo la domanda, quello scarto sarebbe zero e non ci sarebbe niente da osservare.
+ * Partendo uniforme, **ogni squilibrio che si vede sulla mappa viene dalla domanda** — che è
+ * sbilanciata di proposito (vedi `ZONE_DEMAND`) — e non da dove qualcuno ha parcheggiato i veicoli.
+ *
+ * Sedici zone per quattro fanno **sessantaquattro veicoli**. Sono più dei venti di partenza, e la
+ * ragione è la stessa della scala della domanda: con venti, dopo che ogni zona si è tenuta quanto
+ * le serve, non ne avanzava nessuno da prestare (decisione D73).
  */
-const FLEET_HOME_ZONES: readonly string[] = [
-  'duomo',
-  'duomo',
-  'duomo',
-  'stazione-centrale',
-  'stazione-centrale',
-  'porta-garibaldi',
-  'porta-garibaldi',
-  'isola',
-  'navigli',
-  'navigli',
-  'citylife',
-  'cadorna',
-  'porta-venezia',
-  'porta-romana',
-  'politecnico-leonardo',
-  'politecnico-bovisa',
-  'bicocca',
-  'lambrate',
-  'san-siro',
-  'linate',
-];
+const ROBOTAXIS_PER_ZONE = 4;
 
 /**
- * I 20 robotaxi, tutti `AVAILABLE`, sparsi attorno al centroide della propria zona.
+ * I quattro scostamenti dal centroide, uno per angolo.
  *
- * Lo scostamento è una funzione dell'indice e non un valore casuale: due seed devono produrre la
- * stessa flotta. Resta ampiamente dentro la cella di Voronoi della zona — circa 200 metri contro
- * distanze fra centroidi dell'ordine del chilometro — così la zona dichiarata e quella che
- * `nearestZone()` calcola dalla posizione coincidono.
+ * Circa 110 metri, contro distanze fra centroidi dell'ordine del chilometro: i veicoli restano
+ * ampiamente dentro la cella di Voronoi della propria zona, così la zona dichiarata e quella che
+ * `nearestZone()` calcola dalla posizione coincidono — cosa che il cancello di M1 verifica veicolo
+ * per veicolo. Sono valori fissi e non casuali: due seed devono produrre la stessa flotta.
  */
-export function fleetRecords(): readonly NewRecord<'robotaxi'>[] {
-  return FLEET_HOME_ZONES.map((zoneId, index) => {
-    const home = zoneById(zoneId);
-    if (home === undefined) throw new Error(`Zona sconosciuta nel seed della flotta: ${zoneId}`);
+const FLEET_OFFSETS: readonly { readonly lat: number; readonly lon: number }[] = [
+  { lat: 0.001, lon: 0.001 },
+  { lat: 0.001, lon: -0.001 },
+  { lat: -0.001, lon: 0.001 },
+  { lat: -0.001, lon: -0.001 },
+];
 
-    return {
-      id: `RT-${String(index + 1).padStart(2, '0')}`,
-      state: 'AVAILABLE',
-      lat: round(home.lat + ((index % 5) - 2) * 0.002),
-      lon: round(home.lon + (((index * 3) % 5) - 2) * 0.002),
-      zoneId,
-    };
-  });
+/** I 64 robotaxi, tutti `AVAILABLE`, quattro attorno al centroide di ciascuna zona. */
+export function fleetRecords(): readonly NewRecord<'robotaxi'>[] {
+  const records: NewRecord<'robotaxi'>[] = [];
+
+  for (const zone of MILAN_ZONES) {
+    const home = zoneById(zone.id);
+    if (home === undefined) throw new Error(`Zona sconosciuta nel seed della flotta: ${zone.id}`);
+
+    for (let index = 0; index < ROBOTAXIS_PER_ZONE; index += 1) {
+      // `FLEET_OFFSETS` ha `ROBOTAXIS_PER_ZONE` elementi: l'indice è sempre dentro.
+      const offset = FLEET_OFFSETS[index] as (typeof FLEET_OFFSETS)[number];
+      records.push({
+        id: `RT-${String(records.length + 1).padStart(2, '0')}`,
+        state: 'AVAILABLE',
+        lat: roundCoordinate(home.lat + offset.lat),
+        lon: roundCoordinate(home.lon + offset.lon),
+        zoneId: zone.id,
+      });
+    }
+  }
+
+  return records;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -200,7 +237,7 @@ export function demandSampleRecords(): readonly NewRecord<'demand_sample'>[] {
           zoneId: zone.id,
           dayOfWeek,
           hourOfDay,
-          baseDemand: round((hours[hourOfDay] ?? 0) * demand.scale),
+          baseDemand: round((hours[hourOfDay] ?? 0) * demand.scale * DEMAND_LEVEL),
         });
       }
     }
@@ -242,4 +279,20 @@ export const DEMAND_EVENT_RECORDS: readonly NewRecord<'demand_event'>[] = [
 /** Due decimali: la domanda è una stima, non una misura, e i confronti restano esatti. */
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * Sei decimali: circa dieci centimetri.
+ *
+ * Le coordinate **non** possono usare `round()`, e per un motivo che vale la pena scrivere perché è
+ * stato un difetto vero: due decimali su un grado sono **più di un chilometro**, cioè più della
+ * distanza fra due centroidi vicini. Applicato alle posizioni, quell'arrotondamento incollava i
+ * veicoli a una griglia grossolana e poteva spostarne uno nella cella di Voronoi della zona
+ * accanto — rendendo falsa la `zone_id` scritta in tabella, che è il dato su cui il
+ * riposizionamento decide. Il seed precedente lo faceva e passava per coincidenza: con quattro
+ * veicoli per zona la coincidenza è finita, e il cancello di M1 — che confronta la zona dichiarata
+ * con quella calcolata, veicolo per veicolo — lo ha colto subito.
+ */
+function roundCoordinate(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }

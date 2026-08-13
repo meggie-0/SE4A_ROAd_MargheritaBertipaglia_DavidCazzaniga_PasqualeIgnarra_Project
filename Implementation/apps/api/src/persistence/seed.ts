@@ -12,7 +12,7 @@ import { DEMAND_EVENT_RECORDS, ZONE_RECORDS, demandSampleRecords, fleetRecords }
 /**
  * `pnpm db:seed`.
  *
- * Riporta il database ai dati di partenza di MILESTONES.md §M1: 16 zone, 20 robotaxi, una
+ * Riporta il database ai dati di partenza di MILESTONES.md §M1: 16 zone, 64 robotaxi, una
  * settimana di domanda di base, tre eventi. È **ripetibile** — svuota prima di scrivere — perché
  * un comando che fallisce alla seconda esecuzione è un comando che nessuno userà davvero.
  *
@@ -20,9 +20,18 @@ import { DEMAND_EVENT_RECORDS, ZONE_RECORDS, demandSampleRecords, fleetRecords }
  * dato seminato potrebbe non essere quello che il resto del sistema sa scrivere.
  */
 
-/** L'ordine conta: le figlie prima delle madri, o le chiavi esterne si oppongono. */
+/**
+ * L'ordine conta: le figlie prima delle madri, o le chiavi esterne si oppongono.
+ *
+ * `ride` e `rebalancing_action` sono nell'elenco anche se il `CASCADE` le porterebbe via comunque
+ * passando dalle madri: contare su quello significa che l'elenco non dice più quali tabelle il
+ * comando svuota, e la prima tabella nuova senza chiave esterna verso queste resterebbe piena senza
+ * che nulla lo segnali.
+ */
 const TABLES_TO_CLEAR = [
   'notification',
+  'rebalancing_action',
+  'ride',
   'booking',
   'robotaxi_reservation',
   'ride_request',

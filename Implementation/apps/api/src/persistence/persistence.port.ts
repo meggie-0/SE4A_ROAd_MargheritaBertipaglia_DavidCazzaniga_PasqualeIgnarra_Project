@@ -203,6 +203,8 @@ export interface RideRecord {
   readonly pickupLon: number;
   readonly destinationLat: number;
   readonly destinationLon: number;
+  /** Quando il veicolo ha raggiunto il ritiro: da lì si conta la sosta prima della salita (D63). */
+  readonly pickupReachedAt: Date | null;
   readonly startedAt: Date | null;
   readonly endedAt: Date | null;
   readonly createdAt: Date;

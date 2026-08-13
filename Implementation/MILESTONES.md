@@ -115,8 +115,23 @@ Il modello di domanda ha due livelli: una **base** per zona e fascia oraria sett
 a San Siro, salone a Rho Fiera, spettacolo alla Scala. I dati sono simulati: va scritto nelle
 assunzioni, e il RASD già tratta la sorgente di domanda come dipendenza esterna.
 
-Seed: 20 robotaxi distribuiti sulle zone, le 16 zone, una settimana di `demand_sample`, due o tre
+Seed: 64 robotaxi distribuiti sulle zone, le 16 zone, una settimana di `demand_sample`, due o tre
 `demand_event` di esempio.
+
+**[M9] La taratura dei due numeri** — quanti veicoli e quanta domanda — è stata rivista quando si è
+visto che con venti veicoli e i profili di domanda alla scala di una città vera nessuna zona aveva
+mai un veicolo da cedere: il riposizionamento (R11) funzionava nei test e **non poteva scattare** nel
+sistema in esecuzione fra le sette del mattino e le undici di sera. Le tre regole ora sono:
+
+- **quattro robotaxi per zona, sessantaquattro in tutto**, distribuiti in modo uniforme. Lo squilibrio
+  che il riposizionamento deve correggere viene dalla domanda, non da dove i veicoli sono parcheggiati;
+- **la domanda è alla scala della flotta**: gli archetipi conservano la forma della giornata, un
+  fattore unico li porta a numeri che sessantaquattro veicoli possono servire;
+- **le zone sono volutamente sbilanciate**: centro, stazione e Navigli chiedono circa dieci volte più
+  del resto della città, così ci sono sempre zone scoperte verso cui mandare veicoli e zone tranquille
+  da cui prenderli.
+
+Vedi la decisione D73 del DD.
 
 **Cancello M1:** due transazioni concorrenti che prenotano lo stesso veicolo su intervalli
 sovrapposti — esattamente una riesce, l'altra fallisce per violazione del vincolo di esclusione.
