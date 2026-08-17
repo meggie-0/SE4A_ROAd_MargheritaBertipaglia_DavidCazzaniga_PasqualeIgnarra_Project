@@ -9,7 +9,12 @@ import {
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchAssignedVehicle, requestAdvanceBooking, requestImmediateRide } from './api';
+import {
+  cancelRide,
+  fetchAssignedVehicle,
+  requestAdvanceBooking,
+  requestImmediateRide,
+} from './api';
 import { apiBaseUrl } from './api-base-url';
 import { LoginScreen } from './components/LoginScreen';
 import { RequestPanel } from './components/RequestPanel';
@@ -70,6 +75,8 @@ function PassengerApp(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancellationError, setCancellationError] = useState<string | null>(null);
 
   const health = useApiHealth();
   const { notifications, connection } = useNotifications(session?.accessToken ?? null);
@@ -144,6 +151,8 @@ function PassengerApp(): React.JSX.Element {
     setPickup(null);
     setDestination(null);
     setError(null);
+    setCancellationError(null);
+    setCancelling(false);
   }
 
   function signOut(): void {
@@ -198,6 +207,30 @@ function PassengerApp(): React.JSX.Element {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function cancelCurrentRide(): Promise<void> {
+    if (session === null || request === null) return;
+
+    setCancelling(true);
+    setCancellationError(null);
+
+    try {
+      const cancelled = await cancelRide(session.accessToken, request.id);
+
+      /*
+       * La risposta HTTP contiene già status: CANCELLED.
+       * Non è necessario attendere la notifica WebSocket per
+       * aggiornare la schermata.
+       */
+      setRequest(cancelled);
+    } catch (failure) {
+      if (signOutIfExpired(failure)) return;
+
+      setCancellationError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -277,6 +310,9 @@ function PassengerApp(): React.JSX.Element {
               request={request}
               view={view}
               connected={connection === 'connected'}
+              cancelling={cancelling}
+              cancellationError={cancellationError}
+              onCancel={() => void cancelCurrentRide()}
               onNewRequest={resetRequest}
             />
           )}

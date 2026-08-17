@@ -299,3 +299,76 @@ button:disabled {
   font-weight: 600;
   margin: 0;
 }
+
+/* --- cancellazione corsa ------------------------------------------------ */
+
+.cancellation-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+
+.cancellation-actions .muted {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.danger-button {
+  background: transparent;
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: rgb(248 113 113 / 12%);
+}
+
+/* --- conferma cancellazione --------------------------------------------- */
+
+.confirmation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(2 6 23 / 72%);
+  backdrop-filter: blur(3px);
+}
+
+.confirmation-dialog {
+  width: min(26rem, 100%);
+  padding: 1.25rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: 0 1.25rem 3rem rgb(0 0 0 / 45%);
+}
+
+.confirmation-dialog h3 {
+  margin: 0 0 0.75rem;
+}
+
+.confirmation-dialog p {
+  margin: 0 0 1.25rem;
+  color: var(--ink-muted);
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.secondary-button {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--surface-border);
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: var(--ink-muted);
+}

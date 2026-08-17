@@ -272,6 +272,7 @@ describe('[M8] Cancello: i due client', () => {
       [API_ROUTES.authLogin, 'post'],
       [API_ROUTES.ridesImmediate, 'post'],
       [API_ROUTES.ridesAdvance, 'post'],
+      [API_ROUTES.rideCancel, 'post'],
       [API_ROUTES.rideVehicle, 'get'],
       [API_ROUTES.authProfile, 'patch'],
       [API_ROUTES.fleetStatus, 'get'],

@@ -203,6 +203,44 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
   });
 });
 
+test.describe('[R14] Il passeggero annulla una corsa prima che inizi', () => {
+  test('la conferma permette di mantenere oppure annullare la corsa', async ({ page }) => {
+    await signIn(page);
+
+    await tapMap(page, PICKUP_FRACTION);
+    await tapMap(page, DESTINATION_FRACTION);
+    await page.getByTestId('request-ride').click();
+
+    const phase = page.getByTestId('ride-phase');
+    const cancelButton = page.getByTestId('cancel-ride');
+    const confirmation = page.getByTestId('cancel-confirmation');
+
+    await expect(phase).toBeVisible();
+    await expect(cancelButton).toBeVisible();
+
+    // Il primo tentativo viene rifiutato dal passeggero.
+    await cancelButton.click();
+
+    await expect(confirmation).toBeVisible();
+    await page.getByTestId('dismiss-cancellation').click();
+
+    await expect(confirmation).toHaveCount(0);
+    await expect(cancelButton).toBeVisible();
+    await expect(phase).not.toHaveAttribute('data-phase', 'cancelled');
+
+    // Il secondo tentativo viene confermato.
+    await cancelButton.click();
+
+    await expect(confirmation).toBeVisible();
+    await page.getByTestId('confirm-cancellation').click();
+
+    await expect(confirmation).toHaveCount(0);
+    await expect(phase).toHaveAttribute('data-phase', 'cancelled');
+    await expect(cancelButton).toHaveCount(0);
+    await expect(page.getByTestId('new-request')).toBeVisible();
+  });
+});
+
 test.describe('[R2][G1] Il passeggero aggiorna il proprio profilo', () => {
   /**
    * R2: «users will be able to update their personal information **and credentials**».

@@ -1,5 +1,5 @@
 import type { RideRequestResponse } from '@road/shared';
-
+import { useState } from 'react';
 import { PHASE_LABELS, type RidePhase, type RideView } from '../ride-phase';
 
 /**
@@ -23,6 +23,9 @@ export interface StatusPanelProps {
   readonly view: RideView;
   readonly connected: boolean;
   readonly onNewRequest: () => void;
+  readonly cancelling: boolean;
+  readonly cancellationError: string | null;
+  readonly onCancel: () => void;
 }
 
 /** Le cinque fasi che il DD §3.1 elenca, in ordine: è la barra di avanzamento della corsa. */
@@ -38,9 +41,14 @@ export function StatusPanel({
   request,
   view,
   connected,
+  cancelling,
+  cancellationError,
+  onCancel,
   onNewRequest,
 }: StatusPanelProps): React.JSX.Element {
   const finished = view.phase === 'completed' || view.phase === 'cancelled';
+  const [confirmingCancellation, setConfirmingCancellation] = useState(false);
+  const cancellable = ['searching', 'assigned', 'arriving', 'arrived'].includes(view.phase);
   const reached = PROGRESSION.indexOf(view.phase);
 
   return (
@@ -90,6 +98,67 @@ export function StatusPanel({
         <p className="last-message" data-testid="ride-message">
           {view.lastMessage}
         </p>
+      )}
+
+      {cancellable && (
+        <div className="cancellation-actions">
+          <button
+            type="button"
+            className="danger-button"
+            data-testid="cancel-ride"
+            disabled={cancelling}
+            onClick={() => setConfirmingCancellation(true)}
+          >
+            {cancelling ? 'Annullamento in corso…' : 'Annulla corsa'}
+          </button>
+
+          <p className="muted">Puoi annullare gratuitamente fino all’inizio della corsa.</p>
+        </div>
+      )}
+
+      {cancellationError !== null && (
+        <p className="status-error" data-testid="cancellation-error" role="alert">
+          {cancellationError}
+        </p>
+      )}
+
+      {confirmingCancellation && (
+        <div className="confirmation-overlay">
+          <div
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-confirmation-title"
+            data-testid="cancel-confirmation"
+          >
+            <h3 id="cancel-confirmation-title">Annullare la corsa?</h3>
+
+            <p>Sei sicuro di voler annullare questa corsa?</p>
+
+            <div className="confirmation-actions">
+              <button
+                type="button"
+                className="danger-button"
+                data-testid="confirm-cancellation"
+                onClick={() => {
+                  setConfirmingCancellation(false);
+                  onCancel();
+                }}
+              >
+                Sì, annulla
+              </button>
+
+              <button
+                type="button"
+                className="secondary-button"
+                data-testid="dismiss-cancellation"
+                onClick={() => setConfirmingCancellation(false)}
+              >
+                No, mantieni la corsa
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Il canale è la sola sorgente degli aggiornamenti: se cade, il passeggero deve saperlo,

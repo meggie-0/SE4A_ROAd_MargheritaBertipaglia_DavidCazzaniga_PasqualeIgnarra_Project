@@ -3,6 +3,7 @@ import {
   apiRequest,
   assignedVehicleResponseSchema,
   authResponseSchema,
+  rideCancelRoute,
   rideRequestResponseSchema,
   userProfileSchema,
   type AuthResponse,
@@ -19,7 +20,7 @@ import {
 import { apiBaseUrl } from './api-base-url';
 
 /**
- * Le quattro chiamate che l'app passeggero fa al backend (RASD R1, R2, R3, R4).
+ * Le sette chiamate che l'app passeggero fa al backend (RASD R1, R2, R3, R4).
  *
  * Ogni funzione è una riga di trasporto: rotta da `API_ROUTES`, corpo dalla forma condivisa,
  * risposta validata con lo schema condiviso. Nessuna logica: il client non decide chi è idoneo, non
@@ -107,6 +108,24 @@ export async function requestAdvanceBooking(
       destination: draft.destination,
       scheduledPickup: draft.scheduledPickup,
     },
+    schema: rideRequestResponseSchema,
+  });
+}
+
+/**
+ * `POST /rides/:id/cancel` — R14.
+ *
+ * Annulla una richiesta immediata o una prenotazione programmata
+ * prima dell'inizio della corsa. Il backend verifica appartenenza,
+ * stato della corsa e stato del robotaxi.
+ */
+export async function cancelRide(
+  token: string,
+  rideRequestId: string,
+): Promise<RideRequestResponse> {
+  return apiRequest(apiBaseUrl, rideCancelRoute(rideRequestId), {
+    method: 'POST',
+    token,
     schema: rideRequestResponseSchema,
   });
 }

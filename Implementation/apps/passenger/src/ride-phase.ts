@@ -56,11 +56,15 @@ export interface RideView {
  */
 export function initialView(request: RideRequestResponse): RideView {
   const phase: RidePhase =
-    request.status === 'REJECTED'
-      ? 'rejected'
-      : request.assignedRobotaxiId !== null
-        ? 'assigned'
-        : 'searching';
+    request.status === 'CANCELLED'
+      ? 'cancelled'
+      : request.status === 'COMPLETED'
+        ? 'completed'
+        : request.status === 'REJECTED'
+          ? 'rejected'
+          : request.assignedRobotaxiId !== null
+            ? 'assigned'
+            : 'searching';
 
   return {
     phase,

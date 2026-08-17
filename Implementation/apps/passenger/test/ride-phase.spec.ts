@@ -85,6 +85,18 @@ describe('[R3][R6][G2][G7] La vista di stato della corsa', () => {
     expect(initialView(booking).phase).toBe('searching');
   });
 
+  it('[R14] mostra immediatamente una richiesta cancellata', () => {
+    const cancelled: RideRequestResponse = {
+      ...REQUEST,
+      status: 'CANCELLED',
+    };
+
+    expect(initialView(cancelled)).toMatchObject({
+      phase: 'cancelled',
+      robotaxiId: 'rt-04',
+    });
+  });
+
   it('segue la progressione fino a in_ride', () => {
     const phases = [arriving, arrived, inRide].reduce(
       (steps, event) => [...steps, applyNotification(steps.at(-1) as never, event)],
