@@ -15,6 +15,17 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Configurazione esclusivamente di test. Non contiene credenziali di produzione.
+env:
+  JWT_SECRET: chiave-ci-di-test-non-usata-in-produzione-0123456789
+  JWT_EXPIRES_IN_SECONDS: "3600"
+  BCRYPT_ROUNDS: "4"
+  SEED_OPERATOR_EMAIL: operatore@road.example
+  SEED_OPERATOR_PASSWORD: operatore-di-sviluppo
+  SEED_PASSENGER_EMAIL: passeggero@road.example
+  SEED_PASSENGER_PASSWORD: passeggero-di-sviluppo
+  DATABASE_URL: postgres://road:road@localhost:5432/road
+  
 defaults:
   run:
     # Il monorepo vive in Implementation/; la radice del repository ospita RASD, DD e diagrammi.
