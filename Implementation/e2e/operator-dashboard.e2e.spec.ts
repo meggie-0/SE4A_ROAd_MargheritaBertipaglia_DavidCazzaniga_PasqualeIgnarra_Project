@@ -115,6 +115,60 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
       fullPage: true,
     });
   });
+
+  test('[R9][NFR2][NFR5] l operatore gestisce la manutenzione dalla dashboard', async ({
+    page,
+  }) => {
+    await signIn(page);
+
+    const maintenancePanel = page.getByTestId('maintenance-panel');
+    /*
+     * Il riempimento verde identifica i veicoli AVAILABLE.
+     * `dispatchEvent` invia il click direttamente al marker scelto:
+     * un click fisico potrebbe essere intercettato da un altro marker
+     * sovrapposto sulla stessa zona.
+     */
+    const availableMarker = page.locator('.fleet-map path.robotaxi-marker[fill="#4ade80"]').first();
+
+    await expect(availableMarker).toBeVisible();
+    await availableMarker.dispatchEvent('click');
+    await expect(maintenancePanel).toHaveAttribute('data-robotaxi-state', 'AVAILABLE');
+
+    const selectedRobotaxiId = page.getByTestId('selected-robotaxi-id');
+
+    await expect(selectedRobotaxiId).not.toHaveText('');
+
+    const maintenanceCount = page.getByTestId('tally-MAINTENANCE').locator('.figure');
+
+    const countBefore = Number.parseInt((await maintenanceCount.innerText()).trim(), 10);
+
+    await page.getByTestId('maintenance-reason').fill('Controllo automatico Playwright');
+
+    await page.getByTestId('start-maintenance').click();
+
+    await expect(maintenancePanel).toHaveAttribute('data-robotaxi-state', 'MAINTENANCE');
+
+    await expect(maintenanceCount).toHaveText(String(countBefore + 1));
+
+    await expect(page.getByTestId('complete-maintenance')).toBeVisible();
+
+    await page.screenshot({
+      path: 'e2e/screenshots/dashboard-manutenzione.png',
+      fullPage: true,
+    });
+
+    /*
+     * Il test lascia il sistema come lo ha trovato, così non influenza
+     * gli scenari eseguiti successivamente sullo stesso database.
+     */
+    await page.getByTestId('complete-maintenance').click();
+
+    await expect(maintenancePanel).toHaveAttribute('data-robotaxi-state', 'AVAILABLE');
+
+    await expect(maintenanceCount).toHaveText(String(countBefore));
+
+    await expect(page.getByTestId('start-maintenance')).toBeVisible();
+  });
 });
 
 test.describe('[R2][G1] L operatore aggiorna il proprio profilo', () => {

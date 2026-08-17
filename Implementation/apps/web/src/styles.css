@@ -362,3 +362,16 @@ button:disabled {
   font-weight: 600;
   margin: 0;
 }
+
+/* --- pannello manutenzione ---------------------------------------------- */
+
+.maintenance-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.maintenance-panel .readout {
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--surface-border);
+}

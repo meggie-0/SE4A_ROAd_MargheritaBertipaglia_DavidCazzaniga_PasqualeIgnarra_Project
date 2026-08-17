@@ -19,6 +19,8 @@ import { NotificationsGateway } from './notifications.gateway';
 import { RebalancingController } from './rebalancing.controller';
 import { RidesController } from './rides.controller';
 
+import { MaintenanceModule } from '../maintenance/maintenance.module';
+import { MaintenanceController } from './maintenance.controller';
 /**
  * API Gateway (DD §2.2): unico punto d'ingresso dei client.
  *
@@ -78,6 +80,7 @@ import { RidesController } from './rides.controller';
     ModeModule,
     RebalancingModule,
     FleetModule,
+    MaintenanceModule,
   ],
   controllers: [
     HealthController,
@@ -87,6 +90,7 @@ import { RidesController } from './rides.controller';
     ControlModeController,
     RebalancingController,
     FleetController,
+    MaintenanceController,
   ],
   providers: [NotificationsGateway],
 })

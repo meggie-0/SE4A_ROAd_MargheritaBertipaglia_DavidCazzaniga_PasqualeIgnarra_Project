@@ -1,5 +1,5 @@
 import { MILAN_ZONES, type FleetVehicle } from '@road/shared';
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip } from 'react-leaflet';
+import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMapEvents } from 'react-leaflet';
 
 import { STATE_APPEARANCE } from '../robotaxi-states';
 
@@ -26,9 +26,31 @@ const INITIAL_ZOOM = 12;
 
 export interface FleetMapProps {
   readonly robotaxis: readonly FleetVehicle[];
+  readonly selectedRobotaxiId: string | null;
+  readonly onSelectRobotaxi: (robotaxiId: string) => void;
+  readonly onClearSelection: () => void;
 }
 
-export function FleetMap({ robotaxis }: FleetMapProps): React.JSX.Element {
+interface ClearSelectionOnMapClickProps {
+  readonly onClearSelection: () => void;
+}
+
+function ClearSelectionOnMapClick({ onClearSelection }: ClearSelectionOnMapClickProps): null {
+  useMapEvents({
+    click: () => {
+      onClearSelection();
+    },
+  });
+
+  return null;
+}
+
+export function FleetMap({
+  robotaxis,
+  selectedRobotaxiId,
+  onSelectRobotaxi,
+  onClearSelection,
+}: FleetMapProps): React.JSX.Element {
   return (
     <MapContainer
       className="fleet-map"
@@ -36,6 +58,7 @@ export function FleetMap({ robotaxis }: FleetMapProps): React.JSX.Element {
       zoom={INITIAL_ZOOM}
       scrollWheelZoom
     >
+      <ClearSelectionOnMapClick onClearSelection={onClearSelection} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -57,11 +80,16 @@ export function FleetMap({ robotaxis }: FleetMapProps): React.JSX.Element {
 
       {robotaxis.map((vehicle) => {
         const appearance = STATE_APPEARANCE[vehicle.state];
+        const selected = vehicle.id === selectedRobotaxiId;
         return (
           <CircleMarker
             key={vehicle.id}
             center={[vehicle.position.lat, vehicle.position.lon]}
-            radius={8}
+            radius={selected ? 10 : 8}
+            eventHandlers={{
+              click: () => onSelectRobotaxi(vehicle.id),
+            }}
+            bubblingMouseEvents={false}
             /*
              * La classe distingue un veicolo da una zona, che sulla mappa sono entrambi dei cerchi.
              * Serve a chi guarda il DOM — il test di sistema, che senza di essa asseriva «i marker
@@ -70,10 +98,10 @@ export function FleetMap({ robotaxis }: FleetMapProps): React.JSX.Element {
              */
             className="robotaxi-marker"
             pathOptions={{
-              color: appearance.color,
+              color: selected ? '#000305' : appearance.color,
               fillColor: appearance.color,
               fillOpacity: 0.85,
-              weight: 2,
+              weight: selected ? 2 : 2,
             }}
           >
             <Popup>
@@ -82,6 +110,12 @@ export function FleetMap({ robotaxis }: FleetMapProps): React.JSX.Element {
               {appearance.label}
               <br />
               Zona: {vehicle.zoneId ?? '—'}
+              {selected && (
+                <>
+                  <br />
+                  <em>Robotaxi selezionato</em>
+                </>
+              )}
             </Popup>
           </CircleMarker>
         );

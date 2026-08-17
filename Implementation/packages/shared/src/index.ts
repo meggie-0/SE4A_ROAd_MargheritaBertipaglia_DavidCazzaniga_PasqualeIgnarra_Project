@@ -15,3 +15,4 @@ export * from './rebalancing.js';
 export * from './rides.js';
 export * from './time.js';
 export * from './zones.js';
+export * from './maintenance.js';

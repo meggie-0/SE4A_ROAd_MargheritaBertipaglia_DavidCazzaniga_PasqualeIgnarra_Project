@@ -9,7 +9,14 @@ import {
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
-import { enableAutoMode, fetchFleetStatus, fetchMode, setActiveStrategy } from './api';
+import {
+  completeMaintenance,
+  enableAutoMode,
+  fetchFleetStatus,
+  fetchMode,
+  setActiveStrategy,
+  startMaintenance,
+} from './api';
 import { apiBaseUrl } from './api-base-url';
 import { AlertsPanel } from './components/AlertsPanel';
 import { FleetMap } from './components/FleetMap';
@@ -19,6 +26,7 @@ import { StatusBar } from './components/StatusBar';
 import { StrategyPanel } from './components/StrategyPanel';
 import { clearSession, loadSession, saveSession, type Session } from './session';
 import { useNotifications } from './use-notifications';
+import { MaintenancePanel } from './components/MaintenancePanel';
 
 /**
  * La dashboard dell'operatore di flotta (DD §3.2).
@@ -65,7 +73,9 @@ function Dashboard(): React.JSX.Element {
   const [commandError, setCommandError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-
+  const [selectedRobotaxiId, setSelectedRobotaxiId] = useState<string | null>(null);
+  const [maintenanceBusy, setMaintenanceBusy] = useState(false);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
   const health = useApiHealth();
   const queries = useQueryClient();
   const token = session?.accessToken ?? null;
@@ -82,11 +92,18 @@ function Dashboard(): React.JSX.Element {
     queryFn: () => fetchFleetStatus(token as string),
   });
 
+  const selectedRobotaxi =
+    fleet.data?.robotaxis.find((vehicle) => vehicle.id === selectedRobotaxiId) ?? null;
+
   const mode = useQuery({
     queryKey: ['mode'],
     enabled: token !== null,
     queryFn: () => fetchMode(token as string),
   });
+
+  useEffect(() => {
+    setMaintenanceError(null);
+  }, [selectedRobotaxiId]);
 
   /**
    * Modo e strategia si aggiornano dal **canale push**, non ri-chiedendoli.
@@ -146,6 +163,7 @@ function Dashboard(): React.JSX.Element {
     setSession(null);
     setShowProfile(false);
     queries.clear();
+    setSelectedRobotaxiId(null);
   }
 
   /** Traduce un errore di comando, riportando al login se la sessione è finita. */
@@ -157,6 +175,14 @@ function Dashboard(): React.JSX.Element {
     setCommandError(failure instanceof Error ? failure.message : String(failure));
   }
 
+  function onMaintenanceFailure(failure: unknown): void {
+    if (failure instanceof ApiError && failure.status === 401) {
+      signOut();
+      return;
+    }
+
+    setMaintenanceError(failure instanceof Error ? failure.message : String(failure));
+  }
   /**
    * Una sessione scaduta riporta al login **anche quando a scoprirlo è una lettura**.
    *
@@ -209,6 +235,44 @@ function Dashboard(): React.JSX.Element {
     }
   }
 
+  async function beginSelectedMaintenance(reason: string): Promise<void> {
+    if (token === null || selectedRobotaxi === null) return;
+
+    setMaintenanceBusy(true);
+    setMaintenanceError(null);
+
+    try {
+      await startMaintenance(token, selectedRobotaxi.id, reason);
+
+      await queries.invalidateQueries({
+        queryKey: ['fleet-status'],
+      });
+    } catch (failure) {
+      onMaintenanceFailure(failure);
+    } finally {
+      setMaintenanceBusy(false);
+    }
+  }
+
+  async function completeSelectedMaintenance(): Promise<void> {
+    if (token === null || selectedRobotaxi === null) return;
+
+    setMaintenanceBusy(true);
+    setMaintenanceError(null);
+
+    try {
+      await completeMaintenance(token, selectedRobotaxi.id);
+
+      await queries.invalidateQueries({
+        queryKey: ['fleet-status'],
+      });
+    } catch (failure) {
+      onMaintenanceFailure(failure);
+    } finally {
+      setMaintenanceBusy(false);
+    }
+  }
+
   if (session === null) {
     return (
       <main className="dashboard">
@@ -248,7 +312,12 @@ function Dashboard(): React.JSX.Element {
       <StatusBar status={fleet.data ?? null} stale={fleet.isError} />
 
       <div className="dashboard-body">
-        <FleetMap robotaxis={fleet.data?.robotaxis ?? []} />
+        <FleetMap
+          robotaxis={fleet.data?.robotaxis ?? []}
+          selectedRobotaxiId={selectedRobotaxiId}
+          onSelectRobotaxi={setSelectedRobotaxiId}
+          onClearSelection={() => setSelectedRobotaxiId(null)}
+        />
 
         <div className="side-panels">
           {/* Il profilo prende il posto dei pannelli laterali, non della mappa né della status
@@ -276,6 +345,13 @@ function Dashboard(): React.JSX.Element {
                 error={commandError}
                 onSelectStrategy={(strategy) => void chooseStrategy(strategy)}
                 onEnableAuto={() => void backToAuto()}
+              />
+              <MaintenancePanel
+                vehicle={selectedRobotaxi}
+                busy={maintenanceBusy}
+                error={maintenanceError}
+                onStartMaintenance={(reason) => void beginSelectedMaintenance(reason)}
+                onCompleteMaintenance={() => void completeSelectedMaintenance()}
               />
               <AlertsPanel notifications={notifications} />
             </>

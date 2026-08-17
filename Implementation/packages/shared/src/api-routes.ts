@@ -43,6 +43,9 @@ export const API_ROUTES = {
   // scheduler e lo si osserva sul canale push, come ogni altro movimento di flotta.
   rebalancingDemand: '/rebalancing/demand',
 
+  // Rotte per la manutezione programmata del taxi. Il taxi da available viene settato in manutenzione a mano dall'operatore e viene riabilitato alla fine della manutenzione.
+  maintenanceStart: '/fleet/:robotaxiId/maintenance',
+  maintenanceComplete: '/fleet/:robotaxiId/maintenance/complete',
   // Panoramica della flotta (M8, RASD R7, G8). Sola lettura, riservata all'operatore: è ciò che
   // disegna la mappa e riempie la status bar della dashboard (DD §3.2). Le posizioni **non**
   // viaggiano sul canale push — cambiano a ogni tick e lo inonderebbero (`recordPositions()`) —
@@ -65,3 +68,9 @@ export const rideCancelRoute = (rideRequestId: string): string =>
 /** L'indirizzo della posizione del veicolo di una corsa concreta. */
 export const rideVehicleRoute = (rideRequestId: string): string =>
   API_ROUTES.rideVehicle.replace(':rideRequestId', encodeURIComponent(rideRequestId));
+
+export const maintenanceStartRoute = (robotaxiId: string): string =>
+  API_ROUTES.maintenanceStart.replace(':robotaxiId', encodeURIComponent(robotaxiId));
+
+export const maintenanceCompleteRoute = (robotaxiId: string): string =>
+  API_ROUTES.maintenanceComplete.replace(':robotaxiId', encodeURIComponent(robotaxiId));

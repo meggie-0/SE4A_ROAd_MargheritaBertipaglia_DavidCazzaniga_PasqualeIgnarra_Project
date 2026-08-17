@@ -553,6 +553,121 @@
           "fleet"
         ]
       }
+    },
+    "/fleet/{robotaxiId}/maintenance": {
+      "post": {
+        "description": "R9: il robotaxi passa da AVAILABLE a MAINTENANCE, viene escluso dalle assegnazioni e viene aperto un record di manutenzione.",
+        "operationId": "MaintenanceController_startMaintenance",
+        "parameters": [
+          {
+            "name": "robotaxiId",
+            "required": true,
+            "in": "path",
+            "description": "Identificatore del robotaxi.",
+            "schema": {
+              "example": "rt-07",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMaintenanceRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceStartedResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Il motivo è assente, vuoto oppure supera 255 caratteri."
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          },
+          "404": {
+            "description": "Il robotaxi indicato non esiste."
+          },
+          "409": {
+            "description": "Il robotaxi non è AVAILABLE oppure il suo stato è cambiato durante la richiesta."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mette un robotaxi in manutenzione",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/fleet/{robotaxiId}/maintenance/complete": {
+      "post": {
+        "description": "R9: il robotaxi passa da MAINTENANCE ad AVAILABLE e il record dell’intervento viene chiuso.",
+        "operationId": "MaintenanceController_completeMaintenance",
+        "parameters": [
+          {
+            "name": "robotaxiId",
+            "required": true,
+            "in": "path",
+            "description": "Identificatore del robotaxi.",
+            "schema": {
+              "example": "rt-07",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceCompletedResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          },
+          "404": {
+            "description": "Il robotaxi indicato non esiste."
+          },
+          "409": {
+            "description": "Il robotaxi non è in MAINTENANCE oppure il suo stato è cambiato durante la richiesta."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Completa la manutenzione di un robotaxi",
+        "tags": [
+          "maintenance"
+        ]
+      }
     }
   },
   "info": {
@@ -1224,6 +1339,125 @@
           "total",
           "countsByState",
           "robotaxis"
+        ]
+      },
+      "StartMaintenanceRequestDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "Controllo periodico dei sensori",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Il motivo per cui il veicolo viene messo fuori servizio."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "MaintenanceRecordDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identificatore dell'intervento di manutenzione."
+          },
+          "robotaxiId": {
+            "type": "string",
+            "example": "rt-07",
+            "description": "Robotaxi interessato dalla manutenzione."
+          },
+          "reason": {
+            "type": "string",
+            "example": "Controllo periodico dei sensori",
+            "description": "Motivo dell'intervento."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "ONGOING",
+              "COMPLETED",
+              "CANCELLED"
+            ],
+            "example": "ONGOING",
+            "description": "Stato dell'intervento di manutenzione."
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-17T09:30:00.000Z",
+            "description": "Istante di inizio dell'intervento."
+          },
+          "endedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "example": null,
+            "description": "Istante di completamento dell'intervento, oppure null se è ancora in corso."
+          }
+        },
+        "required": [
+          "id",
+          "robotaxiId",
+          "reason",
+          "status",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "MaintenanceStartedResponseDto": {
+        "type": "object",
+        "properties": {
+          "robotaxi": {
+            "description": "Robotaxi dopo il passaggio allo stato MAINTENANCE.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FleetVehicleDto"
+              }
+            ]
+          },
+          "record": {
+            "description": "Intervento di manutenzione appena aperto.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MaintenanceRecordDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "robotaxi",
+          "record"
+        ]
+      },
+      "MaintenanceCompletedResponseDto": {
+        "type": "object",
+        "properties": {
+          "robotaxi": {
+            "description": "Robotaxi dopo il ritorno allo stato AVAILABLE.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FleetVehicleDto"
+              }
+            ]
+          },
+          "record": {
+            "nullable": true,
+            "description": "Intervento appena concluso. Può essere null per un veicolo inizializzato dal seed.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MaintenanceRecordDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "robotaxi",
+          "record"
         ]
       }
     }

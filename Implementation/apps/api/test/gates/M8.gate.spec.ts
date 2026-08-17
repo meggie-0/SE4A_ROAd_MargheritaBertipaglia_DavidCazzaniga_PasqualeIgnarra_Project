@@ -17,6 +17,10 @@ import {
   API_ROUTES,
   assignedVehicleResponseSchema,
   fleetStatusResponseSchema,
+  maintenanceCompleteRoute,
+  maintenanceCompletedResponseSchema,
+  maintenanceStartRoute,
+  maintenanceStartedResponseSchema,
   rideVehicleRoute,
   modeResponseSchema,
   ROBOTAXI_STATES,
@@ -275,6 +279,8 @@ describe('[M8] Cancello: i due client', () => {
       [API_ROUTES.mode, 'put'],
       [API_ROUTES.allocationStrategy, 'get'],
       [API_ROUTES.allocationStrategy, 'put'],
+      [API_ROUTES.maintenanceStart, 'post'],
+      [API_ROUTES.maintenanceComplete, 'post'],
     ];
 
     /**
@@ -340,6 +346,92 @@ describe('[M8] Cancello: i due client', () => {
         .expect(403);
 
       await request(api.getHttpServer()).get(API_ROUTES.fleetStatus).expect(401);
+    });
+  });
+
+  describe('[R9][NFR5] Gestione della manutenzione tramite HTTP', () => {
+    it('avvia e completa la manutenzione di un robotaxi disponibile', async () => {
+      const startedResponse = await request(api.getHttpServer())
+        .post(maintenanceStartRoute('rt-01'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ reason: 'Controllo periodico dei sensori' })
+        .expect(201);
+
+      const started = maintenanceStartedResponseSchema.safeParse(startedResponse.body);
+
+      expect(started.success).toBe(true);
+      if (!started.success) return;
+
+      expect(started.data.robotaxi.id).toBe('rt-01');
+      expect(started.data.robotaxi.state).toBe('MAINTENANCE');
+      expect(started.data.record.robotaxiId).toBe('rt-01');
+      expect(started.data.record.reason).toBe('Controllo periodico dei sensori');
+      expect(started.data.record.status).toBe('ONGOING');
+      expect(started.data.record.endedAt).toBeNull();
+
+      const fleetDuringMaintenance = await request(api.getHttpServer())
+        .get(API_ROUTES.fleetStatus)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(200);
+
+      const vehicleDuringMaintenance = (
+        fleetDuringMaintenance.body as {
+          robotaxis: Array<{ id: string; state: string }>;
+        }
+      ).robotaxis.find((vehicle) => vehicle.id === 'rt-01');
+
+      expect(vehicleDuringMaintenance?.state).toBe('MAINTENANCE');
+
+      const completedResponse = await request(api.getHttpServer())
+        .post(maintenanceCompleteRoute('rt-01'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(200);
+
+      const completed = maintenanceCompletedResponseSchema.safeParse(completedResponse.body);
+
+      expect(completed.success).toBe(true);
+      if (!completed.success) return;
+
+      expect(completed.data.robotaxi.id).toBe('rt-01');
+      expect(completed.data.robotaxi.state).toBe('AVAILABLE');
+      expect(completed.data.record?.status).toBe('COMPLETED');
+      expect(completed.data.record?.endedAt).toBe(NOW.toISOString());
+    });
+
+    it('rifiuta le transizioni incompatibili con lo stato corrente', async () => {
+      // rt-02 è IN_RIDE: non può essere messo in manutenzione.
+      await request(api.getHttpServer())
+        .post(maintenanceStartRoute('rt-02'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ reason: 'Controllo sensori' })
+        .expect(409);
+
+      // rt-01 è AVAILABLE: non può completare una manutenzione inesistente.
+      await request(api.getHttpServer())
+        .post(maintenanceCompleteRoute('rt-01'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(409);
+    });
+
+    it('valida il motivo della manutenzione', async () => {
+      await request(api.getHttpServer())
+        .post(maintenanceStartRoute('rt-01'))
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ reason: '   ' })
+        .expect(400);
+    });
+
+    it('è riservata agli operatori autenticati', async () => {
+      await request(api.getHttpServer())
+        .post(maintenanceStartRoute('rt-01'))
+        .set('Authorization', `Bearer ${passengerToken}`)
+        .send({ reason: 'Controllo sensori' })
+        .expect(403);
+
+      await request(api.getHttpServer())
+        .post(maintenanceStartRoute('rt-01'))
+        .send({ reason: 'Controllo sensori' })
+        .expect(401);
     });
   });
 

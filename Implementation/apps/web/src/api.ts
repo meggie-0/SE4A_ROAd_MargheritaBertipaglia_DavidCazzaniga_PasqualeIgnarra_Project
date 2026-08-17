@@ -5,6 +5,12 @@ import {
   fleetStatusResponseSchema,
   modeResponseSchema,
   userProfileSchema,
+  maintenanceCompleteRoute,
+  maintenanceCompletedResponseSchema,
+  maintenanceStartRoute,
+  maintenanceStartedResponseSchema,
+  type MaintenanceCompletedResponse,
+  type MaintenanceStartedResponse,
   type AuthResponse,
   type FleetStatusResponse,
   type LoginRequest,
@@ -17,7 +23,7 @@ import {
 import { apiBaseUrl } from './api-base-url';
 
 /**
- * Le cinque chiamate che la dashboard fa al backend (RASD R2, R7, R8, R12, R13).
+ * Le sette chiamate che la dashboard fa al backend (RASD R2, R7, R8, R12, R13).
  *
  * Come nell'app passeggero, ogni funzione è una riga di trasporto: rotta da `API_ROUTES`, risposta
  * validata con lo schema condiviso, nessuna logica. La dashboard non decide quale strategia sia
@@ -46,6 +52,40 @@ export async function fetchFleetStatus(token: string): Promise<FleetStatusRespon
   return apiRequest(apiBaseUrl, API_ROUTES.fleetStatus, {
     token,
     schema: fleetStatusResponseSchema,
+  });
+}
+
+/**
+ * Mette un robotaxi disponibile in manutenzione.
+ *
+ * Il backend valida la transizione e impedisce che un veicolo
+ * già impegnato venga fermato.
+ */
+export async function startMaintenance(
+  token: string,
+  robotaxiId: string,
+  reason: string,
+): Promise<MaintenanceStartedResponse> {
+  return apiRequest(apiBaseUrl, maintenanceStartRoute(robotaxiId), {
+    method: 'POST',
+    token,
+    body: { reason },
+    schema: maintenanceStartedResponseSchema,
+  });
+}
+
+/**
+ * Completa la manutenzione e rimette il robotaxi
+ * nello stato AVAILABLE.
+ */
+export async function completeMaintenance(
+  token: string,
+  robotaxiId: string,
+): Promise<MaintenanceCompletedResponse> {
+  return apiRequest(apiBaseUrl, maintenanceCompleteRoute(robotaxiId), {
+    method: 'POST',
+    token,
+    schema: maintenanceCompletedResponseSchema,
   });
 }
 
