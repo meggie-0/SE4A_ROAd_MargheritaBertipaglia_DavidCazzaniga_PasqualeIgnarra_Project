@@ -40,7 +40,7 @@ const steps = [
   {
     name: 'gate',
     what: 'cancelli di milestone già superati (HARNESS.md §6: non devono mai tornare rossi)',
-    execute: () => run('npx', ['jest', '--selectProjects', 'gate']),
+    execute: () => run('npx', ['jest', '--selectProjects', 'gate', '--runInBand']),
   },
   {
     name: 'trace',
