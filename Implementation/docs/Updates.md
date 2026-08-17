@@ -152,3 +152,271 @@ Dashboard
             → MaintenanceManager
                 → database e notifiche
 ```
+# ROAd - Resoconto modifiche R14: cancellazione della corsa
+
+**Data:** 17 agosto 2026  
+**Autore:** Pasquale Ludovico Ignarra  
+**Argomento:** Implementazione della cancellazione delle corse nell’app passeggero
+
+## Obiettivo
+
+Rendere la cancellazione di una corsa utilizzabile direttamente dall’app passeggero, completando il collegamento tra l’interfaccia React, il contratto API pubblico e la logica di dominio già presente nel backend.
+
+La cancellazione deve essere consentita fino all’inizio effettivo della corsa e deve richiedere una conferma esplicita, così da evitare operazioni accidentali.
+
+## Situazione iniziale
+
+La logica di dominio e il backend implementavano già quanto previsto da R14:
+
+- cancellazione delle richieste immediate e delle prenotazioni anticipate;
+- endpoint `POST /rides/:rideRequestId/cancel`;
+- verifica dell’identità del passeggero proprietario della richiesta;
+- cancellazione negli stati precedenti a `IN_RIDE`;
+- rifiuto della cancellazione dopo l’inizio della corsa;
+- rilascio delle prenotazioni associate;
+- ritorno del robotaxi allo stato disponibile;
+- revoca del percorso attivo;
+- invio delle notifiche WebSocket relative alla cancellazione.
+
+La funzionalità non era però raggiungibile dall’app passeggero, perché mancavano la chiamata API, il comando nell’interfaccia e la gestione dello stato cancellato restituito dal server.
+
+## Modifiche al client API
+
+1. Importata la funzione condivisa `rideCancelRoute`.
+
+2. Aggiunta in `apps/passenger/src/api.ts` la funzione:
+
+   `cancelRide(token, rideRequestId)`
+
+3. La nuova funzione:
+
+   - costruisce la rotta attraverso il contratto condiviso;
+   - utilizza il metodo HTTP `POST`;
+   - invia il token del passeggero;
+   - valida la risposta tramite `rideRequestResponseSchema`;
+   - restituisce una `RideRequestResponse` tipizzata.
+
+4. Non sono stati duplicati percorsi API o schemi già presenti in `@road/shared`.
+
+## Gestione dello stato della corsa
+
+1. Modificata la funzione `initialView()` in `apps/passenger/src/ride-phase.ts`.
+
+2. Gli stati terminali restituiti direttamente dall’API vengono ora riconosciuti immediatamente:
+
+   - `CANCELLED` viene mostrato come `cancelled`;
+   - `COMPLETED` viene mostrato come `completed`;
+   - `REJECTED` viene mostrato come `rejected`.
+
+3. La risposta alla cancellazione aggiorna quindi immediatamente l’interfaccia, senza dover attendere una successiva notifica WebSocket.
+
+4. Per le richieste ancora attive rimane invariata la distinzione tra:
+
+   - `searching`;
+   - `assigned`;
+   - `arriving`;
+   - `arrived`;
+   - `in_ride`.
+
+## Modifiche all’app passeggero
+
+1. Aggiunta in `App.tsx` la gestione della cancellazione tramite:
+
+   - stato di caricamento dedicato;
+   - stato di errore dedicato;
+   - funzione `cancelCurrentRide()`.
+
+2. La funzione di cancellazione:
+
+   - controlla la presenza della sessione e della richiesta;
+   - chiama l’endpoint pubblico;
+   - aggiorna la richiesta con la risposta del backend;
+   - gestisce separatamente gli errori;
+   - effettua il logout se il token è scaduto;
+   - impedisce richieste duplicate durante il caricamento.
+
+3. Il reset della richiesta pulisce anche gli stati relativi alla cancellazione.
+
+4. La gestione della cancellazione resta separata dalla gestione della richiesta iniziale e dagli aggiornamenti WebSocket.
+
+## Modifiche al pannello di stato
+
+1. Aggiunto il pulsante **Annulla corsa** nel pannello di stato del passeggero.
+
+2. Il comando è disponibile soltanto nelle fasi:
+
+   - `searching`;
+   - `assigned`;
+   - `arriving`;
+   - `arrived`.
+
+3. Quando la corsa entra nello stato `in_ride`, il pulsante scompare e la cancellazione non è più raggiungibile dall’interfaccia.
+
+4. Durante la chiamata API il pulsante viene disabilitato e mostra lo stato **Annullamento in corso…**.
+
+5. Gli eventuali errori vengono mostrati nel pannello senza interferire con gli altri stati dell’applicazione.
+
+6. Dopo una cancellazione completata:
+
+   - viene mostrato lo stato **Corsa annullata**;
+   - il comando di cancellazione scompare;
+   - compare il pulsante **Richiedi un’altra corsa**.
+
+## Conferma della cancellazione
+
+1. Aggiunta una finestra modale di conferma per evitare cancellazioni accidentali.
+
+2. Il primo comando **Annulla corsa** non chiama direttamente l’API, ma apre la finestra di conferma.
+
+3. La finestra presenta due possibilità:
+
+   - **Sì, annulla**, che conferma l’operazione e chiama l’API;
+   - **No, mantieni la corsa**, che chiude la finestra senza modificare la richiesta.
+
+4. La finestra utilizza gli attributi di accessibilità:
+
+   - `role="dialog"`;
+   - `aria-modal="true"`;
+   - `aria-labelledby`.
+
+5. Sono stati aggiunti identificatori `data-testid` dedicati per rendere verificabile l’intero flusso tramite Playwright.
+
+## Modifiche grafiche
+
+1. Aggiunti gli stili del comando di cancellazione.
+
+2. Aggiunto uno stile dedicato per le azioni potenzialmente distruttive.
+
+3. Realizzato un overlay a schermo intero per la conferma.
+
+4. La finestra di conferma è:
+
+   - centrata;
+   - responsive;
+   - utilizzabile sia su desktop sia su schermi di dimensioni simili a uno smartphone;
+   - coerente con i colori e le superfici già utilizzati dall’app passeggero.
+
+5. Aggiunto uno stile secondario per il comando che mantiene attiva la corsa.
+
+## Test unitari
+
+1. Esteso `apps/passenger/test/ride-phase.spec.ts`.
+
+2. Aggiunto un test specifico per R14 che verifica che una `RideRequestResponse` con stato `CANCELLED` venga trasformata immediatamente nella fase visuale `cancelled`.
+
+3. Risultato della suite:
+
+   - 19 test suite superate su 19;
+   - 211 test superati su 211.
+
+## Gate M8
+
+1. Aggiunta la rotta di cancellazione all’elenco delle operazioni che devono essere presenti nel contratto OpenAPI.
+
+2. Il gate verifica ora esplicitamente la presenza di:
+
+   `POST /rides/:rideRequestId/cancel`
+
+3. Risultato:
+
+   - 1 test suite superata;
+   - 37 test superati su 37.
+
+## Test end-to-end
+
+1. Aggiunto uno scenario Playwright dedicato a R14.
+
+2. Il test esegue il seguente flusso attraverso l’interfaccia reale:
+
+   - registra e autentica un nuovo passeggero;
+   - seleziona ritiro e destinazione;
+   - richiede una corsa;
+   - apre la conferma di cancellazione;
+   - sceglie inizialmente **No, mantieni la corsa**;
+   - verifica che la corsa rimanga attiva;
+   - riapre la conferma;
+   - sceglie **Sì, annulla**;
+   - verifica il passaggio allo stato `cancelled`;
+   - verifica la scomparsa del comando di cancellazione;
+   - verifica la comparsa del comando per richiedere una nuova corsa.
+
+3. Risultato complessivo Playwright:
+
+   - 11 test superati su 11.
+
+## Verifiche manuali
+
+Sono stati verificati manualmente i seguenti casi:
+
+1. Cancellazione di una corsa immediata prima dell’inizio.
+
+2. Cancellazione di una prenotazione anticipata.
+
+3. Mantenimento della corsa scegliendo **No** nella finestra di conferma.
+
+4. Cancellazione effettiva scegliendo **Sì**.
+
+5. Scomparsa del comando quando la corsa entra nello stato `in_ride`.
+
+6. Visualizzazione dello stato terminale `cancelled`.
+
+7. Comparsa del comando per richiedere una nuova corsa.
+
+8. Ritorno del robotaxi allo stato disponibile.
+
+## Stabilizzazione dell’harness di verifica
+
+Durante `pnpm verify` è stata individuata una condizione di concorrenza preesistente tra i gate M1 e M9.
+
+Entrambi i gate potevano ricostruire contemporaneamente `apps/api/dist`. Una build poteva quindi cancellare temporaneamente i file compilati mentre l’altra stava eseguendo migrazioni o seed, causando errori intermittenti come:
+
+`Cannot find module '../persistence/persistence.module'`
+
+Per rendere la verifica deterministica:
+
+1. aggiunta l’opzione `--runInBand` al passo `gate` di `tools/verify/verify.mjs`;
+
+2. aggiunta la stessa opzione allo script `test:gate` del `package.json`;
+
+3. i gate vengono ora eseguiti in sequenza, evitando scritture concorrenti nella stessa directory di build.
+
+La modifica rende la verifica leggermente più lenta, ma elimina una possibile causa di fallimenti intermittenti.
+
+## Verifica finale
+
+Sono stati completati correttamente:
+
+- formattazione Prettier;
+- lint ESLint;
+- typecheck TypeScript;
+- test unitari;
+- test di integrazione;
+- verifica del contratto OpenAPI;
+- verifica architetturale;
+- gate delle milestone;
+- tracciabilità dei requisiti;
+- test end-to-end Playwright;
+- comando completo `pnpm verify`.
+
+## File principali coinvolti
+
+- `apps/api/test/gates/M8.gate.spec.ts`
+- `apps/passenger/src/App.tsx`
+- `apps/passenger/src/api.ts`
+- `apps/passenger/src/components/StatusPanel.tsx`
+- `apps/passenger/src/ride-phase.ts`
+- `apps/passenger/src/styles.css`
+- `apps/passenger/test/ride-phase.spec.ts`
+- `e2e/passenger-ride.e2e.spec.ts`
+- `package.json`
+- `tools/verify/verify.mjs`
+
+## Nota architetturale
+
+La logica del dominio e il controller di cancellazione non sono stati modificati, perché implementavano già correttamente R14.
+
+Le modifiche hanno reso il caso d’uso raggiungibile attraverso il percorso completo:
+
+`App passeggero -> contratto API condiviso -> endpoint di cancellazione -> logica di dominio -> persistenza e notifiche`
+
+Il backend resta la sorgente autoritativa delle transizioni: la scomparsa del pulsante nello stato `in_ride` migliora l’esperienza utente, mentre il controllo server impedisce comunque una cancellazione non valida anche in presenza di una richiesta HTTP costruita manualmente.
