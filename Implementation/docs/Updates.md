@@ -420,3 +420,176 @@ Le modifiche hanno reso il caso d’uso raggiungibile attraverso il percorso com
 `App passeggero -> contratto API condiviso -> endpoint di cancellazione -> logica di dominio -> persistenza e notifiche`
 
 Il backend resta la sorgente autoritativa delle transizioni: la scomparsa del pulsante nello stato `in_ride` migliora l’esperienza utente, mentre il controllo server impedisce comunque una cancellazione non valida anche in presenza di una richiesta HTTP costruita manualmente.
+
+# ROAd - Resoconto modifiche app passeggero 1
+
+**Data:** 18 agosto 2026  
+**Autore:** Pasquale Ludovico Ignarra  
+**Argomento:** Aggiornamento interfaccia utente app 
+
+## Tema, palette e asset grafici
+
+1. Introdotta la palette ROAd condivisa tra tema giorno e tema notte tramite variabili CSS.
+
+2. Aggiunta la gestione persistente del tema:
+
+   - caricamento della preferenza salvata;
+   - applicazione del tema al documento;
+   - passaggio tra modalità giorno e notte;
+   - mantenimento della scelta dopo il riavvio dell'app.
+
+3. Preparati e collegati i loghi dedicati ai due temi:
+
+   - logo scuro per il tema giorno;
+   - logo bianco per il tema notte.
+
+4. Aggiornate le favicon dinamiche e mantenuta la trasparenza degli asset.
+
+5. Estratta dal logo ROAd la sagoma originale del taxi, salvata come PNG trasparente e utilizzata come maschera CSS. In questo modo l'icona assume automaticamente il colore previsto dal tema e dallo stato di selezione.
+
+## Nuovo contenitore mobile
+
+1. Rappresentata l'app come una superficie verticale delle dimensioni di uno smartphone nella demo desktop.
+
+2. Su smartphone reale la cornice viene rimossa e l'app occupa l'intero viewport.
+
+3. Conservata la schermata di login esistente, adattandola al nuovo contenitore senza modificarne il funzionamento.
+
+4. Trasformata la mappa di Milano nello sfondo a tutto schermo della vista autenticata.
+
+5. Convertiti i pannelli di richiesta, stato e profilo in superfici sovrapposte alla mappa.
+
+6. Aggiunto il supporto alle safe area superiore e inferiore per evitare interferenze con fotocamera, notch e barra di navigazione dello smartphone.
+
+## Barra superiore e menu account
+
+1. Sostituita l'intestazione desktop nella vista autenticata con una barra mobile composta da:
+
+   - comando **Dove si va?**;
+   - indicazione progressiva della selezione del percorso;
+   - pulsante hamburger per l'apertura del menu account.
+
+2. Posizionata la barra sotto la safe area superiore.
+
+3. Creato un menu laterale con:
+
+   - iniziali, nome, cognome, e-mail e telefono del passeggero;
+   - apertura del profilo;
+   - cambio tema;
+   - logout.
+
+4. Aggiunti backdrop, comando di chiusura e comportamento coerente per mouse, touch e tastiera.
+
+5. Aggiornato il test end-to-end del profilo per aprire profilo e logout attraverso il nuovo menu.
+
+## Pannello di scelta del servizio
+
+1. Ridisegnata la selezione tra:
+
+   - **Corsa immediata**;
+   - **Programma corsa**.
+
+2. Sostituiti i radio button visibili con card interamente cliccabili, conservando gli input radio nascosti per accessibilità e test automatici.
+
+3. Evidenziato il servizio selezionato tramite bordo, sfondo e indicatore circolare con pallino centrale.
+
+4. Inserite un'icona taxi derivata dal logo ROAd e un'icona calendario.
+
+5. Mantenuto il selettore di data e ora solamente per la corsa programmata.
+
+6. Uniformati i comandi **Prenota corsa** e **Azzera percorso**:
+
+   - stessa forma e dimensione;
+   - pulsante principale pieno;
+   - pulsante di azzeramento con bordo colorato e sfondo trasparente.
+
+7. Rimossi elementi grafici che suggerivano funzioni non presenti, come il trascinamento del bottom sheet.
+
+8. Esteso il pannello verso il fondo dello smartphone rispettando la safe area inferiore.
+
+## Scrollbar dei pannelli
+
+1. Resa invisibile la scrollbar dei pannelli quando non è in uso.
+
+2. Aggiunta la classe temporanea `panel--scrolling` durante lo scorrimento.
+
+3. La scrollbar appare durante l'interazione e scompare gradualmente al termine.
+
+4. Ridotte dimensioni e visibilità della barra, eliminando i pulsanti alle estremità dove supportato dal browser.
+
+## Selezione del percorso
+
+1. Resa cliccabile la barra **Dove si va?**.
+
+2. Creato `RoutePickerPanel`, integrato direttamente nella barra superiore come menu a tendina.
+
+3. Durante la selezione:
+
+   - il pulsante hamburger scompare;
+   - la barra occupa tutta la larghezza disponibile;
+   - compaiono i campi **Partenza** e **Destinazione**;
+   - il campo attivo viene evidenziato;
+   - il click sulla mappa aggiorna il campo selezionato.
+
+4. Dopo la scelta della partenza il campo attivo passa automaticamente alla destinazione.
+
+5. Quando entrambi i punti sono completi, il menu si chiude automaticamente e ricompare il pannello dei servizi.
+
+6. Rimossi dal menu i comandi espliciti **Conferma** e **Azzera**, adottando un flusso più simile alle applicazioni di navigazione.
+
+7. Sostituita la lente con una freccia durante la selezione. Solamente la freccia è cliccabile per tornare indietro; il relativo cerchio compare al passaggio del mouse o durante la navigazione da tastiera.
+
+8. Aggiunta un'animazione di apertura verso il basso, disattivata quando il sistema richiede la riduzione delle animazioni.
+
+9. Conservata la possibilità di selezionare direttamente i due punti sulla mappa senza aprire il menu, mantenendo il flusso rapido già previsto.
+
+## Mappa e area operativa
+
+1. Rimossi i controlli Leaflet `+` e `−`, mantenendo zoom tramite rotellina, doppio click e gesture touch.
+
+2. Centrata la mappa su Milano e limitata la navigazione all'area operativa tramite:
+
+   - zoom minimo;
+   - `maxBounds`;
+   - limite rigido allo spostamento.
+
+3. Creata una definizione riutilizzabile dell'area di servizio, destinata anche alle successive verifiche di indirizzi e posizione GPS.
+
+4. Scartata la visualizzazione di un perimetro viola perché rendeva la mappa artificiale.
+
+5. La gestione prevista per punti esterni consiste in un messaggio esplicito di servizio non disponibile, anziché in un confine disegnato sulla mappa.
+
+## Compatibilità e vincoli preservati
+
+1. Non sono stati modificati gli endpoint, i payload o i contratti pubblici della prenotazione.
+
+2. Sono stati mantenuti i principali `data-testid` esistenti, inclusi quelli relativi a:
+
+   - tipo di corsa;
+   - data programmata;
+   - partenza e destinazione;
+   - invio della richiesta;
+   - azzeramento del percorso;
+   - profilo e logout.
+
+3. La logica di assegnazione, le notifiche WebSocket e la progressione della corsa restano invariate.
+
+
+## File principali coinvolti
+
+- `apps/passenger/index.html`
+- `apps/passenger/public/road-logo-light.png`
+- `apps/passenger/public/road-logo-dark.png`
+- `apps/passenger/public/road-favicon-light.png`
+- `apps/passenger/public/road-favicon-dark.png`
+- `apps/passenger/public/road-taxi-icon.png`
+- `apps/passenger/src/App.tsx`
+- `apps/passenger/src/theme.ts`
+- `apps/passenger/src/service-area.ts`
+- `apps/passenger/src/components/RequestPanel.tsx`
+- `apps/passenger/src/components/RoutePickerPanel.tsx`
+- `apps/passenger/src/components/RideMap.tsx`
+- `apps/passenger/src/components/StatusPanel.tsx`
+- `apps/passenger/src/styles.css`
+- `e2e/passenger-ride.e2e.spec.ts`
+
