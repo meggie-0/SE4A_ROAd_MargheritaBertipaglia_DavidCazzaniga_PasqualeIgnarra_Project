@@ -7,7 +7,6 @@
  */
 
 :root {
-  color-scheme: dark;
   font-family:
     system-ui,
     -apple-system,
@@ -15,13 +14,82 @@
     Roboto,
     sans-serif;
 
-  --surface: #111c33;
-  --surface-border: #1e293b;
-  --ink: #e2e8f0;
-  --ink-muted: #94a3b8;
-  --accent: #38bdf8;
+  /* Palette ufficiale ROAd */
+  --road-navy: #061328;
+  --road-deep-blue: #132371;
+  --road-blue: #2136ca;
+  --road-purple: #563de6;
+  --road-grey: #6e7487;
+  --road-soft: #f4f6ff;
+  --road-line: #bcbfd6;
+}
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --background: #f4f6ff;
+  --surface: #ffffff;
+  --surface-elevated: #f4f6ff;
+  --surface-border: #bcbfd6;
+
+  --ink: #061328;
+  --ink-muted: #6e7487;
+
+  --accent: #2136ca;
+  --accent-hover: #132371;
+  --accent-soft: #e7eaff;
+  --focus: #563de6;
+
+  --button-background: #2136ca;
+  --button-background-hover: #132371;
+  --button-ink: #ffffff;
+
+  --ok: #167a3e;
+  --error: #b42318;
+  --error-soft: rgb(180 35 24 / 10%);
+
+  --overlay: rgb(6 19 40 / 52%);
+  --panel-shadow: 0 0.35rem 1.25rem rgb(6 19 40 / 8%);
+  --dialog-shadow: 0 1.25rem 3rem rgb(6 19 40 / 24%);
+
+  --floating-surface: rgb(255 255 255 / 94%);
+  --floating-border: rgb(188 191 214 / 78%);
+  --phone-shadow: 0 1.5rem 4rem rgb(6 19 40 / 24%);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --background: #061328;
+  --surface: #0c1b36;
+  --surface-elevated: #112447;
+  --surface-border: #263a61;
+
+  --ink: #f4f6ff;
+  --ink-muted: #bcbfd6;
+
+  /* Il blu viene schiarito per mantenere il contrasto sul navy. */
+  --accent: #8c9bff;
+  --accent-hover: #aab4ff;
+  --accent-soft: #192b58;
+  --focus: #8c9bff;
+
+  --button-background: #563de6;
+  --button-background-hover: #6d59ec;
+  --button-ink: #ffffff;
+
   --ok: #4ade80;
   --error: #f87171;
+  --error-soft: rgb(248 113 113 / 12%);
+
+  --overlay: rgb(0 0 0 / 68%);
+  --panel-shadow: 0 0.45rem 1.5rem rgb(0 0 0 / 22%);
+  --dialog-shadow: 0 1.25rem 3rem rgb(0 0 0 / 48%);
+
+  --floating-surface: rgb(12 27 54 / 94%);
+  --floating-border: rgb(140 155 255 / 24%);
+  --phone-shadow: 0 1.5rem 4rem rgb(0 0 0 / 52%);
 }
 
 * {
@@ -31,7 +99,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #0f172a;
+  background: var(--road-soft);
   color: var(--ink);
 }
 
@@ -46,23 +114,82 @@ body {
 }
 
 .app-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
+  min-height: 5.5rem;
 }
 
-.app-header h1 {
+.header-slot {
+  min-width: 0;
+}
+
+.header-start {
+  justify-self: start;
+}
+
+.header-end {
+  justify-self: end;
+}
+
+.brand-lockup {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.brand-logo-frame {
+  position: relative;
+  width: clamp(8rem, 18vw, 11rem);
+  aspect-ratio: 3 / 1;
+  overflow: hidden;
+}
+
+.brand-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 110%;
+  max-width: none;
+  height: auto;
+  transform: translate(-50%, -50%);
+}
+
+.brand-lockup h1 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
 }
 
 .who {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.75rem;
   color: var(--ink-muted);
   font-size: 0.9rem;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  background: transparent;
+  color: var(--ink-muted);
+  border-color: var(--surface-border);
+}
+
+.theme-toggle:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-color: var(--accent);
 }
 
 .ride-map {
@@ -80,6 +207,7 @@ body {
   border: 1px solid var(--surface-border);
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
+  box-shadow: var(--panel-shadow);
 }
 
 .panel h1,
@@ -112,13 +240,19 @@ input {
   padding: 0.5rem 0.6rem;
   border-radius: 0.5rem;
   border: 1px solid var(--surface-border);
-  background: #0b1424;
+  background: var(--surface-elevated);
   color: var(--ink);
+  caret-color: var(--accent);
+}
+
+input[type='radio'],
+input[type='checkbox'] {
+  accent-color: var(--accent);
 }
 
 input:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -127,10 +261,14 @@ button {
   padding: 0.6rem 1rem;
   border-radius: 0.5rem;
   border: 1px solid transparent;
-  background: var(--accent);
-  color: #06202e;
+  background: var(--button-background);
+  color: var(--button-ink);
   font-weight: 600;
   cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--button-background-hover);
 }
 
 button:disabled {
@@ -147,6 +285,10 @@ button:disabled {
   text-align: left;
 }
 
+.link-button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent-hover);
+}
 .hint {
   color: var(--ink-muted);
   margin: 0 0 0.75rem;
@@ -322,7 +464,7 @@ button:disabled {
 }
 
 .danger-button:hover:not(:disabled) {
-  background: rgb(248 113 113 / 12%);
+  background: var(--error-soft);
 }
 
 /* --- conferma cancellazione --------------------------------------------- */
@@ -334,7 +476,7 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: rgb(2 6 23 / 72%);
+  background: var(--overlay);
   backdrop-filter: blur(3px);
 }
 
@@ -344,7 +486,7 @@ button:disabled {
   border: 1px solid var(--surface-border);
   border-radius: 0.75rem;
   background: var(--surface);
-  box-shadow: 0 1.25rem 3rem rgb(0 0 0 / 45%);
+  box-shadow: var(--dialog-shadow);
 }
 
 .confirmation-dialog h3 {
@@ -370,5 +512,917 @@ button:disabled {
 }
 
 .secondary-button:hover:not(:disabled) {
-  border-color: var(--ink-muted);
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+@media (max-width: 40rem) {
+  .app-header {
+    grid-template-columns: auto 1fr;
+    gap: 0.5rem 1rem;
+  }
+
+  .brand-lockup {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .header-start {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .header-end {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .brand-logo-frame {
+    width: 8rem;
+  }
+
+  .theme-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .panel,
+  input,
+  button,
+  .confirmation-dialog {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+}
+
+/* --- contenitore mobile dell'app passeggero --------------------------- */
+
+#root {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+/*
+ * Tutta l'app, compreso il login, viene rappresentata dentro
+ * una superficie verticale delle dimensioni di uno smartphone.
+ */
+.passenger-app {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 26rem);
+  height: min(100dvh, 52rem);
+  min-height: min(42rem, 100dvh);
+  max-width: none;
+  margin: auto;
+  overflow: hidden;
+  border: 0.45rem solid var(--road-navy);
+  border-radius: 2rem;
+  background: var(--background);
+  box-shadow: var(--phone-shadow);
+}
+
+/* --- schermata di accesso --------------------------------------------- */
+
+.passenger-app--guest {
+  padding: 0.75rem;
+  gap: 0.75rem;
+}
+
+/*
+ * Il login mantiene struttura e funzionamento precedenti,
+ * ma viene centrato nella schermata verticale.
+ */
+.passenger-app--guest .login-panel {
+  width: 100%;
+  margin: auto 0;
+}
+
+.passenger-app--guest .app-footer {
+  margin-top: auto;
+}
+
+/* --- schermata autenticata -------------------------------------------- */
+
+.passenger-app--authenticated {
+  padding: 0;
+  gap: 0;
+}
+
+/* La mappa diventa lo sfondo dell'intera applicazione autenticata. */
+.passenger-app--authenticated .ride-map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 1.5rem;
+}
+
+/*
+ * RequestPanel, StatusPanel e ProfilePanel diventano
+ * pannelli sovrapposti nella parte inferiore.
+ */
+.passenger-app--authenticated > .panel {
+  position: absolute;
+  z-index: 1100;
+  right: 0.75rem;
+  bottom: 2.25rem;
+  left: 0.75rem;
+  max-height: 46%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-color: var(--floating-border);
+  border-radius: 1.35rem;
+  background: var(--floating-surface);
+  box-shadow: var(--dialog-shadow);
+  backdrop-filter: blur(14px);
+}
+
+/* Indicatore dello stato dell'API. */
+.passenger-app--authenticated .app-footer {
+  position: absolute;
+  z-index: 1100;
+  right: 0.75rem;
+  bottom: 0.45rem;
+  left: 0.75rem;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.7rem;
+  text-shadow: 0 1px 2px var(--surface);
+}
+
+/*
+ * Su uno smartphone vero l'app usa tutto lo schermo:
+ * la cornice è mostrata solamente nella demo desktop.
+ */
+@media (max-width: 30rem) {
+  .passenger-app {
+    width: 100%;
+    height: 100dvh;
+    min-height: 36rem;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .passenger-app--authenticated .ride-map {
+    border-radius: 0;
+  }
+}
+
+/* --- barra superiore mobile ------------------------------------------- */
+
+.mobile-topbar {
+  position: absolute;
+  z-index: 1100;
+  top: max(2rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+  right: 0.75rem;
+  left: 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.25rem;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.route-search-preview {
+  min-width: 0;
+  min-height: 3.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--floating-border);
+  border-radius: 1rem;
+  background: var(--floating-surface);
+  color: var(--ink);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(12px);
+  font-weight: 600;
+}
+
+.route-search-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.menu-toggle {
+  width: 3.25rem;
+  height: 3.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  padding: 0;
+  border: 1px solid var(--floating-border);
+  border-radius: 50%;
+  background: var(--floating-surface);
+  color: var(--ink);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(12px);
+}
+
+.menu-toggle:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.menu-toggle span {
+  width: 1.2rem;
+  height: 0.13rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+/* I controlli Leaflet partono sotto la nuova barra. */
+.passenger-app--authenticated .leaflet-top {
+  top: max(6.25rem, calc(env(safe-area-inset-top, 0px) + 5rem));
+}
+
+/* Elemento disponibile agli screen reader e ai test, ma non visibile. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- menu laterale ----------------------------------------------------- */
+
+.mobile-menu-backdrop {
+  position: absolute;
+  z-index: 1190;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 1.5rem;
+  background: var(--overlay);
+  cursor: default;
+  backdrop-filter: blur(2px);
+}
+
+.mobile-menu-backdrop:hover:not(:disabled) {
+  background: var(--overlay);
+}
+
+.mobile-menu {
+  position: absolute;
+  z-index: 1200;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(84%, 20rem);
+  padding: 1.25rem;
+  overflow-y: auto;
+  border-left: 1px solid var(--surface-border);
+  border-radius: 1.5rem 0 0 1.5rem;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--dialog-shadow);
+}
+
+.mobile-menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.mobile-menu-heading h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.menu-close {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.menu-close:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.menu-profile-summary {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.menu-profile-summary > div:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.menu-profile-summary strong,
+.menu-profile-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-profile-summary span {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
+.menu-avatar {
+  width: 3.25rem;
+  height: 3.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--road-blue), var(--road-purple));
+  color: white;
+  font-weight: 700;
+}
+
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.menu-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.menu-action:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.menu-action--danger {
+  color: var(--error);
+}
+
+/* --- selezione mobile del servizio ------------------------------------ */
+
+.request-panel {
+  padding-top: 0.65rem;
+}
+
+.bottom-sheet-handle {
+  width: 2.8rem;
+  height: 0.28rem;
+  margin: 0 auto 0.8rem;
+  border-radius: 999px;
+  background: var(--surface-border);
+}
+
+.request-panel > h2 {
+  margin-bottom: 0.85rem;
+  font-size: 1.1rem;
+}
+
+.service-options {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.service-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.8rem minmax(0, 1fr) 1.4rem;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 4.4rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 1rem;
+  background: var(--surface-elevated);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.service-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.service-card--selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.service-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.service-card:has(.service-radio:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.service-icon {
+  width: 2.8rem;
+  height: 2.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.road-taxi-icon {
+  width: 2rem;
+  height: 2rem;
+  display: block;
+  background-color: currentColor;
+
+  -webkit-mask: url('/road-taxi-icon.png') center / contain no-repeat;
+  mask: url('/road-taxi-icon.png') center / contain no-repeat;
+}
+
+.service-icon svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.service-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.service-copy strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.service-copy small {
+  color: var(--ink-muted);
+  font-size: 0.73rem;
+  line-height: 1.25;
+}
+
+.service-check {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--surface-border);
+  border-radius: 50%;
+  color: transparent;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.service-check::after {
+  content: '';
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.service-card--selected .service-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.service-card--selected .service-check::after {
+  background: white;
+}
+
+.mobile-schedule {
+  margin-top: 0.8rem;
+  margin-bottom: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+}
+
+.mobile-schedule input {
+  width: 100%;
+}
+
+.route-summary {
+  margin-top: 0.8rem;
+  padding: 0.75rem;
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+}
+
+.route-summary .hint {
+  margin-bottom: 0.55rem;
+  font-size: 0.8rem;
+}
+
+.route-summary .points {
+  margin: 0;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+.request-actions {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.booking-button {
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 0.85rem;
+}
+
+.reset-route-button {
+  justify-self: center;
+  text-align: center;
+}
+
+.booking-button,
+.reset-route-button {
+  width: 100%;
+  min-height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.85rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.reset-route-button {
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+
+.reset-route-button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.reset-route-button:disabled {
+  border-color: var(--surface-border);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* Scrollbar temporanea comune a tutti i pannelli */
+
+.panel {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.panel.panel--scrolling {
+  scrollbar-color: var(--surface-border) transparent;
+}
+
+.panel::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: transparent;
+  transition: background-color 250ms ease;
+}
+
+.panel.panel--scrolling::-webkit-scrollbar-thumb {
+  background-color: var(--surface-border);
+}
+
+/* Elimina tutti i tipi di pulsante/freccia della scrollbar */
+.panel::-webkit-scrollbar-button,
+.panel::-webkit-scrollbar-button:single-button,
+.panel::-webkit-scrollbar-button:vertical:start:decrement,
+.panel::-webkit-scrollbar-button:vertical:end:increment,
+.panel::-webkit-scrollbar-button:horizontal:start:decrement,
+.panel::-webkit-scrollbar-button:horizontal:end:increment {
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+
+.passenger-app--authenticated > .request-panel {
+  bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* --- selezione del percorso -------------------------------------------- */
+
+.route-search-preview {
+  width: 100%;
+  text-align: left;
+}
+
+button.route-search-preview:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.route-search-preview:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.route-point-selector {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.route-point-button {
+  width: 100%;
+  min-height: 4rem;
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.9rem;
+  background: var(--surface-elevated);
+  color: var(--ink);
+  text-align: left;
+}
+
+.route-point-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.route-point-button--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.route-point-marker {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--surface-border);
+}
+
+.route-point-marker--pickup {
+  background: var(--road-blue);
+}
+
+.route-point-marker--destination {
+  background: var(--road-purple);
+}
+
+.route-point-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.route-point-copy small {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.route-point-copy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-picker-hint {
+  margin: 0.75rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.route-picker-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+/* --- barra di ricerca espandibile -------------------------------------- */
+
+.mobile-topbar {
+  column-gap: 0.65rem;
+  row-gap: 0;
+}
+
+.mobile-topbar--expanded .route-search-preview {
+  border-bottom-color: transparent;
+  border-radius: 1rem 1rem 0 0;
+  background: var(--floating-surface);
+  box-shadow: none;
+}
+
+.route-search-dropdown {
+  grid-column: 1;
+  width: 100%;
+  max-height: min(22rem, calc(100dvh - 8rem));
+  margin-top: -1px;
+  padding: 0.85rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--floating-border);
+  border-top: 0;
+  border-radius: 0 0 1rem 1rem;
+  background: var(--floating-surface);
+  box-shadow: var(--dialog-shadow);
+  backdrop-filter: blur(14px);
+}
+
+.route-search-dropdown .route-point-selector {
+  margin-top: 0;
+}
+
+.mobile-topbar--expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mobile-topbar--expanded .route-search-preview,
+.mobile-topbar--expanded .route-search-dropdown {
+  grid-column: 1 / -1;
+}
+
+.route-search-dropdown {
+  padding: 0.65rem;
+}
+
+.route-point-selector {
+  gap: 0.45rem;
+}
+
+.route-point-button {
+  min-height: 3.25rem;
+  grid-template-columns: 0.8rem minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.75rem;
+}
+
+.route-point-marker {
+  width: 0.65rem;
+  height: 0.65rem;
+}
+
+.route-point-copy {
+  gap: 0.08rem;
+}
+
+.route-point-copy small {
+  font-size: 0.68rem;
+}
+
+.route-point-copy strong {
+  font-size: 0.85rem;
+}
+
+.route-picker-hint {
+  margin-top: 0.55rem;
+}
+
+@keyframes route-dropdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-0.65rem);
+    clip-path: inset(0 0 100% 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .route-search-dropdown {
+    transform-origin: top;
+    animation: route-dropdown-enter 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+.route-search-preview--expanded {
+  cursor: default;
+}
+
+.route-back-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 2.25rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 120ms ease;
+}
+
+.route-back-button .search-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.route-back-button:hover:not(:disabled),
+.route-back-button:focus-visible {
+  border-color: var(--surface-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.route-back-button:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+/* La barra aperta è un contenitore, non un pulsante. */
+div.route-search-preview--expanded,
+div.route-search-preview--expanded:hover,
+div.route-search-preview--expanded:focus,
+div.route-search-preview--expanded:focus-within {
+  border-color: var(--floating-border);
+  border-bottom-color: transparent;
+  outline: none;
+  background: var(--floating-surface);
+  box-shadow: none;
+}
+
+.service-area-boundary {
+  stroke: var(--road-purple);
+  filter: drop-shadow(0 0 3px rgb(86 61 230 / 45%));
+  pointer-events: none;
+}
+
+:root[data-theme='dark'] .service-area-boundary {
+  stroke: #a99cff;
+  filter: drop-shadow(0 0 4px rgb(169 156 255 / 55%));
 }

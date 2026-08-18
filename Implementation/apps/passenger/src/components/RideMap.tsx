@@ -9,6 +9,8 @@ import {
   useMapEvents,
 } from 'react-leaflet';
 
+import { MILAN_SERVICE_BOUNDS } from '../service-area';
+
 import 'leaflet/dist/leaflet.css';
 
 /**
@@ -73,6 +75,10 @@ export function RideMap({
       className="ride-map"
       center={[MILAN_CENTER.lat, MILAN_CENTER.lon]}
       zoom={INITIAL_ZOOM}
+      minZoom={11}
+      maxBounds={MILAN_SERVICE_BOUNDS}
+      maxBoundsViscosity={1}
+      zoomControl={false}
       scrollWheelZoom
     >
       <TileLayer

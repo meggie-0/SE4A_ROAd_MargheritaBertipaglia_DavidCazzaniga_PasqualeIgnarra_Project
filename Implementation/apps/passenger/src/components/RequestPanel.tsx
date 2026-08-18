@@ -35,54 +35,75 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
 
   return (
     <section className="panel request-panel">
-      <h2>Richiedi una corsa</h2>
+      <div className="bottom-sheet-handle" aria-hidden="true" />
 
-      <p className="hint" data-testid="pick-hint">
-        {pickup === null
-          ? 'Tocca la mappa per indicare dove vuoi essere prelevato.'
-          : destination === null
-            ? 'Ora tocca la mappa per indicare la destinazione.'
-            : 'Ritiro e destinazione impostati.'}
-      </p>
+      <h2>Quale servizio scegli?</h2>
 
-      <dl className="points">
-        <dt>Ritiro</dt>
-        <dd data-testid="pickup-value">{pickup === null ? '—' : formatPoint(pickup)}</dd>
-        <dt>Destinazione</dt>
-        <dd data-testid="destination-value">
-          {destination === null ? '—' : formatPoint(destination)}
-        </dd>
-      </dl>
+      <fieldset className="service-options">
+        <legend className="visually-hidden">Scegli il tipo di corsa</legend>
 
-      {/* Due alternative esclusive, con l'immediata preselezionata: è la scelta che il RASD §2.4
-          descrive, e non un menù a tendina che costerebbe un'interazione in più. */}
-      <fieldset className="kind">
-        <legend>Quando</legend>
-        <label>
+        <label className={`service-card ${kind === 'IMMEDIATE' ? 'service-card--selected' : ''}`}>
           <input
+            className="service-radio"
             type="radio"
             name="ride-kind"
             data-testid="kind-immediate"
             checked={kind === 'IMMEDIATE'}
             onChange={() => props.onKindChange('IMMEDIATE')}
           />
-          Subito
+
+          <span className="service-icon" aria-hidden="true">
+            <span className="road-taxi-icon" />
+          </span>
+
+          <span className="service-copy">
+            <strong>Corsa immediata</strong>
+            <small>Parti appena viene assegnato un robotaxi</small>
+          </span>
+
+          <span className="service-check" aria-hidden="true">
+          </span>
         </label>
-        <label>
+
+        <label className={`service-card ${kind === 'ADVANCE' ? 'service-card--selected' : ''}`}>
           <input
+            className="service-radio"
             type="radio"
             name="ride-kind"
             data-testid="kind-advance"
             checked={kind === 'ADVANCE'}
             onChange={() => props.onKindChange('ADVANCE')}
           />
-          Programmata
+
+          <span className="service-icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 48 48"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="9" y="12" width="30" height="27" rx="4" />
+              <path d="M16 8v8M32 8v8M9 21h30" />
+              <path d="M16 27h4M24 27h4M32 27h1" />
+              <path d="M16 33h4M24 33h4" />
+            </svg>
+          </span>
+
+          <span className="service-copy">
+            <strong>Programma corsa</strong>
+            <small>Scegli in anticipo data e ora del ritiro</small>
+          </span>
+
+          <span className="service-check" aria-hidden="true">
+          </span>
         </label>
       </fieldset>
 
       {kind === 'ADVANCE' && (
-        <label className="schedule">
-          Orario di ritiro
+        <label className="schedule mobile-schedule">
+          Data e ora del ritiro
           <input
             type="datetime-local"
             data-testid="scheduled-pickup"
@@ -93,29 +114,51 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
         </label>
       )}
 
+      <div className="route-summary">
+        <p className="hint" data-testid="pick-hint">
+          {pickup === null
+            ? 'Seleziona il punto di partenza sulla mappa.'
+            : destination === null
+              ? 'Ora seleziona la destinazione sulla mappa.'
+              : 'Percorso impostato correttamente.'}
+        </p>
+
+        <dl className="points">
+          <dt>Partenza</dt>
+          <dd data-testid="pickup-value">{pickup === null ? '—' : formatPoint(pickup)}</dd>
+
+          <dt>Arrivo</dt>
+          <dd data-testid="destination-value">
+            {destination === null ? '—' : formatPoint(destination)}
+          </dd>
+        </dl>
+      </div>
+
       {error !== null && (
         <p className="status-error" data-testid="request-error" role="alert">
           {error}
         </p>
       )}
 
-      <div className="actions">
+      <div className="request-actions">
         <button
           type="button"
+          className="booking-button"
           data-testid="request-ride"
           disabled={!ready || busy}
           onClick={props.onSubmit}
         >
-          {busy ? 'Invio…' : kind === 'IMMEDIATE' ? 'Richiedi corsa' : 'Prenota corsa'}
+          {busy ? 'Prenotazione in corso…' : 'Prenota corsa'}
         </button>
+
         <button
           type="button"
-          className="link-button"
+          className="link-button reset-route-button"
           data-testid="reset-points"
           onClick={props.onReset}
           disabled={pickup === null && destination === null}
         >
-          Azzera i punti
+          Azzera il percorso
         </button>
       </div>
     </section>

@@ -253,6 +253,7 @@ test.describe('[R2][G1] Il passeggero aggiorna il proprio profilo', () => {
     const passenger = await signIn(page);
 
     await page.getByTestId('open-profile').click();
+    await page.getByTestId('open-menu').click();
     await page.getByTestId('profile-name').fill('Elisabetta');
     await page.getByTestId('save-profile').click();
 
@@ -267,6 +268,8 @@ test.describe('[R2][G1] Il passeggero aggiorna il proprio profilo', () => {
      * rileggerebbe la sessione conservata e mostrerebbe il nome nuovo anche se la `PATCH` non
      * avesse scritto niente. Rifare l'accesso costringe il nome a tornare dal database.
      */
+    await page.getByTestId('close-profile').click();
+    await page.getByTestId('open-menu').click();
     await page.getByTestId('sign-out').click();
     await page.getByTestId('email').fill(passenger.email);
     await page.getByTestId('password').fill(passenger.password);

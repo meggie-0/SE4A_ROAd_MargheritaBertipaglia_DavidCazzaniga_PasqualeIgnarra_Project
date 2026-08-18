@@ -18,13 +18,14 @@ import {
 import { apiBaseUrl } from './api-base-url';
 import { LoginScreen } from './components/LoginScreen';
 import { RequestPanel } from './components/RequestPanel';
+import { RoutePickerPanel } from './components/RoutePickerPanel';
 import { ProfilePanel } from './components/ProfilePanel';
 import { RideMap } from './components/RideMap';
 import { StatusPanel } from './components/StatusPanel';
 import { applyNotification, initialView, type RideView } from './ride-phase';
 import { clearSession, loadSession, saveSession, type Session } from './session';
 import { useNotifications } from './use-notifications';
-
+import { applyTheme, loadTheme, type Theme } from './theme';
 /**
  * L'app del passeggero (DD §3.1), consegnata come PWA responsive (decisione D15).
  *
@@ -58,6 +59,45 @@ const queryClient = new QueryClient({
 });
 
 export function App(): React.JSX.Element {
+  useEffect(() => {
+    const hideTimers = new Map<HTMLElement, number>();
+
+    const handlePanelScroll = (event: Event): void => {
+      const panel = event.target;
+
+      if (!(panel instanceof HTMLElement) || !panel.classList.contains('panel')) {
+        return;
+      }
+
+      panel.classList.add('panel--scrolling');
+
+      const previousTimer = hideTimers.get(panel);
+
+      if (previousTimer !== undefined) {
+        window.clearTimeout(previousTimer);
+      }
+
+      const hideTimer = window.setTimeout(() => {
+        panel.classList.remove('panel--scrolling');
+        hideTimers.delete(panel);
+      }, 250);
+
+      hideTimers.set(panel, hideTimer);
+    };
+
+    document.addEventListener('scroll', handlePanelScroll, true);
+
+    return () => {
+      document.removeEventListener('scroll', handlePanelScroll, true);
+
+      hideTimers.forEach((timer, panel) => {
+        window.clearTimeout(timer);
+        panel.classList.remove('panel--scrolling');
+      });
+
+      hideTimers.clear();
+    };
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <PassengerApp />
@@ -75,11 +115,18 @@ function PassengerApp(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showRoutePicker, setShowRoutePicker] = useState(false);
+  const [activeRoutePoint, setActiveRoutePoint] = useState<'pickup' | 'destination'>('pickup');
   const [cancelling, setCancelling] = useState(false);
   const [cancellationError, setCancellationError] = useState<string | null>(null);
-
+  const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const health = useApiHealth();
   const { notifications, connection } = useNotifications(session?.accessToken ?? null);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   /**
    * La vista di stato è **derivata**, non accumulata: si ricalcola ogni volta riducendo tutte le
@@ -153,6 +200,8 @@ function PassengerApp(): React.JSX.Element {
     setError(null);
     setCancellationError(null);
     setCancelling(false);
+    setShowRoutePicker(false);
+    setActiveRoutePoint('pickup');
   }
 
   function signOut(): void {
@@ -160,6 +209,7 @@ function PassengerApp(): React.JSX.Element {
     setSession(null);
     resetRequest();
     setShowProfile(false);
+    setShowMenu(false);
   }
 
   /**
@@ -177,10 +227,35 @@ function PassengerApp(): React.JSX.Element {
 
   /** Il tocco sulla mappa riempie il primo posto libero: prima il ritiro, poi la destinazione. */
   function onPick(point: GeoPoint): void {
+    if (showRoutePicker) {
+      if (activeRoutePoint === 'pickup') {
+        setPickup(point);
+
+        if (destination !== null) {
+          setShowRoutePicker(false);
+        } else {
+          setActiveRoutePoint('destination');
+        }
+
+        return;
+      }
+
+      setDestination(point);
+
+      if (pickup !== null) {
+        setShowRoutePicker(false);
+      } else {
+        setActiveRoutePoint('pickup');
+      }
+
+      return;
+    }
+
     if (pickup === null) {
       setPickup(point);
       return;
     }
+
     setDestination(point);
   }
 
@@ -235,38 +310,229 @@ function PassengerApp(): React.JSX.Element {
   }
 
   return (
-    <main className="passenger-app">
+    <main
+      className={`passenger-app ${
+        session === null ? 'passenger-app--guest' : 'passenger-app--authenticated'
+      }`}
+    >
       {session === null ? (
-        <LoginScreen onAuthenticated={onAuthenticated} />
+        <header className="app-header">
+          <div className="header-slot header-start">
+            <button
+              type="button"
+              className="theme-toggle"
+              data-testid="theme-toggle"
+              data-theme={theme}
+              aria-label={
+                theme === 'dark' ? 'Attiva la modalità giorno' : 'Attiva la modalità notte'
+              }
+              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            >
+              <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+              <span className="theme-label">{theme === 'dark' ? 'Giorno' : 'Notte'}</span>
+            </button>
+          </div>
+
+          <div className="brand-lockup">
+            <div className="brand-logo-frame">
+              <img
+                className="brand-logo"
+                src={theme === 'dark' ? '/road-logo-dark.png' : '/road-logo-light.png'}
+                alt="ROAd"
+              />
+            </div>
+          </div>
+
+          <div className="header-slot header-end" />
+        </header>
       ) : (
+        <header className={`mobile-topbar ${showRoutePicker ? 'mobile-topbar--expanded' : ''}`}>
+          {showRoutePicker ? (
+            <div
+              className="route-search-preview route-search-preview--expanded"
+              data-testid="route-search-preview"
+            >
+              <button
+                type="button"
+                className="route-back-button"
+                data-testid="close-route-picker"
+                aria-label="Torna alla scelta del servizio"
+                onClick={() => setShowRoutePicker(false)}
+              >
+                <svg
+                  className="search-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 12H5" />
+                  <path d="m11 18-6-6 6-6" />
+                </svg>
+              </button>
+
+              <span>Imposta il percorso</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="route-search-preview"
+              data-testid="route-search-preview"
+              disabled={request !== null}
+              aria-expanded="false"
+              aria-controls="route-search-dropdown"
+              aria-label="Apri la selezione del percorso"
+              onClick={() => {
+                setShowMenu(false);
+                setShowProfile(false);
+                setActiveRoutePoint(pickup === null ? 'pickup' : 'destination');
+                setShowRoutePicker(true);
+              }}
+            >
+              <svg
+                className="search-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-4-4" />
+              </svg>
+
+              <span>
+                {pickup === null
+                  ? 'Dove si va?'
+                  : destination === null
+                    ? 'Scegli la destinazione'
+                    : 'Percorso impostato'}
+              </span>
+            </button>
+          )}
+
+          {!showRoutePicker && (
+            <button
+              type="button"
+              className="menu-toggle"
+              data-testid="open-menu"
+              aria-label={showMenu ? 'Chiudi menu' : 'Apri menu'}
+              aria-expanded={showMenu}
+              aria-controls="passenger-menu"
+              onClick={() => setShowMenu((current) => !current)}
+            >
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+            </button>
+          )}
+
+          {showRoutePicker && request === null && (
+            <RoutePickerPanel
+              pickup={pickup}
+              destination={destination}
+              activePoint={activeRoutePoint}
+              onActivePointChange={setActiveRoutePoint}
+            />
+          )}
+          {/* Mantiene disponibile il dato usato dai test automatici. */}
+          <span className="visually-hidden" data-testid="passenger-name">
+            {session.user.name}
+          </span>
+        </header>
+      )}
+
+      {session !== null && showMenu && (
         <>
-          <header className="app-header">
-            <h1>ROAd — App passeggero</h1>
-            <div className="who">
-              <span data-testid="passenger-name">{session.user.name}</span>
-              {/* Il profilo è raggiungibile solo quando non c'è una corsa da seguire: durante la
-                  corsa lo schermo è la vista di stato, come il DD §3.1 prescrive. */}
+          <button
+            type="button"
+            className="mobile-menu-backdrop"
+            aria-label="Chiudi menu"
+            onClick={() => setShowMenu(false)}
+          />
+
+          <aside
+            id="passenger-menu"
+            className="mobile-menu"
+            aria-label="Menu passeggero"
+            data-testid="passenger-menu"
+          >
+            <div className="mobile-menu-heading">
+              <h2>Il tuo account</h2>
+
+              <button
+                type="button"
+                className="menu-close"
+                aria-label="Chiudi menu"
+                onClick={() => setShowMenu(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="menu-profile-summary">
+              <div className="menu-avatar" aria-hidden="true">
+                {session.user.name.charAt(0)}
+                {session.user.surname.charAt(0)}
+              </div>
+
+              <div>
+                <strong>
+                  {session.user.name} {session.user.surname}
+                </strong>
+                <span>{session.user.email}</span>
+                <span>{session.user.phoneNumber ?? 'Telefono non inserito'}</span>
+              </div>
+            </div>
+
+            <nav className="menu-actions" aria-label="Azioni account">
               {request === null && (
                 <button
                   type="button"
-                  className="link-button"
+                  className="menu-action"
                   data-testid="open-profile"
-                  onClick={() => setShowProfile(!showProfile)}
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowProfile(true);
+                    setShowRoutePicker(false);
+                  }}
                 >
-                  {showProfile ? 'Chiudi profilo' : 'Profilo'}
+                  Modifica profilo
                 </button>
               )}
+
               <button
                 type="button"
-                className="link-button"
+                className="menu-action"
+                data-testid="theme-toggle"
+                data-theme={theme}
+                onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              >
+                <span>{theme === 'dark' ? '☀' : '☾'}</span>
+                <span>{theme === 'dark' ? 'Attiva modalità giorno' : 'Attiva modalità notte'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="menu-action menu-action--danger"
                 data-testid="sign-out"
                 onClick={signOut}
               >
                 Esci
               </button>
-            </div>
-          </header>
+            </nav>
+          </aside>
+        </>
+      )}
 
+      {session === null ? (
+        <LoginScreen onAuthenticated={onAuthenticated} />
+      ) : (
+        <>
           <RideMap
             pickup={pickup}
             destination={destination}
@@ -289,7 +555,7 @@ function PassengerApp(): React.JSX.Element {
               onClose={() => setShowProfile(false)}
               onSessionExpired={signOutIfExpired}
             />
-          ) : request === null || view === null ? (
+          ) : showRoutePicker && request === null ? null : request === null || view === null ? (
             <RequestPanel
               pickup={pickup}
               destination={destination}
