@@ -29,6 +29,7 @@ import {
   type RideCancellation,
   type RideRequestDraft,
   type RideRequestOutcome,
+  type PassengerBooking,
 } from './rides.port';
 
 /**
@@ -201,6 +202,46 @@ export class RideRequestManager extends RideRequestPort {
       reservation: result.reservation,
       booking: result.booking,
     };
+  }
+
+  async listBookings(passengerId: string): Promise<readonly PassengerBooking[]> {
+    /*
+     * Si leggono solamente le richieste anticipate accettate del passeggero.
+     * Non esiste alcun limite sul loro numero.
+     */
+    const requests = await this.persistence.find('ride_request', {
+      where: {
+        passengerId,
+        kind: 'ADVANCE',
+        status: 'ACCEPTED',
+      },
+    });
+
+    if (requests.length === 0) return [];
+
+    /*
+     * `closedAt: null` identifica una prenotazione non annullata e non
+     * ancora elaborata dall'attivatore.
+     */
+    const bookings = await this.persistence.find('booking', {
+      where: { closedAt: null },
+      orderBy: [{ field: 'scheduledPickup', direction: 'asc' }],
+    });
+
+    const requestsById = new Map(requests.map((request) => [request.id, request] as const));
+
+    return bookings.flatMap((booking) => {
+      const request = requestsById.get(booking.rideRequestId);
+
+      return request === undefined
+        ? []
+        : [
+            {
+              request,
+              booking,
+            },
+          ];
+    });
   }
 
   async cancel(rideRequestId: string, passengerId: string): Promise<RideCancellation> {

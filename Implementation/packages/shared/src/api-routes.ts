@@ -26,6 +26,7 @@ export const API_ROUTES = {
   // non cancella nulla, cambia lo stato della richiesta in `CANCELLED` e la lascia nello storico.
   ridesImmediate: '/rides/immediate',
   ridesAdvance: '/rides/advance',
+  rideBookings: '/rides/bookings',
   rideCancel: '/rides/:rideRequestId/cancel',
   // Dove si trova il veicolo della propria corsa (M8, RASD R3 e R6; decisione D69). Sotto-risorsa
   // della richiesta e non una rotta di flotta, perché la domanda è «dov'è il veicolo della **mia**
