@@ -593,3 +593,375 @@ Il backend resta la sorgente autoritativa delle transizioni: la scomparsa del pu
 - `apps/passenger/src/styles.css`
 - `e2e/passenger-ride.e2e.spec.ts`
 
+# ROAd - Resoconto modifiche app passeggero 2
+
+**Data:** 19 agosto 2026  
+**Autore:** Pasquale Ludovico Ignarra  
+**Argomento:** Miglioramento della corsa live e gestione completa delle corse programmate
+
+## Validazione di partenza e destinazione
+
+1. Migliorata la gestione degli errori durante la selezione di un punto sulla mappa.
+
+2. Separati gli errori bloccanti dagli avvisi non bloccanti relativi all’indirizzo selezionato.
+
+3. Aggiunto il controllo dell’appartenenza del punto all’area di servizio di Milano.
+
+4. Aggiunto lo spostamento automatico del punto selezionato verso la strada percorribile più vicina.
+
+5. Migliorata la ricerca dell’indirizzo tramite reverse geocoding.
+
+6. Quando il servizio non restituisce una via precisa, il punto rimane comunque utilizzabile e vengono mostrate le coordinate o il nome della zona restituito dal provider.
+
+7. Aggiunti messaggi distinti per:
+
+   - punto esterno al Comune di Milano;
+   - punto troppo lontano da una strada raggiungibile;
+   - impossibilità temporanea di verificare il punto;
+   - indirizzo leggibile non disponibile.
+
+8. Applicati gli stessi controlli anche alla posizione corrente ottenuta tramite geolocalizzazione del dispositivo.
+
+## Miglioramento del pannello di stato
+
+1. Evidenziate in verde anche le descrizioni delle fasi già completate.
+
+2. Mantenuta in blu solamente la fase corrente della corsa.
+
+3. Migliorata la visualizzazione del tempo stimato di arrivo.
+
+4. Introdotti due formati:
+
+   - `mm min` quando il tempo residuo è inferiore a un’ora;
+   - `hh:mm` quando il tempo residuo è uguale o superiore a un’ora.
+
+5. Il tempo residuo viene aggiornato con il trascorrere dei minuti a partire dall’istante dell’ultima notifica contenente l’ETA.
+
+6. Mantenuta la precedente disposizione del testo relativo all’arrivo stimato, modificando solamente il formato temporale.
+
+7. Rimossi alcuni messaggi secondari in grigio considerati superflui durante la corsa.
+
+## Visualizzazione del robotaxi
+
+1. Sostituito il precedente indicatore circolare del robotaxi con la stessa icona taxi utilizzata nella card **Corsa immediata**.
+
+2. L’icona viene generata attraverso la maschera CSS già derivata dal logo ROAd.
+
+3. Stabilizzate le dimensioni del marker durante le operazioni di zoom e de-zoom della mappa.
+
+4. Personalizzati bordo, sfondo e contrasto del marker per mantenerlo leggibile sulla cartografia.
+
+5. Adattati automaticamente i colori del robotaxi ai temi giorno e notte.
+
+6. Riutilizzata la stessa icona anche nel cerchio di selezione del servizio, mantenendo coerenza visiva tra pannello e mappa.
+
+## Percorso stradale e aggiornamento della mappa
+
+1. Sostituito il collegamento in linea d’aria con un percorso costruito lungo le strade della mappa.
+
+2. Il percorso viene richiesto al servizio di routing e disegnato utilizzando il colore principale della palette ROAd.
+
+3. Mantenuto un comportamento di fallback nel caso in cui il servizio di routing non sia disponibile.
+
+4. Durante l’avvicinamento viene mostrato il percorso tra il robotaxi e il punto di ritiro.
+
+5. Dopo il prelievo:
+
+   - il punto di partenza viene rimosso;
+   - il robotaxi rimane visibile;
+   - il percorso viene aggiornato tra la posizione del robotaxi e la destinazione.
+
+6. Alla conclusione della corsa:
+
+   - il percorso viene rimosso;
+   - il punto di partenza rimane nascosto;
+   - sulla mappa resta solamente la destinazione;
+   - la vista viene spostata e ingrandita automaticamente sulla destinazione.
+
+7. Il passaggio tra i diversi percorsi dipende dalla fase visuale derivata dalle notifiche e non introduce una nuova macchina a stati nel client.
+
+## Calendario e tema notte
+
+1. Migliorata l’integrazione del selettore nativo di data e ora mostrato per le corse programmate.
+
+2. Aggiunta un’icona del calendario sovrapposta a quella nativa quando quest’ultima non è sufficientemente visibile.
+
+3. Conservata la possibilità di aprire il selettore cliccando sull’area dell’icona.
+
+4. Ridotta l’intensità dell’evidenziazione della data selezionata, evitando che il colore copra completamente il numero del giorno.
+
+5. Adattati al tema notte i colori delle icone relative a:
+
+   - partenza;
+   - destinazione;
+   - posizione corrente;
+   - marker presenti sulla mappa;
+   - robotaxi.
+
+6. Adattati alla palette purple ROAd anche i cerchi associati alla freccia di ritorno e ai comandi di cancellazione dei punti.
+
+7. Tutte le modifiche utilizzano le variabili CSS della palette esistente, senza introdurre colori separati per singolo componente.
+
+## Contratto condiviso delle prenotazioni
+
+1. Aggiunta la nuova rotta:
+
+   ```http
+   GET /rides/bookings
+   ```
+
+2. Aggiunto lo schema Zod `passengerBookingsResponseSchema`.
+
+3. Aggiunto il tipo condiviso `PassengerBookingsResponse`.
+
+4. La risposta utilizza la seguente struttura:
+
+   ```json
+   {
+     "bookings": []
+   }
+   ```
+
+5. Il contenitore permette di aggiungere in futuro metadati o paginazione senza cambiare la forma principale della risposta.
+
+6. Il contratto continua a essere definito in `@road/shared`, senza importazioni dirette dal backend nei client.
+
+## Gestione delle prenotazioni nel backend
+
+1. Estesa `RideRequestPort` con l’operazione:
+
+   `listBookings(passengerId)`
+
+2. Introdotto il tipo di dominio `PassengerBooking`, composto dal record della richiesta e dal record della prenotazione.
+
+3. Implementata nel `RideRequestManager` la lettura delle prenotazioni appartenenti al passeggero autenticato.
+
+4. L’elenco include solamente richieste:
+
+   - di tipo `ADVANCE`;
+   - con stato `ACCEPTED`;
+   - non annullate;
+   - non ancora elaborate dall’attivatore.
+
+5. Le prenotazioni vengono ordinate per data e ora del ritiro.
+
+6. Non è stato introdotto alcun limite al numero di prenotazioni dello stesso passeggero, perché tale vincolo non rappresenta un elemento centrale del progetto.
+
+7. Aggiunti il DTO Swagger e il metodo corrispondente in `RidesController`.
+
+8. L’endpoint è protetto tramite:
+
+   - `JwtAuthGuard`;
+   - `RolesGuard`;
+   - ruolo `PASSENGER`.
+
+9. Un passeggero senza prenotazioni riceve correttamente un elenco vuoto e non un errore HTTP.
+
+10. Non sono state apportate modifiche all’interfaccia dell’app operatore.
+
+## Client API delle prenotazioni
+
+1. Aggiunta in `apps/passenger/src/api.ts` la funzione:
+
+   `fetchPassengerBookings(token)`
+
+2. La funzione:
+
+   - utilizza la rotta definita in `API_ROUTES`;
+   - invia il token del passeggero;
+   - utilizza il metodo HTTP `GET`;
+   - valida la risposta con `passengerBookingsResponseSchema`.
+
+3. Esteso `RideRequestDraft` con gli indirizzi leggibili di partenza e destinazione.
+
+4. Le richieste immediate e programmate inviano ora, quando disponibili:
+
+   - `pickupAddress`;
+   - `destinationAddress`.
+
+5. Le coordinate restano la sorgente utilizzata dal dominio, mentre gli indirizzi vengono conservati per migliorare la leggibilità dell’interfaccia.
+
+## Separazione tra prenotazione e corsa live
+
+1. Individuato il comportamento precedente per cui ogni risposta alla funzione `submit()` veniva salvata nello stato `request`.
+
+2. Tale comportamento faceva apparire una corsa programmata come una corsa immediatamente attiva.
+
+3. Modificato il flusso in modo che solamente una corsa immediata venga inserita direttamente nella vista live.
+
+4. Una prenotazione anticipata accettata viene ora conservata nello stato dedicato `bookingConfirmation`.
+
+5. La prenotazione non apre più automaticamente `StatusPanel`.
+
+6. Una prenotazione rifiutata continua a mostrare lo stato terminale di indisponibilità del servizio.
+
+7. Le prenotazioni future vengono caricate tramite TanStack Query e mantenute separate dalla posizione del robotaxi.
+
+8. Dopo creazione o cancellazione viene invalidata solamente la query relativa alle prenotazioni del passeggero.
+
+## Pannello di conferma della prenotazione
+
+1. Creato `BookingConfirmationPanel`.
+
+2. Il pannello viene mostrato immediatamente dopo l’accettazione di una corsa programmata.
+
+3. La conferma mostra:
+
+   - esito positivo della prenotazione;
+   - data e ora del ritiro;
+   - indirizzo di partenza;
+   - indirizzo di destinazione.
+
+4. Aggiunti i comandi:
+
+   - **Vedi le mie prenotazioni**;
+   - **Prenota un’altra corsa**.
+
+5. Il pannello non utilizza la progressione della corsa live e non mostra un robotaxi assegnato prima dell’attivazione.
+
+6. Rimossa la barra grigia superiore, perché avrebbe suggerito una funzione di trascinamento non ancora disponibile.
+
+## Pannello delle prenotazioni
+
+1. Creato `BookingsPanel`.
+
+2. Il pannello mostra tutte le prenotazioni ancora in attesa di attivazione.
+
+3. Ogni card contiene:
+
+   - data e ora programmata;
+   - punto di partenza;
+   - destinazione;
+   - comando di annullamento.
+
+4. La prenotazione appena creata viene evidenziata.
+
+5. Aggiunta una finestra di conferma prima dell’annullamento.
+
+6. Durante la chiamata API il comando viene disabilitato e mostra lo stato **Annullamento in corso…**.
+
+7. Dopo l’annullamento viene invalidata la query e la prenotazione scompare dall’elenco.
+
+8. Aggiunto il comando **Prenota un’altra corsa**.
+
+9. Rimossa la barra grigia superiore anche da questo pannello.
+
+10. Aggiunti stili compatibili con i temi giorno e notte tramite le variabili della palette ROAd.
+
+## Accesso dal menu hamburger
+
+1. Aggiunta al menu account la voce **Le mie prenotazioni**.
+
+2. Accanto alla voce viene mostrato il numero delle prenotazioni ancora attive.
+
+3. Il contatore utilizza una forma circolare e i colori della palette corrente.
+
+4. La voce è disponibile quando non è in corso una corsa live.
+
+5. Il pannello può quindi essere raggiunto:
+
+   - direttamente dalla conferma di una nuova prenotazione;
+   - successivamente attraverso il menu hamburger.
+
+6. La chiusura del pannello restituisce l’utente alla schermata precedente senza modificare le prenotazioni.
+
+## Attivazione della corsa programmata
+
+1. Aggiunta la gestione della notifica WebSocket relativa all’assegnazione del robotaxi.
+
+2. La semplice notifica iniziale `SCHEDULED` non apre la vista live.
+
+3. L’app attende una notifica che contenga:
+
+   - lo stesso identificatore della prenotazione;
+   - `robotaxiState: ASSIGNED`;
+   - un identificatore del robotaxi non nullo.
+
+4. Quando la notifica viene ricevuta:
+
+   - la prenotazione diventa la richiesta attiva;
+   - vengono ripristinati sulla mappa partenza e destinazione;
+   - viene associato il robotaxi assegnato;
+   - vengono chiusi conferma, elenco prenotazioni, profilo e menu;
+   - viene aperto il normale `StatusPanel`;
+   - viene aggiornata la query delle prenotazioni.
+
+5. Da quel momento il flusso torna a utilizzare la progressione live già esistente e le successive notifiche WebSocket.
+
+6. Non è stata introdotta una nuova macchina a stati nel frontend: l’app reagisce all’evento prodotto dal backend.
+
+## Test e verifiche
+
+1. Eseguita la formattazione dei file modificati tramite Prettier.
+
+2. Eseguito il typecheck TypeScript dell’intero workspace.
+
+3. Rigenerato `contracts/openapi.json` tramite:
+
+   `pnpm contract:update`
+
+4. Test del contratto OpenAPI superati:
+
+   - 1 test suite superata;
+   - 2 test superati su 2.
+
+5. Verificata manualmente la nuova interfaccia delle prenotazioni nel contesto della mappa.
+
+6. Verificata manualmente la presenza del contatore nel menu hamburger.
+
+7. Verificata manualmente la separazione tra conferma della prenotazione e pannello della corsa live.
+
+8. La verifica completa tramite `pnpm verify` e l’aggiornamento dei test automatici sono rimandati alla fase successiva.
+
+## File principali coinvolti
+
+- `packages/shared/src/api-routes.ts`
+- `packages/shared/src/rides.ts`
+- `apps/api/src/rides/rides.port.ts`
+- `apps/api/src/rides/ride-request.manager.ts`
+- `apps/api/src/gateway/dto/rides.dto.ts`
+- `apps/api/src/gateway/rides.controller.ts`
+- `contracts/openapi.json`
+- `apps/passenger/src/api.ts`
+- `apps/passenger/src/App.tsx`
+- `apps/passenger/src/address-search.ts`
+- `apps/passenger/src/ride-phase.ts`
+- `apps/passenger/src/components/BookingConfirmationPanel.tsx`
+- `apps/passenger/src/components/BookingsPanel.tsx`
+- `apps/passenger/src/components/RequestPanel.tsx`
+- `apps/passenger/src/components/RideMap.tsx`
+- `apps/passenger/src/components/RoutePickerPanel.tsx`
+- `apps/passenger/src/components/StatusPanel.tsx`
+- `apps/passenger/src/styles.css`
+
+## Nota architetturale
+
+La gestione delle prenotazioni rimane separata dalla gestione della corsa live.
+
+Una prenotazione accettata riserva una finestra temporale, ma non espone immediatamente un robotaxi assegnato. Il backend continua a essere la sorgente autoritativa dell’attivazione e comunica l’assegnazione attraverso il canale WebSocket.
+
+Il flusso implementato è:
+
+```text
+App passeggero
+    → contratto API condiviso
+        → GET /rides/bookings
+            → RideRequestPort
+                → RideRequestManager
+                    → persistenza
+```
+
+Al momento dell’attivazione:
+
+```text
+AdvanceBookingActivator
+    → assegnazione del robotaxi
+        → notifica WebSocket ASSIGNED
+            → App passeggero
+                → StatusPanel
+```
+
+L’app operatore non utilizza il nuovo endpoint e non richiede modifiche. L’effetto sull’allocazione rimane indiretto: le prenotazioni occupano le finestre temporali già gestite dal backend.
+
+
+

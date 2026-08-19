@@ -1154,6 +1154,246 @@ button:disabled {
   padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* --- prenotazioni programmate ------------------------------------------ */
+
+.menu-action-count {
+  min-width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  padding: 0 0.4rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.bookings-panel,
+.booking-success-panel {
+  padding-top: 0.65rem;
+}
+
+.bookings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.bookings-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.bookings-heading p {
+  margin: 0.18rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
+.bookings-close {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.bookings-close:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.booking-confirmation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ok);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+  color: var(--ok);
+}
+
+.booking-confirmation span {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.bookings-empty {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px dashed var(--surface-border);
+  border-radius: 0.85rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.bookings-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.booking-card {
+  padding: 0.85rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 1rem;
+  background: var(--surface-elevated);
+}
+
+.booking-card--confirmed {
+  border-color: var(--ok);
+  box-shadow: inset 0 0 0 1px var(--ok);
+}
+
+.booking-card-heading {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.booking-card-heading > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.booking-card-heading span {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+.booking-card-heading strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.booking-calendar {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.booking-calendar svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.booking-route,
+.booking-success-route {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.4rem 0.65rem;
+  margin: 0.75rem 0;
+  font-size: 0.78rem;
+}
+
+.booking-route dt,
+.booking-success-route dt {
+  color: var(--ink-muted);
+}
+
+.booking-route dd,
+.booking-success-route dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.booking-cancel {
+  width: 100%;
+  min-height: 2.5rem;
+}
+
+/* --- conferma della prenotazione --------------------------------------- */
+
+.booking-success-heading {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.booking-success-heading > div {
+  min-width: 0;
+}
+
+.booking-success-heading span {
+  color: var(--ok);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.booking-success-heading h2 {
+  margin: 0.08rem 0 0;
+  font-size: 1.15rem;
+}
+
+.booking-success-icon {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ok);
+  border-radius: 50%;
+  background: var(--surface-elevated);
+  color: var(--ok);
+  font-size: 1.4rem !important;
+}
+
+.booking-success-time {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+}
+
+.booking-success-time span {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+.booking-success-time strong {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.booking-success-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.booking-success-secondary {
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 0.85rem;
+}
+
 /* --- selezione del percorso -------------------------------------------- */
 
 .route-search-preview {
@@ -1762,7 +2002,6 @@ div.route-search-preview--expanded:focus-within {
   border-color: var(--accent);
 }
 
-
 :root[data-theme='light'] .mobile-schedule input {
   color-scheme: light;
 }
@@ -1830,18 +2069,13 @@ div.route-search-preview--expanded:focus-within {
 .mobile-schedule input:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px
-    color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
-
 
 /* Pallino di “Usa la mia posizione”. */
-:root[data-theme='dark']
-  .current-location-option
-  .route-point-marker--pickup {
+:root[data-theme='dark'] .current-location-option .route-point-marker--pickup {
   background: var(--accent);
 }
-
 
 /* Sagoma del taxi dentro il cerchio. */
 :root[data-theme='dark'] .robotaxi-map-icon {
@@ -1851,11 +2085,7 @@ div.route-search-preview--expanded:focus-within {
 :root[data-theme='dark'] .route-back-button:hover:not(:disabled),
 :root[data-theme='dark'] .route-back-button:focus-visible {
   border-color: var(--road-purple);
-  background: color-mix(
-    in srgb,
-    var(--road-purple) 20%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--road-purple) 20%, transparent);
   color: var(--road-purple);
 }
 

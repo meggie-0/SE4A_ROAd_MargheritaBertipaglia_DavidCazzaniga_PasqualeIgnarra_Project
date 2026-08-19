@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   cancelRide,
   fetchAssignedVehicle,
+  fetchPassengerBookings,
   requestAdvanceBooking,
   requestImmediateRide,
 } from './api';
@@ -28,6 +29,8 @@ import { useNotifications } from './use-notifications';
 import { applyTheme, loadTheme, type Theme } from './theme';
 import { reverseGeocodeMilanPoint, snapToNearestDrivableRoad } from './address-search';
 import { isInsideMilanServiceArea } from './service-area';
+import { BookingConfirmationPanel } from './components/BookingConfirmationPanel';
+import { BookingsPanel } from './components/BookingsPanel';
 
 /**
  * L'app del passeggero (DD §3.1), consegnata come PWA responsive (decisione D15).
@@ -79,6 +82,10 @@ function PassengerApp(): React.JSX.Element {
   const [kind, setKind] = useState<RideRequestKind | null>(null);
   const [scheduledPickup, setScheduledPickup] = useState('');
   const [request, setRequest] = useState<RideRequestResponse | null>(null);
+  const [bookingConfirmation, setBookingConfirmation] = useState<RideRequestResponse | null>(null);
+  const [showBookings, setShowBookings] = useState(false);
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+  const [bookingsError, setBookingsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routePointErrors, setRoutePointErrors] = useState<{
@@ -105,10 +112,83 @@ function PassengerApp(): React.JSX.Element {
   const [mapResetKey, setMapResetKey] = useState(0);
   const health = useApiHealth();
   const { notifications, connection } = useNotifications(session?.accessToken ?? null);
+  const passengerBookings = useQuery({
+    queryKey: ['passenger-bookings', session?.user.id ?? null],
+    enabled: session !== null,
+    queryFn: () => {
+      if (session === null) {
+        throw new Error('Sessione non disponibile.');
+      }
+
+      return fetchPassengerBookings(session.accessToken);
+    },
+  });
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const currentBookings = passengerBookings.data?.bookings;
+
+    if (request !== null || currentBookings === undefined) {
+      return;
+    }
+
+    /*
+     * La notifica ASSIGNED indica che una prenotazione è stata realmente
+     * attivata e che il robotaxi è stato assegnato.
+     */
+    const activation = [...notifications]
+      .reverse()
+      .find(
+        (event) =>
+          event.rideRequestId !== null &&
+          event.robotaxiId !== null &&
+          event.robotaxiState === 'ASSIGNED' &&
+          currentBookings.some((booking) => booking.id === event.rideRequestId),
+      );
+
+    if (
+      activation === undefined ||
+      activation.rideRequestId === null ||
+      activation.robotaxiId === null
+    ) {
+      return;
+    }
+
+    const activatedBooking = currentBookings.find(
+      (booking) => booking.id === activation.rideRequestId,
+    );
+
+    if (activatedBooking === undefined) {
+      return;
+    }
+
+    /*
+     * Da questo momento non è più una prenotazione in attesa:
+     * diventa la corsa live seguita da StatusPanel.
+     */
+    setRequest({
+      ...activatedBooking,
+      assignedRobotaxiId: activation.robotaxiId,
+    });
+    setPickup(activatedBooking.pickup);
+    setPickupAddress(activatedBooking.pickupAddress);
+    setDestination(activatedBooking.destination);
+    setDestinationAddress(activatedBooking.destinationAddress);
+    setBookingConfirmation(null);
+    setShowBookings(false);
+    setShowProfile(false);
+    setShowRoutePicker(false);
+    setShowMenu(false);
+
+    if (session !== null) {
+      void queryClient.invalidateQueries({
+        queryKey: ['passenger-bookings', session.user.id],
+      });
+    }
+  }, [notifications, passengerBookings.data, request, session]);
 
   /**
    * La vista di stato è **derivata**, non accumulata: si ricalcola ogni volta riducendo tutte le
@@ -196,6 +276,10 @@ function PassengerApp(): React.JSX.Element {
       pickup: null,
       destination: null,
     });
+    setBookingConfirmation(null);
+    setShowBookings(false);
+    setBookingsError(null);
+    setCancellingBookingId(null);
   }
 
   function signOut(): void {
@@ -466,21 +550,51 @@ function PassengerApp(): React.JSX.Element {
 
     setBusy(true);
     setError(null);
-    try {
-      const submitted =
-        kind === 'IMMEDIATE'
-          ? await requestImmediateRide(session.accessToken, { pickup, destination })
-          : await requestAdvanceBooking(session.accessToken, {
-              pickup,
-              destination,
-              // `datetime-local` produce un orario locale senza fuso; il contratto ne vuole uno con
-              // fuso, e la conversione la fa il browser, che il fuso dell'utente lo conosce.
-              scheduledPickup: new Date(scheduledPickup).toISOString(),
-            });
 
+    try {
+      if (kind === 'IMMEDIATE') {
+        const submitted = await requestImmediateRide(session.accessToken, {
+          pickup,
+          pickupAddress,
+          destination,
+          destinationAddress,
+        });
+
+        setRequest(submitted);
+        return;
+      }
+
+      const submitted = await requestAdvanceBooking(session.accessToken, {
+        pickup,
+        pickupAddress,
+        destination,
+        destinationAddress,
+        scheduledPickup: new Date(scheduledPickup).toISOString(),
+      });
+
+      if (submitted.status === 'ACCEPTED') {
+        /*
+         * Una prenotazione accettata non è ancora una corsa live:
+         * non viene assegnata a `request`.
+         */
+        resetRequest();
+        setBookingConfirmation(submitted);
+
+        await queryClient.invalidateQueries({
+          queryKey: ['passenger-bookings', session.user.id],
+        });
+
+        return;
+      }
+
+      /*
+       * Una prenotazione rifiutata può invece utilizzare la normale
+       * vista conclusiva, che mostra l'indisponibilità del servizio.
+       */
       setRequest(submitted);
     } catch (failure) {
       if (signOutIfExpired(failure)) return;
+
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setBusy(false);
@@ -509,6 +623,46 @@ function PassengerApp(): React.JSX.Element {
     } finally {
       setCancelling(false);
     }
+  }
+
+  async function cancelBooking(rideRequestId: string): Promise<void> {
+    if (session === null) return;
+
+    setCancellingBookingId(rideRequestId);
+    setBookingsError(null);
+
+    try {
+      await cancelRide(session.accessToken, rideRequestId);
+
+      if (bookingConfirmation?.id === rideRequestId) {
+        setBookingConfirmation(null);
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ['passenger-bookings', session.user.id],
+      });
+    } catch (failure) {
+      if (signOutIfExpired(failure)) return;
+
+      setBookingsError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCancellingBookingId(null);
+    }
+  }
+
+  function openBookings(): void {
+    setShowMenu(false);
+    setShowProfile(false);
+    setShowRoutePicker(false);
+    setBookingsError(null);
+    setShowBookings(true);
+  }
+
+  function startNewRequest(): void {
+    resetRequest();
+    setShowProfile(false);
+    setShowMenu(false);
+    setShowRoutePicker(true);
   }
 
   return (
@@ -563,6 +717,8 @@ function PassengerApp(): React.JSX.Element {
                 setShowProfile(false);
                 setActiveRoutePoint(null);
                 setShowRoutePicker(true);
+                setShowBookings(false);
+                setBookingConfirmation(null);
               }}
             >
               <svg
@@ -685,6 +841,24 @@ function PassengerApp(): React.JSX.Element {
                 </button>
               )}
 
+              {request === null && (
+                <button
+                  type="button"
+                  className="menu-action"
+                  data-testid="open-bookings"
+                  onClick={openBookings}
+                >
+                  <span>Le mie prenotazioni</span>
+
+                  <span
+                    className="menu-action-count"
+                    aria-label={`${passengerBookings.data?.bookings.length ?? 0} prenotazioni`}
+                  >
+                    {passengerBookings.data?.bookings.length ?? 0}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 className="menu-action"
@@ -730,30 +904,18 @@ function PassengerApp(): React.JSX.Element {
               profile={session.user}
               token={session.accessToken}
               onUpdated={(profile) => {
-                // Il profilo aggiornato si riscrive nella sessione: il token resta quello, ma il
-                // nome mostrato nell'intestazione è quello nuovo.
-                const next: Session = { accessToken: session.accessToken, user: profile };
+                const next: Session = {
+                  accessToken: session.accessToken,
+                  user: profile,
+                };
+
                 saveSession(next);
                 setSession(next);
               }}
               onClose={() => setShowProfile(false)}
               onSessionExpired={signOutIfExpired}
             />
-          ) : request === null || view === null ? (
-            pickup !== null && destination !== null ? (
-              <RequestPanel
-                pickup={pickup}
-                destination={destination}
-                kind={kind}
-                scheduledPickup={scheduledPickup}
-                busy={busy}
-                error={error}
-                onKindChange={setKind}
-                onScheduledPickupChange={setScheduledPickup}
-                onSubmit={() => void submit()}
-              />
-            ) : null
-          ) : (
+          ) : request !== null && view !== null ? (
             <StatusPanel
               request={request}
               view={view}
@@ -764,7 +926,39 @@ function PassengerApp(): React.JSX.Element {
               onNewRequest={resetRequest}
               nowMs={vehicle.dataUpdatedAt}
             />
-          )}
+          ) : showBookings ? (
+            <BookingsPanel
+              bookings={passengerBookings.data?.bookings ?? []}
+              loading={passengerBookings.isPending}
+              error={
+                bookingsError ??
+                (passengerBookings.error instanceof Error ? passengerBookings.error.message : null)
+              }
+              confirmedBookingId={bookingConfirmation?.id ?? null}
+              cancellingBookingId={cancellingBookingId}
+              onCancel={(rideRequestId) => void cancelBooking(rideRequestId)}
+              onNewRequest={startNewRequest}
+              onClose={() => setShowBookings(false)}
+            />
+          ) : bookingConfirmation !== null ? (
+            <BookingConfirmationPanel
+              booking={bookingConfirmation}
+              onViewBookings={openBookings}
+              onNewRequest={startNewRequest}
+            />
+          ) : pickup !== null && destination !== null ? (
+            <RequestPanel
+              pickup={pickup}
+              destination={destination}
+              kind={kind}
+              scheduledPickup={scheduledPickup}
+              busy={busy}
+              error={error}
+              onKindChange={setKind}
+              onScheduledPickupChange={setScheduledPickup}
+              onSubmit={() => void submit()}
+            />
+          ) : null}
         </>
       )}
 
@@ -784,6 +978,7 @@ function PassengerApp(): React.JSX.Element {
  * aggiornamenti è una flotta ferma o un backend spento, e distinguere le due cose è la prima
  * domanda di chiunque apra un'app che non si muove.
  */
+
 function useApiHealth(): string {
   const [status, setStatus] = useState('…');
 
