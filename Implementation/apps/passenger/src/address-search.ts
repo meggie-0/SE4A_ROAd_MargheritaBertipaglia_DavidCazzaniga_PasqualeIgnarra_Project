@@ -14,6 +14,11 @@ export interface RoadSnapResult {
   readonly distanceMeters: number;
 }
 
+export interface ReverseGeocodeResult {
+  readonly address: string | null;
+  readonly municipality: 'milan' | 'outside' | 'unknown';
+}
+
 const MILAN_CENTER: [number, number] = [9.19, 45.4642];
 const DEFAULT_OSRM_BASE_URL = 'https://router.project-osrm.org';
 const MAX_ROAD_SNAP_DISTANCE_METERS = 150;
@@ -46,10 +51,13 @@ export async function searchMilanAddresses(query: string): Promise<AddressSugges
     country: ['it'],
     proximity: MILAN_CENTER,
     language: 'it',
-    limit: 5,
+    limit: 10,
   });
 
   return response.features.flatMap((feature): AddressSuggestion[] => {
+    if (!belongsToMilanMunicipality(feature)) {
+      return [];
+    }
     const lon = feature.center[0];
     const lat = feature.center[1];
 
@@ -72,7 +80,7 @@ export async function searchMilanAddresses(query: string): Promise<AddressSugges
   });
 }
 
-export async function reverseGeocodeMilanPoint(point: GeoPoint): Promise<string | null> {
+export async function reverseGeocodeMilanPoint(point: GeoPoint): Promise<ReverseGeocodeResult> {
   const apiKey = import.meta.env.VITE_MAPTILER_API_KEY?.trim();
 
   if (apiKey === undefined || apiKey === '') {
@@ -83,30 +91,96 @@ export async function reverseGeocodeMilanPoint(point: GeoPoint): Promise<string 
 
   const response = await geocoding.reverse([point.lon, point.lat], {
     language: 'it',
-    limit: 5,
   });
 
-  const feature = response.features.find((candidate) => isReadableAddress(candidate.place_name));
-
-  if (
-    feature === undefined ||
-    typeof feature.place_name !== 'string' ||
-    feature.place_name.trim() === ''
-  ) {
-    return null;
+  if (response.features.length === 0) {
+    return {
+      address: null,
+      municipality: 'unknown',
+    };
   }
 
-  return feature.place_name;
+  const milanFeatures = response.features.filter((feature) => belongsToMilanMunicipality(feature));
+
+  if (milanFeatures.length === 0) {
+    return {
+      address: null,
+      municipality: 'outside',
+    };
+  }
+
+  const readableFeature = response.features.find(
+    (feature) =>
+      feature.place_type?.includes('municipality') !== true &&
+      isReadableAddress(feature.place_name),
+  );
+
+  return {
+    address: readableFeature?.place_name ?? null,
+    municipality: 'milan',
+  };
+}
+
+export async function fetchRoadRoute(
+  origin: GeoPoint,
+  destination: GeoPoint,
+  signal: AbortSignal,
+): Promise<readonly GeoPoint[]> {
+  const response = await fetch(
+    `${getOsrmBaseUrl()}/route/v1/driving/` +
+      `${origin.lon},${origin.lat};${destination.lon},${destination.lat}` +
+      '?overview=full&geometries=geojson',
+    { signal },
+  );
+
+  if (!response.ok) {
+    throw new Error('Il percorso stradale non è disponibile.');
+  }
+
+  const payload = (await response.json()) as {
+    readonly code?: unknown;
+    readonly routes?: readonly {
+      readonly geometry?: {
+        readonly coordinates?: unknown;
+      };
+    }[];
+  };
+
+  const coordinates = payload.routes?.[0]?.geometry?.coordinates;
+
+  if (payload.code !== 'Ok' || !Array.isArray(coordinates)) {
+    throw new Error('Il servizio stradale ha restituito un percorso non valido.');
+  }
+
+  const points = coordinates.flatMap((coordinate: unknown): GeoPoint[] => {
+    if (!Array.isArray(coordinate) || coordinate.length < 2) {
+      return [];
+    }
+
+    const lon = coordinate[0];
+    const lat = coordinate[1];
+
+    if (
+      typeof lat !== 'number' ||
+      typeof lon !== 'number' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon)
+    ) {
+      return [];
+    }
+
+    return [{ lat, lon }];
+  });
+
+  if (points.length < 2) {
+    throw new Error('Il percorso stradale è vuoto.');
+  }
+
+  return points;
 }
 
 export async function snapToNearestDrivableRoad(point: GeoPoint): Promise<RoadSnapResult | null> {
-  const configuredBaseUrl = import.meta.env.VITE_OSRM_BASE_URL?.trim();
-
-  const baseUrl = (
-    configuredBaseUrl === undefined || configuredBaseUrl === ''
-      ? DEFAULT_OSRM_BASE_URL
-      : configuredBaseUrl
-  ).replace(/\/+$/, '');
+  const baseUrl = getOsrmBaseUrl();
 
   const response = await fetch(`${baseUrl}/nearest/v1/driving/${point.lon},${point.lat}?number=1`);
 
@@ -166,4 +240,51 @@ function isReadableAddress(value: unknown): value is string {
   const primaryName = value.split(',')[0]?.trim() ?? '';
 
   return /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(primaryName);
+}
+
+interface MunicipalityAwareFeature {
+  readonly place_type?: readonly string[];
+  readonly text?: unknown;
+  readonly context?: readonly {
+    readonly id?: unknown;
+    readonly text?: unknown;
+  }[];
+}
+
+function belongsToMilanMunicipality(feature: MunicipalityAwareFeature): boolean {
+  if (
+    feature.place_type?.includes('municipality') === true &&
+    isMilanMunicipalityName(feature.text)
+  ) {
+    return true;
+  }
+
+  return (
+    feature.context?.some(
+      (entry) =>
+        typeof entry.id === 'string' &&
+        entry.id.startsWith('municipality.') &&
+        isMilanMunicipalityName(entry.text),
+    ) ?? false
+  );
+}
+
+function isMilanMunicipalityName(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLocaleLowerCase('it-IT');
+
+  return normalized === 'milano' || normalized === 'comune di milano';
+}
+
+function getOsrmBaseUrl(): string {
+  const configuredBaseUrl = import.meta.env.VITE_OSRM_BASE_URL?.trim();
+
+  return (
+    configuredBaseUrl === undefined || configuredBaseUrl === ''
+      ? DEFAULT_OSRM_BASE_URL
+      : configuredBaseUrl
+  ).replace(/\/+$/, '');
 }

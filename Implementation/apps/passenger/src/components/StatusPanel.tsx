@@ -26,6 +26,7 @@ export interface StatusPanelProps {
   readonly cancelling: boolean;
   readonly cancellationError: string | null;
   readonly onCancel: () => void;
+  readonly nowMs: number;
 }
 
 /** Le cinque fasi che il DD §3.1 elenca, in ordine: è la barra di avanzamento della corsa. */
@@ -37,10 +38,44 @@ const PROGRESSION: readonly RidePhase[] = [
   'in_ride',
 ];
 
+function remainingEtaMinutes(
+  etaMinutes: number,
+  etaUpdatedAt: string | null,
+  nowMs: number,
+): number {
+  const initialMinutes = Math.max(1, Math.ceil(etaMinutes));
+
+  if (etaUpdatedAt === null || nowMs <= 0) {
+    return initialMinutes;
+  }
+
+  const updatedAtMs = Date.parse(etaUpdatedAt);
+
+  if (!Number.isFinite(updatedAtMs)) {
+    return initialMinutes;
+  }
+
+  const elapsedMinutes = Math.max(0, Math.floor((nowMs - updatedAtMs) / 60_000));
+
+  return Math.max(1, initialMinutes - elapsedMinutes);
+}
+
+function formatEta(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours === 0) {
+    return `${String(minutes).padStart(2, '0')} min`;
+  }
+
+  return `${String(hours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}`;
+}
+
 export function StatusPanel({
   request,
   view,
   connected,
+  nowMs,
   cancelling,
   cancellationError,
   onCancel,
@@ -50,7 +85,10 @@ export function StatusPanel({
   const [confirmingCancellation, setConfirmingCancellation] = useState(false);
   const cancellable = ['searching', 'assigned', 'arriving', 'arrived'].includes(view.phase);
   const reached = PROGRESSION.indexOf(view.phase);
-
+  const displayedEta =
+    view.etaMinutes === null
+      ? null
+      : remainingEtaMinutes(view.etaMinutes, view.etaUpdatedAt, nowMs);
   return (
     <section className="panel status-panel">
       <h2>La tua corsa</h2>
@@ -59,9 +97,9 @@ export function StatusPanel({
         {PHASE_LABELS[view.phase]}
       </p>
 
-      {view.etaMinutes !== null && (
+      {displayedEta !== null && (
         <p className="eta" data-testid="ride-eta">
-          Arrivo stimato fra {view.etaMinutes} min
+          Arrivo stimato fra {formatEta(displayedEta)}
         </p>
       )}
 
@@ -93,12 +131,6 @@ export function StatusPanel({
         <dt>Robotaxi</dt>
         <dd data-testid="ride-robotaxi">{view.robotaxiId ?? '—'}</dd>
       </dl>
-
-      {view.lastMessage !== null && (
-        <p className="last-message" data-testid="ride-message">
-          {view.lastMessage}
-        </p>
-      )}
 
       {cancellable && (
         <div className="cancellation-actions">

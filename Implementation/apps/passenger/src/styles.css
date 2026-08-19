@@ -385,7 +385,8 @@ button:disabled {
 }
 
 .progression li.reached {
-  color: var(--ink);
+  color: var(--ok);
+  font-weight: 500;
 }
 
 .progression li.reached::before {
@@ -400,12 +401,6 @@ button:disabled {
 
 .progression li[aria-current='step']::before {
   color: var(--accent);
-}
-
-.last-message {
-  color: var(--ink-muted);
-  font-size: 0.9rem;
-  margin: 0 0 0.75rem;
 }
 
 .muted {
@@ -1698,4 +1693,172 @@ div.route-search-preview--expanded:focus-within {
   display: none;
   width: 0;
   height: 0;
+}
+
+.route-point-error {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, transparent);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+  color: var(--error);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.route-point-error + .route-point-error {
+  margin-top: 0.35rem;
+}
+
+.route-point-warning {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--road-blue) 40%, transparent);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--road-blue) 9%, transparent);
+  color: var(--road-blue);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.robotaxi-map-icon {
+  display: grid;
+  place-items: center;
+  border: 1px solid white;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--road-blue);
+  box-shadow: 0 2px 5px rgb(6 19 40 / 35%);
+}
+
+.robotaxi-map-symbol {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.mobile-schedule {
+  margin-top: 0.8rem;
+  margin-bottom: 0;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--surface-border));
+  border-radius: 0.9rem;
+  background: var(--surface-elevated);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mobile-schedule input {
+  width: 100%;
+  min-height: 2.8rem;
+  margin-top: 0.25rem;
+  padding: 0.6rem 0.7rem;
+  border-color: var(--surface-border);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.mobile-schedule input:hover {
+  border-color: var(--accent);
+}
+
+
+:root[data-theme='light'] .mobile-schedule input {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] .mobile-schedule input {
+  color-scheme: dark;
+}
+
+.schedule-input-shell {
+  position: relative;
+  display: block;
+  width: 100%;
+  color: var(--accent);
+}
+
+.schedule-input-shell input {
+  padding-right: 3rem;
+}
+
+.schedule-input-shell input {
+  position: relative;
+  padding-right: 3rem;
+}
+
+.schedule-input-shell input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 3rem;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.schedule-calendar-icon {
+  position: absolute;
+  top: 50%;
+  right: 0.85rem;
+  z-index: 1;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--accent);
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: color 150ms ease;
+}
+
+.schedule-input-shell:hover .schedule-calendar-icon {
+  color: var(--accent-hover);
+}
+
+.schedule-input-shell:focus-within .schedule-calendar-icon {
+  color: var(--accent);
+}
+
+/* Pin e bandiera nei campi Partenza e Destinazione. */
+:root[data-theme='dark'] .route-point-icon--pickup,
+:root[data-theme='dark'] .route-point-icon--destination {
+  color: var(--accent);
+}
+
+.mobile-schedule input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+
+/* Pallino di “Usa la mia posizione”. */
+:root[data-theme='dark']
+  .current-location-option
+  .route-point-marker--pickup {
+  background: var(--accent);
+}
+
+
+/* Sagoma del taxi dentro il cerchio. */
+:root[data-theme='dark'] .robotaxi-map-icon {
+  color: var(--accent);
+}
+
+:root[data-theme='dark'] .route-back-button:hover:not(:disabled),
+:root[data-theme='dark'] .route-back-button:focus-visible {
+  border-color: var(--road-purple);
+  background: color-mix(
+    in srgb,
+    var(--road-purple) 20%,
+    transparent
+  );
+  color: var(--road-purple);
+}
+
+:root[data-theme='dark'] .route-back-button:focus-visible {
+  outline-color: var(--road-purple);
 }

@@ -17,6 +17,10 @@ export interface RoutePickerPanelProps {
   readonly onUseCurrentLocation: () => void;
   readonly onPointCleared: (pointType: RoutePoint) => void;
   readonly onBack: () => void;
+  readonly pickupError: string | null;
+  readonly destinationError: string | null;
+  readonly pickupWarning: string | null;
+  readonly destinationWarning: string | null;
 }
 
 export function RoutePickerPanel(props: RoutePickerPanelProps): React.JSX.Element {
@@ -355,6 +359,29 @@ export function RoutePickerPanel(props: RoutePickerPanelProps): React.JSX.Elemen
             </li>
           ))}
         </ul>
+      )}
+      {props.pickupError !== null && (
+        <p className="route-point-error" role="alert">
+          <strong>Partenza:</strong> {props.pickupError}
+        </p>
+      )}
+
+      {props.destinationError !== null && (
+        <p className="route-point-error" role="alert">
+          <strong>Destinazione:</strong> {props.destinationError}
+        </p>
+      )}
+
+      {props.pickupWarning !== null && (
+        <p className="route-point-warning" role="status">
+          <strong>Partenza:</strong> {props.pickupWarning}
+        </p>
+      )}
+
+      {props.destinationWarning !== null && (
+        <p className="route-point-warning" role="status">
+          <strong>Destinazione:</strong> {props.destinationWarning}
+        </p>
       )}
 
       <p className="address-search-attribution">Ricerca indirizzi © MapTiler</p>

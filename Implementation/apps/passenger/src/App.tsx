@@ -81,6 +81,20 @@ function PassengerApp(): React.JSX.Element {
   const [request, setRequest] = useState<RideRequestResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [routePointErrors, setRoutePointErrors] = useState<{
+    readonly pickup: string | null;
+    readonly destination: string | null;
+  }>({
+    pickup: null,
+    destination: null,
+  });
+  const [routePointWarnings, setRoutePointWarnings] = useState<{
+    readonly pickup: string | null;
+    readonly destination: string | null;
+  }>({
+    pickup: null,
+    destination: null,
+  });
   const [showProfile, setShowProfile] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showRoutePicker, setShowRoutePicker] = useState(false);
@@ -147,6 +161,8 @@ function PassengerApp(): React.JSX.Element {
    * trova. Tenerla puntata sul ritiro dopo la salita indicherebbe un punto che si è già lasciato.
    */
   const onBoard = view?.phase === 'in_ride';
+  const rideCompleted = view?.phase === 'completed';
+  const hidePickupOnMap = onBoard || rideCompleted;
 
   const vehicle = useQuery({
     queryKey: ['assigned-vehicle', request?.id ?? null],
@@ -170,8 +186,16 @@ function PassengerApp(): React.JSX.Element {
     setCancelling(false);
     setShowRoutePicker(false);
     setActiveRoutePoint('pickup');
+    setRoutePointWarnings({
+      pickup: null,
+      destination: null,
+    });
     setPickupAddress(null);
     setDestinationAddress(null);
+    setRoutePointErrors({
+      pickup: null,
+      destination: null,
+    });
   }
 
   function signOut(): void {
@@ -195,12 +219,39 @@ function PassengerApp(): React.JSX.Element {
     return false;
   }
 
+  function updateRoutePointError(
+    pointType: 'pickup' | 'destination',
+    message: string | null,
+  ): void {
+    setRoutePointErrors((current) => ({
+      ...current,
+      [pointType]: message,
+    }));
+  }
+
+  function updateRoutePointWarning(
+    pointType: 'pickup' | 'destination',
+    message: string | null,
+  ): void {
+    setRoutePointWarnings((current) => ({
+      ...current,
+      [pointType]: message,
+    }));
+  }
+
+  function activateRoutePoint(pointType: 'pickup' | 'destination'): void {
+    updateRoutePointError(pointType, null);
+    setActiveRoutePoint(pointType);
+    updateRoutePointWarning(pointType, null);
+  }
+
   function selectRoutePoint(
     pointType: 'pickup' | 'destination',
     point: GeoPoint,
     address: string | null,
   ): void {
     setError(null);
+    updateRoutePointError(pointType, null);
     setKind(null);
     setScheduledPickup('');
     setActiveRoutePoint(null);
@@ -213,6 +264,7 @@ function PassengerApp(): React.JSX.Element {
 
     setDestination(point);
     setDestinationAddress(address);
+    updateRoutePointWarning(pointType, null);
   }
 
   function returnToInitialView(): void {
@@ -227,12 +279,21 @@ function PassengerApp(): React.JSX.Element {
     setKind(null);
     setScheduledPickup('');
     setError(null);
+    setRoutePointWarnings({
+      pickup: null,
+      destination: null,
+    });
 
     setMapResetKey((current) => current + 1);
+    setRoutePointErrors({
+      pickup: null,
+      destination: null,
+    });
   }
 
   function clearRoutePoint(pointType: 'pickup' | 'destination'): void {
     setError(null);
+    updateRoutePointError(pointType, null);
     setKind(null);
     setScheduledPickup('');
     setActiveRoutePoint(pointType);
@@ -245,6 +306,7 @@ function PassengerApp(): React.JSX.Element {
 
     setDestination(null);
     setDestinationAddress(null);
+    updateRoutePointWarning(pointType, null);
   }
 
   async function selectRoutePointFromMap(point: GeoPoint): Promise<void> {
@@ -255,48 +317,75 @@ function PassengerApp(): React.JSX.Element {
     const pointType = activeRoutePoint;
 
     setError(null);
+    updateRoutePointError(pointType, null);
+    updateRoutePointWarning(pointType, null);
 
     let snappedPoint;
 
     try {
       snappedPoint = await snapToNearestDrivableRoad(point);
     } catch {
-      setError('Non è stato possibile verificare una strada raggiungibile. Riprova tra poco.');
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare una strada raggiungibile. Riprova tra poco.',
+      );
       return;
     }
 
     if (snappedPoint === null) {
-      setError(
+      updateRoutePointError(
+        pointType,
         'Il punto selezionato è troppo lontano da una strada raggiungibile. Scegli un altro punto.',
       );
       return;
     }
 
     if (!isInsideMilanServiceArea(snappedPoint.point)) {
-      setError('Spiacente, il servizio ROAd è disponibile solamente nell’area di Milano.');
+      updateRoutePointError(pointType, 'Il punto selezionato non si trova nel Comune di Milano.');
       return;
     }
 
-    let address: string | null = null;
+    let result;
 
     try {
-      address = await reverseGeocodeMilanPoint(snappedPoint.point);
+      result = await reverseGeocodeMilanPoint(snappedPoint.point);
     } catch {
-      // Il punto stradale rimane valido anche senza un indirizzo leggibile.
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare se il punto si trova nel Comune di Milano. Riprova tra poco.',
+      );
+      return;
     }
 
-    selectRoutePoint(pointType, snappedPoint.point, address);
+    if (result.municipality === 'outside') {
+      updateRoutePointError(pointType, 'Il punto selezionato non si trova nel Comune di Milano.');
+      return;
+    }
 
-    if (address === null) {
-      setError(
-        "Punto impostato sulla strada più vicina, ma non è stato possibile recuperarne l'indirizzo.",
+    if (result.municipality === 'unknown') {
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare se il punto si trova nel Comune di Milano. Scegli un altro punto.',
+      );
+      return;
+    }
+
+    selectRoutePoint(pointType, snappedPoint.point, result.address);
+
+    if (result.address === null) {
+      updateRoutePointWarning(
+        pointType,
+        'Punto valido: non è stato trovato un indirizzo leggibile, quindi vengono mostrate le coordinate.',
       );
     }
   }
 
   async function useCurrentLocation(): Promise<void> {
     if (!('geolocation' in navigator)) {
-      setError('La geolocalizzazione non è supportata da questo dispositivo.');
+      updateRoutePointError(
+        'pickup',
+        'La geolocalizzazione non è supportata da questo dispositivo.',
+      );
       return;
     }
 
@@ -318,7 +407,8 @@ function PassengerApp(): React.JSX.Element {
       };
 
       if (!isInsideMilanServiceArea(point)) {
-        setError(
+        updateRoutePointError(
+          'pickup',
           'Spiacente, al momento il servizio ROAd è disponibile solamente nell’area di Milano.',
         );
         return;
@@ -327,7 +417,17 @@ function PassengerApp(): React.JSX.Element {
       let address: string | null = null;
 
       try {
-        address = await reverseGeocodeMilanPoint(point);
+        const result = await reverseGeocodeMilanPoint(point);
+
+        if (result.municipality === 'outside') {
+          updateRoutePointError(
+            'pickup',
+            'La posizione attuale non si trova nel Comune di Milano.',
+          );
+          return;
+        }
+
+        address = result.address;
       } catch {
         // La posizione GPS rimane comunque utilizzabile.
       }
@@ -348,7 +448,7 @@ function PassengerApp(): React.JSX.Element {
         }
       }
 
-      setError(message);
+      updateRoutePointError('pickup', message);
     } finally {
       setIsLocating(false);
     }
@@ -505,7 +605,11 @@ function PassengerApp(): React.JSX.Element {
               pickupAddress={pickupAddress}
               destinationAddress={destinationAddress}
               activePoint={activeRoutePoint}
-              onActivePointChange={setActiveRoutePoint}
+              onActivePointChange={activateRoutePoint}
+              pickupError={routePointErrors.pickup}
+              destinationError={routePointErrors.destination}
+              pickupWarning={routePointWarnings.pickup}
+              destinationWarning={routePointWarnings.destination}
               onBack={returnToInitialView}
               onPointSelected={selectRoutePoint}
               onPointCleared={clearRoutePoint}
@@ -611,8 +715,9 @@ function PassengerApp(): React.JSX.Element {
         <>
           <RideMap
             key={mapResetKey}
-            pickup={pickup}
+            pickup={hidePickupOnMap ? null : pickup}
             destination={destination}
+            focusDestination={rideCompleted}
             robotaxi={followingVehicle ? (vehicle.data?.vehicle?.position ?? null) : null}
             robotaxiHeadingTo={onBoard ? 'destination' : 'pickup'}
             onPick={
@@ -657,6 +762,7 @@ function PassengerApp(): React.JSX.Element {
               cancellationError={cancellationError}
               onCancel={() => void cancelCurrentRide()}
               onNewRequest={resetRequest}
+              nowMs={vehicle.dataUpdatedAt}
             />
           )}
         </>

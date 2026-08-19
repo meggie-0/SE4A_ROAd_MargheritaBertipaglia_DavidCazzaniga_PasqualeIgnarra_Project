@@ -14,8 +14,9 @@ import {
 import { MILAN_SERVICE_BOUNDS } from '../service-area';
 
 import 'leaflet/dist/leaflet.css';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { divIcon } from 'leaflet';
+import { fetchRoadRoute } from '../address-search';
 /**
  * La mappa su cui l'app passeggero è centrata (DD §3.1).
  *
@@ -76,6 +77,19 @@ const DESTINATION_MAP_ICON = divIcon({
   popupAnchor: [5, -30],
 });
 
+const ROBOTAXI_MAP_ICON = divIcon({
+  className: 'robotaxi-map-icon',
+  html: `
+    <span
+      class="road-taxi-icon robotaxi-map-symbol"
+      aria-hidden="true"
+    ></span>
+  `,
+  iconSize: [42, 42],
+  iconAnchor: [21, 21],
+  popupAnchor: [0, -21],
+});
+
 export interface RideMapProps {
   readonly pickup: GeoPoint | null;
   readonly destination: GeoPoint | null;
@@ -95,6 +109,8 @@ export interface RideMapProps {
   readonly robotaxiHeadingTo?: 'pickup' | 'destination';
   /** Riceve il punto toccato. `null` quando la schermata non accetta più scelte (corsa in corso). */
   readonly onPick: ((point: GeoPoint) => void) | null;
+  /** Sposta e ingrandisce la mappa sulla destinazione al termine della corsa. */
+  readonly focusDestination?: boolean;
 }
 
 /**
@@ -111,6 +127,7 @@ export function RideMap({
   destination,
   robotaxi,
   robotaxiHeadingTo = 'pickup',
+  focusDestination = false,
   onPick,
 }: RideMapProps): React.JSX.Element {
   const heading = robotaxiHeadingTo === 'destination' ? destination : pickup;
@@ -133,6 +150,7 @@ export function RideMap({
 
       <MapClickHandler onPick={onPick} />
       <FitRouteBounds pickup={pickup} destination={destination} />
+      <FocusDestination destination={destination} enabled={focusDestination} />
 
       {/* Le zone di Milano, dalla partizione di Voronoi condivisa (decisione D10): danno un
           riferimento a chi tocca la mappa senza conoscere la città. */}
@@ -160,26 +178,81 @@ export function RideMap({
       )}
       {robotaxi !== null && robotaxi !== undefined && (
         <>
-          {heading !== null && (
-            <Polyline
-              positions={[
-                [robotaxi.lat, robotaxi.lon],
-                [heading.lat, heading.lon],
-              ]}
-              pathOptions={{ color: '#38bdf8', weight: 2, opacity: 0.6, dashArray: '6 8' }}
-            />
-          )}
-          <CircleMarker
-            center={[robotaxi.lat, robotaxi.lon]}
-            radius={9}
-            className="robotaxi-marker"
-            pathOptions={{ color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 3 }}
-          >
+          {heading !== null && <RobotaxiRoadRoute origin={robotaxi} destination={heading} />}
+          <Marker position={[robotaxi.lat, robotaxi.lon]} icon={ROBOTAXI_MAP_ICON}>
             <Popup>Il tuo robotaxi</Popup>
-          </CircleMarker>
+          </Marker>
         </>
       )}
     </MapContainer>
+  );
+}
+
+const ROUTE_REFRESH_CELL_DEGREES = 0.00025;
+
+function RobotaxiRoadRoute({
+  origin,
+  destination,
+}: {
+  readonly origin: GeoPoint;
+  readonly destination: GeoPoint;
+}): React.JSX.Element | null {
+  const [route, setRoute] = useState<readonly GeoPoint[]>([]);
+  const latestOrigin = useRef(origin);
+
+  latestOrigin.current = origin;
+
+  /*
+   * La cella cambia dopo uno spostamento di circa 20–30 metri.
+   * Il marker continua invece ad aggiornarsi a ogni rilevazione.
+   */
+  const originCellLat = Math.round(origin.lat / ROUTE_REFRESH_CELL_DEGREES);
+  const originCellLon = Math.round(origin.lon / ROUTE_REFRESH_CELL_DEGREES);
+
+  const destinationLat = destination.lat;
+  const destinationLon = destination.lon;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const currentOrigin = latestOrigin.current;
+
+    void fetchRoadRoute(
+      currentOrigin,
+      {
+        lat: destinationLat,
+        lon: destinationLon,
+      },
+      controller.signal,
+    )
+      .then((points) => {
+        setRoute(points);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setRoute([]);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [originCellLat, originCellLon, destinationLat, destinationLon]);
+
+  if (route.length < 2) {
+    return null;
+  }
+
+  return (
+    <Polyline
+      positions={route.map((point): [number, number] => [point.lat, point.lon])}
+      pathOptions={{
+        color: '#2136ca',
+        weight: 5,
+        opacity: 0.85,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }}
+    />
   );
 }
 
@@ -227,6 +300,38 @@ function FitRouteBounds({
       },
     );
   }, [map, pickup?.lat, pickup?.lon, destination?.lat, destination?.lon]);
+
+  return null;
+}
+
+function FocusDestination({
+  destination,
+  enabled,
+}: {
+  readonly destination: GeoPoint | null;
+  readonly enabled: boolean;
+}): null {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled || destination === null) {
+      return;
+    }
+
+    map.flyToBounds(
+      [
+        [destination.lat, destination.lon],
+        [destination.lat, destination.lon],
+      ],
+      {
+        animate: true,
+        duration: 1,
+        maxZoom: 16,
+        paddingTopLeft: [35, 220],
+        paddingBottomRight: [35, 280],
+      },
+    );
+  }, [map, enabled, destination?.lat, destination?.lon]);
 
   return null;
 }
