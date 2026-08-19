@@ -15,6 +15,8 @@ import {
   type UpdateProfileRequest,
   type UserProfile,
   rideVehicleRoute,
+  passengerBookingsResponseSchema,
+  type PassengerBookingsResponse,
 } from '@road/shared';
 
 import { apiBaseUrl } from './api-base-url';
@@ -109,6 +111,17 @@ export async function requestAdvanceBooking(
       scheduledPickup: draft.scheduledPickup,
     },
     schema: rideRequestResponseSchema,
+  });
+}
+
+/**
+ * `GET /rides/bookings` — prenotazioni anticipate non ancora attivate
+ * appartenenti al passeggero autenticato.
+ */
+export async function fetchPassengerBookings(token: string): Promise<PassengerBookingsResponse> {
+  return apiRequest(apiBaseUrl, API_ROUTES.rideBookings, {
+    token,
+    schema: passengerBookingsResponseSchema,
   });
 }
 
