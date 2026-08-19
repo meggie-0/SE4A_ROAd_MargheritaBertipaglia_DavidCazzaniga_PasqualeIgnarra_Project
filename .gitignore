@@ -62,3 +62,6 @@ playwright-report/
 test-results/
 **/e2e/screenshots/
 .tsbuild/
+
+.env.local
+.env.*.local
