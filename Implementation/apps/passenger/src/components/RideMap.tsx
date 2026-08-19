@@ -7,12 +7,15 @@ import {
   TileLayer,
   Tooltip,
   useMapEvents,
+  useMap,
+  Marker,
 } from 'react-leaflet';
 
 import { MILAN_SERVICE_BOUNDS } from '../service-area';
 
 import 'leaflet/dist/leaflet.css';
-
+import { useEffect } from 'react';
+import { divIcon } from 'leaflet';
 /**
  * La mappa su cui l'app passeggero è centrata (DD §3.1).
  *
@@ -30,6 +33,48 @@ import 'leaflet/dist/leaflet.css';
 /** Il centro di Milano: Duomo. La mappa parte da lì perché è lì che il prototipo opera. */
 const MILAN_CENTER: GeoPoint = { lat: 45.4642, lon: 9.19 };
 const INITIAL_ZOOM = 13;
+const PICKUP_MAP_ICON = divIcon({
+  className: 'route-map-icon',
+  html: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 22s7-6.1 7-13a7 7 0 1 0-14 0c0 6.9 7 13 7 13Z"
+        fill="currentColor"
+        stroke="white"
+        stroke-width="1.2"
+      />
+      <circle cx="12" cy="9" r="2.5" fill="white" />
+    </svg>
+  `,
+  iconSize: [34, 34],
+  iconAnchor: [17, 34],
+  popupAnchor: [0, -32],
+});
+
+const DESTINATION_MAP_ICON = divIcon({
+  className: 'route-map-icon',
+  html: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M6 22V3"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.5"
+        stroke-linecap="round"
+      />
+      <path
+        d="M7 4h11l-2.5 4L18 12H7Z"
+        fill="currentColor"
+        stroke="white"
+        stroke-width="1.1"
+        stroke-linejoin="round"
+      />
+    </svg>
+  `,
+  iconSize: [34, 34],
+  iconAnchor: [7, 32],
+  popupAnchor: [5, -30],
+});
 
 export interface RideMapProps {
   readonly pickup: GeoPoint | null;
@@ -87,6 +132,7 @@ export function RideMap({
       />
 
       <MapClickHandler onPick={onPick} />
+      <FitRouteBounds pickup={pickup} destination={destination} />
 
       {/* Le zone di Milano, dalla partizione di Voronoi condivisa (decisione D10): danno un
           riferimento a chi tocca la mappa senza conoscere la città. */}
@@ -102,23 +148,15 @@ export function RideMap({
       ))}
 
       {pickup !== null && (
-        <CircleMarker
-          center={[pickup.lat, pickup.lon]}
-          radius={10}
-          pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.9 }}
-        >
-          <Popup>Punto di ritiro</Popup>
-        </CircleMarker>
+        <Marker position={[pickup.lat, pickup.lon]} icon={PICKUP_MAP_ICON}>
+          <Popup>Punto di partenza</Popup>
+        </Marker>
       )}
 
       {destination !== null && (
-        <CircleMarker
-          center={[destination.lat, destination.lon]}
-          radius={10}
-          pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.9 }}
-        >
+        <Marker position={[destination.lat, destination.lon]} icon={DESTINATION_MAP_ICON}>
           <Popup>Destinazione</Popup>
-        </CircleMarker>
+        </Marker>
       )}
       {robotaxi !== null && robotaxi !== undefined && (
         <>
@@ -158,5 +196,37 @@ function MapClickHandler({ onPick }: { onPick: ((point: GeoPoint) => void) | nul
       onPick({ lat: event.latlng.lat, lon: event.latlng.lng });
     },
   });
+  return null;
+}
+
+function FitRouteBounds({
+  pickup,
+  destination,
+}: {
+  readonly pickup: GeoPoint | null;
+  readonly destination: GeoPoint | null;
+}): null {
+  const map = useMap();
+
+  useEffect(() => {
+    if (pickup === null || destination === null) {
+      return;
+    }
+
+    map.fitBounds(
+      [
+        [pickup.lat, pickup.lon],
+        [destination.lat, destination.lon],
+      ],
+      {
+        animate: true,
+        duration: 0.7,
+        maxZoom: 15,
+        paddingTopLeft: [35, 220],
+        paddingBottomRight: [35, 280],
+      },
+    );
+  }, [map, pickup?.lat, pickup?.lon, destination?.lat, destination?.lon]);
+
   return null;
 }

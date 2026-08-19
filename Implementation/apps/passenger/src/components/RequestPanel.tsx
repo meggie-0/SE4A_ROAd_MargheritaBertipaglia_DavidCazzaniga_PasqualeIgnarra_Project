@@ -17,13 +17,12 @@ import type { GeoPoint, RideRequestKind } from '@road/shared';
 export interface RequestPanelProps {
   readonly pickup: GeoPoint | null;
   readonly destination: GeoPoint | null;
-  readonly kind: RideRequestKind;
+  readonly kind: RideRequestKind | null;
   readonly scheduledPickup: string;
   readonly busy: boolean;
   readonly error: string | null;
   readonly onKindChange: (kind: RideRequestKind) => void;
   readonly onScheduledPickupChange: (value: string) => void;
-  readonly onReset: () => void;
   readonly onSubmit: () => void;
 }
 
@@ -31,7 +30,7 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
   const { pickup, destination, kind, scheduledPickup, busy, error } = props;
 
   const missingSchedule = kind === 'ADVANCE' && scheduledPickup.trim() === '';
-  const ready = pickup !== null && destination !== null && !missingSchedule;
+  const ready = pickup !== null && destination !== null && kind !== null && !missingSchedule;
 
   return (
     <section className="panel request-panel">
@@ -61,8 +60,7 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
             <small>Parti appena viene assegnato un robotaxi</small>
           </span>
 
-          <span className="service-check" aria-hidden="true">
-          </span>
+          <span className="service-check" aria-hidden="true"></span>
         </label>
 
         <label className={`service-card ${kind === 'ADVANCE' ? 'service-card--selected' : ''}`}>
@@ -96,8 +94,7 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
             <small>Scegli in anticipo data e ora del ritiro</small>
           </span>
 
-          <span className="service-check" aria-hidden="true">
-          </span>
+          <span className="service-check" aria-hidden="true"></span>
         </label>
       </fieldset>
 
@@ -114,26 +111,6 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
         </label>
       )}
 
-      <div className="route-summary">
-        <p className="hint" data-testid="pick-hint">
-          {pickup === null
-            ? 'Seleziona il punto di partenza sulla mappa.'
-            : destination === null
-              ? 'Ora seleziona la destinazione sulla mappa.'
-              : 'Percorso impostato correttamente.'}
-        </p>
-
-        <dl className="points">
-          <dt>Partenza</dt>
-          <dd data-testid="pickup-value">{pickup === null ? '—' : formatPoint(pickup)}</dd>
-
-          <dt>Arrivo</dt>
-          <dd data-testid="destination-value">
-            {destination === null ? '—' : formatPoint(destination)}
-          </dd>
-        </dl>
-      </div>
-
       {error !== null && (
         <p className="status-error" data-testid="request-error" role="alert">
           {error}
@@ -148,24 +125,13 @@ export function RequestPanel(props: RequestPanelProps): React.JSX.Element {
           disabled={!ready || busy}
           onClick={props.onSubmit}
         >
-          {busy ? 'Prenotazione in corso…' : 'Prenota corsa'}
-        </button>
-
-        <button
-          type="button"
-          className="link-button reset-route-button"
-          data-testid="reset-points"
-          onClick={props.onReset}
-          disabled={pickup === null && destination === null}
-        >
-          Azzera il percorso
+          {busy
+            ? 'Prenotazione in corso…'
+            : kind === null
+              ? 'Seleziona un servizio'
+              : 'Prenota corsa'}
         </button>
       </div>
     </section>
   );
-}
-
-/** Coordinate leggibili: quattro decimali sono circa undici metri, che su una città bastano. */
-function formatPoint(point: GeoPoint): string {
-  return `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`;
 }
