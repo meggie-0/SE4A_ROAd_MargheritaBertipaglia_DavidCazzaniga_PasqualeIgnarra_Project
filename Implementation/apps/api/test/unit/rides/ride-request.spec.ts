@@ -292,6 +292,70 @@ describe('[R4][G3] Advance booking', () => {
     expect(morning.accepted && morning.robotaxiId).toBe('RT-01');
     expect(evening.accepted && evening.robotaxiId).toBe('RT-01');
   });
+
+  it('elenca tutte le prenotazioni aperte del passeggero, ordinate per orario', async () => {
+    harness = await composeRides({
+      now: NOW,
+      vehicles: [north('RT-01', 0.01)],
+    });
+
+    /*
+     * Viene inserita prima quella più lontana, così il test dimostra
+     * che listBookings ordina per scheduledPickup e non per creazione.
+     */
+    const later = await harness.rides.submitAdvance({
+      ...advanceDraft,
+      scheduledPickup: new Date(NOW.getTime() + 8 * 60 * 60 * 1000),
+    });
+
+    const earlier = await harness.rides.submitAdvance({
+      ...advanceDraft,
+      scheduledPickup: new Date(NOW.getTime() + 2 * 60 * 60 * 1000),
+    });
+
+    /*
+     * Una prenotazione di un altro passeggero non deve comparire
+     * nell'elenco richiesto da PASSENGER.
+     */
+    await harness.rides.submitAdvance({
+      ...advanceDraft,
+      passengerId: 'passenger-2',
+      scheduledPickup: new Date(NOW.getTime() + 14 * 60 * 60 * 1000),
+    });
+
+    expect(earlier.accepted).toBe(true);
+    expect(later.accepted).toBe(true);
+
+    const bookings = await harness.rides.listBookings(PASSENGER);
+
+    expect(bookings.map(({ request }) => request.id)).toEqual([
+      earlier.request.id,
+      later.request.id,
+    ]);
+
+    expect(bookings.map(({ booking }) => booking.scheduledPickup)).toEqual([
+      new Date(NOW.getTime() + 2 * 60 * 60 * 1000),
+      new Date(NOW.getTime() + 8 * 60 * 60 * 1000),
+    ]);
+
+    expect(bookings.every(({ request }) => request.passengerId === PASSENGER)).toBe(true);
+  });
+
+  it('una prenotazione annullata non compare più nell elenco', async () => {
+    harness = await composeRides({
+      now: NOW,
+      vehicles: [north('RT-01', 0.01)],
+    });
+
+    const outcome = await harness.rides.submitAdvance(advanceDraft);
+
+    expect(outcome.accepted).toBe(true);
+    expect(await harness.rides.listBookings(PASSENGER)).toHaveLength(1);
+
+    await harness.rides.cancel(outcome.request.id, PASSENGER);
+
+    expect(await harness.rides.listBookings(PASSENGER)).toEqual([]);
+  });
 });
 
 describe('[R14] Ride Cancellation', () => {

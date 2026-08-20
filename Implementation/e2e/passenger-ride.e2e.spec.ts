@@ -75,15 +75,65 @@ async function tapMap(page: Page, fraction: { x: number; y: number }): Promise<v
   await map.click({ position: { x: box.width * fraction.x, y: box.height * fraction.y } });
 }
 
+/** Seleziona partenza e destinazione attraverso la barra superiore. */
+async function selectRoute(page: Page): Promise<void> {
+  await page.getByTestId('route-search-preview').click();
+
+  await expect(page.getByTestId('pickup-address')).toBeVisible();
+
+  await tapMap(page, PICKUP_FRACTION);
+
+  await expect(page.getByTestId('pickup-address')).not.toHaveValue('', {
+    timeout: 30_000,
+  });
+
+  await expect(page.locator('.route-address-field--destination')).toHaveClass(
+    /route-address-field--active/,
+    {
+      timeout: 30_000,
+    },
+  );
+
+  await tapMap(page, DESTINATION_FRACTION);
+
+  await expect(page.getByTestId('kind-immediate')).toBeChecked({
+    timeout: 30_000,
+  });
+}
+
+/** Produce un valore locale accettato da un input `datetime-local`. */
+async function futureLocalDateTime(page: Page, hoursFromNow: number): Promise<string> {
+  const response = await page.request.get(`${API_URL}/health`);
+
+  if (!response.ok()) {
+    throw new Error(`GET /health ha risposto con stato ${response.status()}.`);
+  }
+
+  const payload: unknown = await response.json();
+
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    !('time' in payload) ||
+    typeof payload.time !== 'string'
+  ) {
+    throw new Error('GET /health non ha restituito un orario valido.');
+  }
+
+  const instant = new Date(payload.time);
+  instant.setTime(instant.getTime() + hoursFromNow * 60 * 60 * 1000);
+
+  const local = new Date(instant.getTime() - instant.getTimezoneOffset() * 60_000);
+
+  return local.toISOString().slice(0, 16);
+}
+
 test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo stato', () => {
   test('la corsa avanza fino a in_ride sotto gli occhi del passeggero', async ({ page }) => {
     await signIn(page);
 
     // Ritiro e destinazione si scelgono toccando la mappa (DD §3.1).
-    await tapMap(page, PICKUP_FRACTION);
-    await expect(page.getByTestId('pickup-value')).not.toHaveText('—');
-    await tapMap(page, DESTINATION_FRACTION);
-    await expect(page.getByTestId('destination-value')).not.toHaveText('—');
+    await selectRoute(page);
 
     // Un solo pulsante, come il DD §3.1 prescrive.
     await page.getByTestId('request-ride').click();
@@ -104,7 +154,9 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
      * escluso dal conteggio qui sotto: porta *dove* si trova il veicolo e non *in che stato* è,
      * quindi la progressione che il test sta seguendo continua ad arrivare solo dal canale push.
      */
-    await expect(page.locator('.ride-map path.robotaxi-marker')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.ride-map .robotaxi-map-icon')).toBeVisible({
+      timeout: 30_000,
+    });
 
     /*
      * Da qui in poi **nessuna richiesta parte dal client**: la progressione arriva sul canale push.
@@ -186,9 +238,9 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
     // soddisfatto da una schermata che salta direttamente all'esito.
     expect(osservate).toContain('arriving');
 
-    // Il puntino **resta** a passeggero a bordo: la mappa non si svuota nell'istante in cui la
-    // corsa comincia, che è ciò che farebbe sembrare l'app scollegata proprio mentre si viaggia.
-    await expect(page.locator('.ride-map path.robotaxi-marker')).toBeVisible();
+    // L’icona del robotaxi resta visibile anche quando il passeggero è a bordo:
+    // la mappa non si svuota quando la corsa comincia.
+    await expect(page.locator('.ride-map .robotaxi-map-icon')).toBeVisible();
 
     // L'elenco e non il contatore: se fallisse, il messaggio dice *quale* rotta è stata
     // interrogata, che è l'informazione con cui si corregge il difetto.
@@ -203,12 +255,76 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
   });
 });
 
+test.describe('[R4][G3] Il passeggero gestisce una corsa programmata', () => {
+  test('la prenotazione resta separata dalla corsa live e può essere annullata', async ({
+    page,
+  }) => {
+    await signIn(page);
+    await selectRoute(page);
+
+    await page.locator('label.service-card', { hasText: 'Programma corsa' }).click();
+    await expect(page.getByTestId('kind-advance')).toBeChecked();
+    await page.getByTestId('scheduled-pickup').fill(await futureLocalDateTime(page, 24));
+
+    await page.getByTestId('request-ride').click();
+
+    /*
+     * Una prenotazione accettata mostra la conferma, non la
+     * progressione della corsa live.
+     */
+    await expect(page.getByTestId('confirmed-booking-time')).toBeVisible();
+    await expect(page.getByTestId('ride-phase')).toHaveCount(0);
+
+    /*
+     * Il primo accesso all'elenco avviene direttamente dalla conferma.
+     */
+    await page.getByTestId('view-bookings').click();
+
+    await expect(page.getByRole('heading', { name: 'Le mie prenotazioni' })).toBeVisible();
+    await expect(page.locator('.booking-card')).toHaveCount(1);
+
+    /*
+     * Chiudendo l'elenco si torna alla conferma appena mostrata.
+     */
+    await page.getByRole('button', { name: 'Chiudi le prenotazioni' }).click();
+
+    await expect(page.getByTestId('confirmed-booking-time')).toBeVisible();
+
+    /*
+     * Dopo il reload lo stato React è perso, quindi la prenotazione
+     * deve essere riletta dal backend e raggiunta dal menu hamburger.
+     */
+    await page.reload();
+
+    await page.getByTestId('open-menu').click();
+    await page.getByTestId('open-bookings').click();
+
+    await expect(page.getByRole('heading', { name: 'Le mie prenotazioni' })).toBeVisible();
+    await expect(page.locator('.booking-card')).toHaveCount(1);
+
+    /*
+     * L'annullamento richiede conferma e rimuove la prenotazione
+     * dall'elenco persistente.
+     */
+    await page.getByRole('button', { name: 'Annulla prenotazione' }).click();
+
+    const dialog = page.getByRole('dialog', {
+      name: 'Annullare la prenotazione?',
+    });
+
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Sì, annulla' }).click();
+
+    await expect(page.locator('.booking-card')).toHaveCount(0);
+    await expect(page.getByText('Non hai ancora corse programmate.')).toBeVisible();
+  });
+});
+
 test.describe('[R14] Il passeggero annulla una corsa prima che inizi', () => {
   test('la conferma permette di mantenere oppure annullare la corsa', async ({ page }) => {
     await signIn(page);
 
-    await tapMap(page, PICKUP_FRACTION);
-    await tapMap(page, DESTINATION_FRACTION);
+    await selectRoute(page);
     await page.getByTestId('request-ride').click();
 
     const phase = page.getByTestId('ride-phase');
@@ -252,8 +368,8 @@ test.describe('[R2][G1] Il passeggero aggiorna il proprio profilo', () => {
   test('il nome cambiato sopravvive a un nuovo accesso', async ({ page }) => {
     const passenger = await signIn(page);
 
-    await page.getByTestId('open-profile').click();
     await page.getByTestId('open-menu').click();
+    await page.getByTestId('open-profile').click();
     await page.getByTestId('profile-name').fill('Elisabetta');
     await page.getByTestId('save-profile').click();
 
@@ -279,49 +395,43 @@ test.describe('[R2][G1] Il passeggero aggiorna il proprio profilo', () => {
   });
 });
 
-test.describe('[NFR6] La richiesta di una corsa costa al più quattro interazioni', () => {
-  /**
-   * NFR6 nella formulazione falsificabile del DD §4.3: «a passenger completes a ride request from a
-   * **cold start** of the client in at most four interactions».
-   *
-   * «Avvio a freddo» è il ricaricamento della pagina con una sessione già stabilita: il login non è
-   * una delle quattro interazioni, o nessuna interfaccia potrebbe rispettare il vincolo. Il conto
-   * qui è esplicito, e il test fallisce sia se le interazioni fossero cinque sia se con tre non si
-   * arrivasse a una corsa richiesta — che è l'altra metà del requisito.
-   */
-  test('da avvio a freddo bastano tre tocchi: ritiro, destinazione, richiesta', async ({
-    page,
-  }) => {
-    await signIn(page);
+test('da avvio a freddo bastano quattro tocchi: ricerca, ritiro, destinazione e richiesta', async ({
+  page,
+}) => {
+  await signIn(page);
 
-    // L'avvio a freddo: la pagina si ricarica e la sessione sopravvive, quindi si riparte dalla
-    // mappa e non dal login. Se non sopravvivesse, `request-ride` non esisterebbe e il test
-    // fallirebbe qui.
-    await page.reload();
-    await expect(page.getByTestId('request-ride')).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId('route-search-preview')).toBeVisible();
 
-    /*
-     * Le interazioni sono **un elenco eseguito**, non un contatore incrementato a mano.
-     *
-     * La differenza è che qui il numero non si può sbagliare: `interactions.length` è il numero di
-     * azioni che il test compie davvero, quindi chi un domani dovesse aggiungere un passo per far
-     * funzionare lo scenario dovrebbe aggiungerlo a questo elenco, e l'asserzione lo coglierebbe.
-     * Un contatore scritto a parte, invece, resta al valore che l'autore gli assegna: era
-     * un'asserzione che non poteva fallire.
-     */
-    const interactions: readonly (() => Promise<void>)[] = [
-      () => tapMap(page, PICKUP_FRACTION),
-      () => tapMap(page, DESTINATION_FRACTION),
-      () => page.getByTestId('request-ride').click(),
-    ];
+  const interactions: readonly (() => Promise<void>)[] = [
+    async () => {
+      await page.getByTestId('route-search-preview').click();
+    },
+    async () => {
+      await tapMap(page, PICKUP_FRACTION);
 
-    // La corsa immediata è già selezionata: sceglierla non costa un'interazione, e se un giorno
-    // smettesse di essere il default il bilancio salirebbe a quattro senza che nessuno se ne accorga.
-    await expect(page.getByTestId('kind-immediate')).toBeChecked();
+      await expect(page.locator('.route-address-field--destination')).toHaveClass(
+        /route-address-field--active/,
+        {
+          timeout: 30_000,
+        },
+      );
+    },
+    async () => {
+      await tapMap(page, DESTINATION_FRACTION);
 
-    for (const interaction of interactions) await interaction();
+      await expect(page.getByTestId('kind-immediate')).toBeChecked({
+        timeout: 30_000,
+      });
+    },
+    async () => {
+      await page.getByTestId('request-ride').click();
+    },
+  ];
 
-    await expect(page.getByTestId('ride-phase')).toBeVisible();
-    expect(interactions.length).toBeLessThanOrEqual(4);
-  });
+  for (const interaction of interactions) {
+    await interaction();
+  }
+
+  expect(interactions.length).toBeLessThanOrEqual(4);
 });

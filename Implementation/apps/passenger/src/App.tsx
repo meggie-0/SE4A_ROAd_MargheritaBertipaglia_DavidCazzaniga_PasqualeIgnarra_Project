@@ -336,19 +336,28 @@ function PassengerApp(): React.JSX.Element {
   ): void {
     setError(null);
     updateRoutePointError(pointType, null);
-    setKind(null);
+    updateRoutePointWarning(pointType, null);
     setScheduledPickup('');
-    setActiveRoutePoint(null);
 
     if (pointType === 'pickup') {
       setPickup(point);
       setPickupAddress(address);
+
+      // Dopo la partenza passa automaticamente alla destinazione.
+      setKind(null);
+      setActiveRoutePoint('destination');
       return;
     }
 
     setDestination(point);
     setDestinationAddress(address);
-    updateRoutePointWarning(pointType, null);
+
+    // La corsa immediata è il servizio predefinito.
+    setKind('IMMEDIATE');
+
+    // Entrambi i punti sono presenti: mostra la scelta del servizio.
+    setActiveRoutePoint(null);
+    setShowRoutePicker(false);
   }
 
   function returnToInitialView(): void {
@@ -715,7 +724,7 @@ function PassengerApp(): React.JSX.Element {
               onClick={() => {
                 setShowMenu(false);
                 setShowProfile(false);
-                setActiveRoutePoint(null);
+                setActiveRoutePoint('pickup');
                 setShowRoutePicker(true);
                 setShowBookings(false);
                 setBookingConfirmation(null);
