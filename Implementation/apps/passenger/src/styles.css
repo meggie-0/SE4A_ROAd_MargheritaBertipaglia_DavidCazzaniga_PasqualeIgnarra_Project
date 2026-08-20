@@ -2144,3 +2144,117 @@ div.route-search-preview--expanded:focus-within {
 :root[data-theme='dark'] .route-back-button:focus-visible {
   outline-color: var(--road-purple);
 }
+
+/* --- Restyling schermata di accesso ---------------------------------- */
+
+.passenger-app--guest .guest-header {
+  display: flex;
+  justify-content: center;
+  min-height: 8.5rem;
+  padding-top: 1rem;
+}
+
+.passenger-app--guest .guest-header .brand-lockup {
+  display: flex;
+  align-items: center;
+}
+
+.passenger-app--guest .guest-header .brand-logo-frame {
+  width: 13rem;
+}
+
+.passenger-app--guest .login-panel {
+  width: 100%;
+  margin: auto 0;
+  border: 1.5px solid var(--road-purple);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgb(86 61 230 / 8%),
+    var(--panel-shadow);
+}
+
+.passenger-app--guest .login-panel input {
+  min-height: 2.75rem;
+  background: var(--surface-elevated);
+  border-color: color-mix(in srgb, var(--road-purple) 35%, var(--surface-border));
+}
+
+.passenger-app--guest .login-panel input:focus-visible {
+  border-color: var(--road-purple);
+  outline-color: var(--road-purple);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .passenger-app--guest .guest-header {
+    animation: guest-logo-enter 360ms ease-out both;
+  }
+
+  .passenger-app--guest .login-panel {
+    animation: guest-panel-enter 420ms 60ms ease-out both;
+  }
+
+  @keyframes guest-logo-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-0.5rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes guest-panel-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+.passenger-app--guest .login-heading {
+  margin: 0 0 1.15rem;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.passenger-app--guest .login-panel form {
+  gap: 0.85rem;
+}
+
+.passenger-app--guest .login-panel label {
+  gap: 0.35rem;
+}
+
+.passenger-app--guest .login-panel input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+}
+
+.passenger-app--guest .login-panel button[type='submit'] {
+  min-height: 2.75rem;
+  margin-top: 0.1rem;
+}
+
+.passenger-app--guest .login-panel .link-button {
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.25rem 0;
+  text-align: left;
+}
+
+.passenger-app--guest .guest-header .brand-lockup {
+  transform: translate(-0.55rem, 1rem);
+}
+
+.passenger-app--guest .guest-header .brand-logo-frame {
+  width: 18rem;
+}

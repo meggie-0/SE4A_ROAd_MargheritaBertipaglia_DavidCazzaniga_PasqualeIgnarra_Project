@@ -708,23 +708,7 @@ function PassengerApp(): React.JSX.Element {
       }`}
     >
       {session === null ? (
-        <header className="app-header">
-          <div className="header-slot header-start">
-            <button
-              type="button"
-              className="theme-toggle"
-              data-testid="theme-toggle"
-              data-theme={theme}
-              aria-label={
-                theme === 'dark' ? 'Attiva la modalità giorno' : 'Attiva la modalità notte'
-              }
-              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-            >
-              <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
-              <span className="theme-label">{theme === 'dark' ? 'Giorno' : 'Notte'}</span>
-            </button>
-          </div>
-
+        <header className="app-header guest-header">
           <div className="brand-lockup">
             <div className="brand-logo-frame">
               <img
@@ -734,8 +718,6 @@ function PassengerApp(): React.JSX.Element {
               />
             </div>
           </div>
-
-          <div className="header-slot header-end" />
         </header>
       ) : (
         <header className={`mobile-topbar ${showRoutePicker ? 'mobile-topbar--expanded' : ''}`}>

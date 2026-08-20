@@ -46,13 +46,9 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps): React.JSX.El
 
   return (
     <section className="panel login-panel">
-      <h1>ROAd — App passeggero</h1>
-      <p className="muted">
-        {mode === 'login'
-          ? 'Accedi per richiedere una corsa.'
-          : 'Crea un account per richiedere una corsa.'}
-      </p>
-
+      <h1 className="login-heading">
+        {mode === 'login' ? 'Accedi per richiedere una corsa' : 'Crea un account'}
+      </h1>
       <form onSubmit={(event) => void submit(event)}>
         {mode === 'register' && (
           <>
@@ -94,7 +90,7 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps): React.JSX.El
           <input
             data-testid="password"
             type="password"
-            autoComplete="current-password"
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             minLength={MIN_PASSWORD_LENGTH}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
