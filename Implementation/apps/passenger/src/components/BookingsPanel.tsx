@@ -1,4 +1,5 @@
 import type { RideRequestResponse } from '@road/shared';
+import { ConfirmationDialog } from './ConfirmationDialog';
 import { useState } from 'react';
 
 export interface BookingsPanelProps {
@@ -135,43 +136,24 @@ export function BookingsPanel({
       </button>
 
       {bookingToCancel !== null && (
-        <div className="confirmation-overlay">
-          <div
-            className="confirmation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="booking-cancellation-title"
-          >
-            <h3 id="booking-cancellation-title">Annullare la prenotazione?</h3>
-
-            <p>
-              Vuoi annullare la corsa programmata per{' '}
-              {formatScheduledPickup(bookingToCancel.scheduledPickup)}?
-            </p>
-
-            <div className="confirmation-actions">
-              <button
-                type="button"
-                className="danger-button"
-                onClick={() => {
-                  const rideRequestId = bookingToCancel.id;
-                  setBookingToCancel(null);
-                  onCancel(rideRequestId);
-                }}
-              >
-                Sì, annulla
-              </button>
-
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setBookingToCancel(null)}
-              >
-                No, mantienila
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationDialog
+          titleId="booking-cancellation-title"
+          title="Annullare la prenotazione?"
+          message={`Vuoi annullare la corsa programmata per ${formatScheduledPickup(
+            bookingToCancel.scheduledPickup,
+          )}?`}
+          confirmLabel="Sì, annulla"
+          dismissLabel="No, mantienila"
+          dialogTestId="booking-cancel-confirmation"
+          confirmTestId="confirm-booking-cancellation"
+          dismissTestId="dismiss-booking-cancellation"
+          onConfirm={() => {
+            const rideRequestId = bookingToCancel.id;
+            setBookingToCancel(null);
+            onCancel(rideRequestId);
+          }}
+          onDismiss={() => setBookingToCancel(null)}
+        />
       )}
     </section>
   );

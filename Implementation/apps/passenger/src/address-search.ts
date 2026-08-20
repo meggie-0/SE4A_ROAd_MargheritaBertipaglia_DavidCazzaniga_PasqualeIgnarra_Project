@@ -1,7 +1,13 @@
 import { config, geocoding } from '@maptiler/client';
 import type { GeoPoint } from '@road/shared';
 
-import { MILAN_SERVICE_AREA } from './service-area';
+import {
+  isInsideLinateAirportArea,
+  isLinateAirportAddress,
+  isLinateAirportQuery,
+  LINATE_TERMINAL_POINT,
+  MILAN_SERVICE_AREA,
+} from './service-area';
 
 export interface AddressSuggestion {
   readonly id: string;
@@ -36,7 +42,15 @@ export async function searchMilanAddresses(query: string): Promise<AddressSugges
   if (normalizedQuery.length < 3) {
     return [];
   }
-
+  if (isLinateAirportQuery(normalizedQuery)) {
+    return [
+      {
+        id: 'linate-airport-terminal',
+        label: 'Aeroporto di Milano Linate — Terminal / Kiss&Ride',
+        point: LINATE_TERMINAL_POINT,
+      },
+    ];
+  }
   const apiKey = import.meta.env.VITE_MAPTILER_API_KEY?.trim();
 
   if (apiKey === undefined || apiKey === '') {
@@ -55,9 +69,6 @@ export async function searchMilanAddresses(query: string): Promise<AddressSugges
   });
 
   return response.features.flatMap((feature): AddressSuggestion[] => {
-    if (!belongsToMilanMunicipality(feature)) {
-      return [];
-    }
     const lon = feature.center[0];
     const lat = feature.center[1];
 
@@ -70,11 +81,19 @@ export async function searchMilanAddresses(query: string): Promise<AddressSugges
       return [];
     }
 
+    const point = { lat, lon };
+    const linateAirport =
+      isInsideLinateAirportArea(point) || isLinateAirportAddress(feature.place_name);
+
+    if (!belongsToMilanMunicipality(feature) && !linateAirport) {
+      return [];
+    }
+
     return [
       {
         id: String(feature.id ?? `${lon},${lat}`),
         label: feature.place_name,
-        point: { lat, lon },
+        point: linateAirport ? LINATE_TERMINAL_POINT : point,
       },
     ];
   });
@@ -100,20 +119,20 @@ export async function reverseGeocodeMilanPoint(point: GeoPoint): Promise<Reverse
     };
   }
 
-  const milanFeatures = response.features.filter((feature) => belongsToMilanMunicipality(feature));
-
-  if (milanFeatures.length === 0) {
-    return {
-      address: null,
-      municipality: 'outside',
-    };
-  }
-
   const readableFeature = response.features.find(
     (feature) =>
       feature.place_type?.includes('municipality') !== true &&
       isReadableAddress(feature.place_name),
   );
+
+  const milanFeatures = response.features.filter((feature) => belongsToMilanMunicipality(feature));
+
+  if (milanFeatures.length === 0) {
+    return {
+      address: readableFeature?.place_name ?? null,
+      municipality: 'outside',
+    };
+  }
 
   return {
     address: readableFeature?.place_name ?? null,

@@ -8,7 +8,6 @@ import {
 } from '@road/shared';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-
 import {
   cancelRide,
   fetchAssignedVehicle,
@@ -28,7 +27,12 @@ import { clearSession, loadSession, saveSession, type Session } from './session'
 import { useNotifications } from './use-notifications';
 import { applyTheme, loadTheme, type Theme } from './theme';
 import { reverseGeocodeMilanPoint, snapToNearestDrivableRoad } from './address-search';
-import { isInsideMilanServiceArea } from './service-area';
+import {
+  isInsideLinateAirportArea,
+  isInsideMilanServiceArea,
+  isLinateAirportAddress,
+  LINATE_TERMINAL_POINT,
+} from './service-area';
 import { BookingConfirmationPanel } from './components/BookingConfirmationPanel';
 import { BookingsPanel } from './components/BookingsPanel';
 
@@ -357,7 +361,6 @@ function PassengerApp(): React.JSX.Element {
 
     // Entrambi i punti sono presenti: mostra la scelta del servizio.
     setActiveRoutePoint(null);
-    setShowRoutePicker(false);
   }
 
   function returnToInitialView(): void {
@@ -433,8 +436,13 @@ function PassengerApp(): React.JSX.Element {
       return;
     }
 
-    if (!isInsideMilanServiceArea(snappedPoint.point)) {
-      updateRoutePointError(pointType, 'Il punto selezionato non si trova nel Comune di Milano.');
+    const insideLinateAirport = isInsideLinateAirportArea(snappedPoint.point);
+
+    if (!isInsideMilanServiceArea(snappedPoint.point) && !insideLinateAirport) {
+      updateRoutePointError(
+        pointType,
+        'Il punto selezionato non si trova nell’area coperta dal servizio: Comune di Milano e Aeroporto di Linate.',
+      );
       return;
     }
 
@@ -450,22 +458,33 @@ function PassengerApp(): React.JSX.Element {
       return;
     }
 
-    if (result.municipality === 'outside') {
-      updateRoutePointError(pointType, 'Il punto selezionato non si trova nel Comune di Milano.');
-      return;
-    }
+    const linateAirport = insideLinateAirport || isLinateAirportAddress(result.address);
 
-    if (result.municipality === 'unknown') {
+    if (result.municipality === 'outside' && !linateAirport) {
       updateRoutePointError(
         pointType,
-        'Non è stato possibile verificare se il punto si trova nel Comune di Milano. Scegli un altro punto.',
+        'Il punto selezionato non si trova nel Comune di Milano o nell’area dell’aeroporto di Linate.',
       );
       return;
     }
 
-    selectRoutePoint(pointType, snappedPoint.point, result.address);
+    if (result.municipality === 'unknown' && !linateAirport) {
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare l’area del punto selezionato. Scegli un altro punto.',
+      );
+      return;
+    }
 
-    if (result.address === null) {
+    const selectedPoint = linateAirport ? LINATE_TERMINAL_POINT : snappedPoint.point;
+
+    const selectedAddress = linateAirport
+      ? (result.address ?? 'Aeroporto di Milano Linate')
+      : result.address;
+
+    selectRoutePoint(pointType, selectedPoint, selectedAddress);
+
+    if (selectedAddress === null) {
       updateRoutePointWarning(
         pointType,
         'Punto valido: non è stato trovato un indirizzo leggibile, quindi vengono mostrate le coordinate.',
@@ -499,10 +518,12 @@ function PassengerApp(): React.JSX.Element {
         lon: position.coords.longitude,
       };
 
-      if (!isInsideMilanServiceArea(point)) {
+      const insideLinateAirport = isInsideLinateAirportArea(point);
+
+      if (!isInsideMilanServiceArea(point) && !insideLinateAirport) {
         updateRoutePointError(
           'pickup',
-          'Spiacente, al momento il servizio ROAd è disponibile solamente nell’area di Milano.',
+          'Il servizio ROAd è disponibile nell’area di Milano e presso l’aeroporto di Linate.',
         );
         return;
       }
@@ -511,11 +532,12 @@ function PassengerApp(): React.JSX.Element {
 
       try {
         const result = await reverseGeocodeMilanPoint(point);
+        const linateAirport = insideLinateAirport || isLinateAirportAddress(result.address);
 
-        if (result.municipality === 'outside') {
+        if (result.municipality === 'outside' && !linateAirport) {
           updateRoutePointError(
             'pickup',
-            'La posizione attuale non si trova nel Comune di Milano.',
+            'La posizione attuale non si trova nell’area di servizio: Comune di Milano e Aeroporto di Linate.',
           );
           return;
         }
@@ -524,8 +546,13 @@ function PassengerApp(): React.JSX.Element {
       } catch {
         // La posizione GPS rimane comunque utilizzabile.
       }
+      const linateAirport = insideLinateAirport || isLinateAirportAddress(address);
 
-      selectRoutePoint('pickup', point, address ?? 'Posizione attuale');
+      selectRoutePoint(
+        'pickup',
+        linateAirport ? LINATE_TERMINAL_POINT : point,
+        address ?? (linateAirport ? 'Aeroporto di Milano Linate' : 'Posizione attuale'),
+      );
     } catch (cause: unknown) {
       let message = 'Non è stato possibile recuperare la posizione attuale.';
 

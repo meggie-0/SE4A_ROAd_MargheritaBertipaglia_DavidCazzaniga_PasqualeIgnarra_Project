@@ -1,6 +1,5 @@
 import { MILAN_ZONES, type GeoPoint } from '@road/shared';
 import {
-  CircleMarker,
   MapContainer,
   Polyline,
   Popup,
@@ -11,7 +10,7 @@ import {
   Marker,
 } from 'react-leaflet';
 
-import { MILAN_SERVICE_BOUNDS } from '../service-area';
+import { LINATE_TERMINAL_POINT, MILAN_SERVICE_BOUNDS } from '../service-area';
 
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef, useState } from 'react';
@@ -25,10 +24,6 @@ import { fetchRoadRoute } from '../address-search';
  * campi di indirizzo ne costerebbe molte di più e obbligherebbe a una geocodifica che nessun
  * requisito prevede.
  *
- * I marker sono `CircleMarker` e non `Marker`: l'icona di default di Leaflet è un'immagine
- * risolta a runtime rispetto al foglio di stile, e sotto un bundler finisce quasi sempre in un 404
- * silenzioso — un marker invisibile è il modo peggiore di sbagliare una mappa. Un cerchio è
- * disegnato dal browser e non ha assets.
  */
 
 /** Il centro di Milano: Duomo. La mappa parte da lì perché è lì che il prototipo opera. */
@@ -89,6 +84,27 @@ const ROBOTAXI_MAP_ICON = divIcon({
   iconAnchor: [21, 21],
   popupAnchor: [0, -21],
 });
+
+function createServiceZoneMapIcon(zoneId: string) {
+  return divIcon({
+    className: 'service-zone-map-icon',
+    html: `
+<span
+  class="service-zone-map-symbol service-zone-map-symbol--${zoneId}"
+  style="--zone-icon: url('/zone-icons/${zoneId}.svg')"
+  aria-hidden="true"
+></span>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    tooltipAnchor: [0, -18],
+  });
+}
+
+const SERVICE_ZONE_MARKERS = MILAN_ZONES.map((zone) => ({
+  zone,
+  icon: createServiceZoneMapIcon(zone.id),
+}));
 
 export interface RideMapProps {
   readonly pickup: GeoPoint | null;
@@ -154,16 +170,26 @@ export function RideMap({
 
       {/* Le zone di Milano, dalla partizione di Voronoi condivisa (decisione D10): danno un
           riferimento a chi tocca la mappa senza conoscere la città. */}
-      {MILAN_ZONES.map((zone) => (
-        <CircleMarker
-          key={zone.id}
-          center={[zone.lat, zone.lon]}
-          radius={4}
-          pathOptions={{ color: '#475569', weight: 1, fillOpacity: 0.35 }}
-        >
-          <Tooltip>{zone.name}</Tooltip>
-        </CircleMarker>
-      ))}
+      {SERVICE_ZONE_MARKERS.map(({ zone, icon }) => {
+        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
+
+        return (
+          <Marker
+            key={zone.id}
+            position={[position.lat, position.lon]}
+            icon={icon}
+            alt={`Zona servita: ${zone.name}`}
+            bubblingMouseEvents
+            riseOnHover
+          >
+            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -18]}>
+              <strong>{zone.name}</strong>
+              <br />
+              {zone.id === 'linate' ? 'Terminal / Kiss&Ride raggiungibile' : 'Zona servita'}
+            </Tooltip>
+          </Marker>
+        );
+      })}
 
       {pickup !== null && (
         <Marker position={[pickup.lat, pickup.lon]} icon={PICKUP_MAP_ICON}>

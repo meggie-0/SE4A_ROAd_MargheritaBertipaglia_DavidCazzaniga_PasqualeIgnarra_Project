@@ -1,6 +1,7 @@
 import type { RideRequestResponse } from '@road/shared';
 import { useState } from 'react';
 import { PHASE_LABELS, type RidePhase, type RideView } from '../ride-phase';
+import { ConfirmationDialog } from './ConfirmationDialog';
 
 /**
  * La vista di stato live (DD §3.1, RASD R6 e G7).
@@ -90,122 +91,103 @@ export function StatusPanel({
       ? null
       : remainingEtaMinutes(view.etaMinutes, view.etaUpdatedAt, nowMs);
   return (
-    <section className="panel status-panel">
-      <h2>La tua corsa</h2>
+    <>
+      <section className="panel status-panel">
+        <h2>La tua corsa</h2>
 
-      <p className="phase" data-testid="ride-phase" data-phase={view.phase} role="status">
-        {PHASE_LABELS[view.phase]}
-      </p>
-
-      {displayedEta !== null && (
-        <p className="eta" data-testid="ride-eta">
-          Arrivo stimato fra {formatEta(displayedEta)}
+        <p className="phase" data-testid="ride-phase" data-phase={view.phase} role="status">
+          {PHASE_LABELS[view.phase]}
         </p>
-      )}
 
-      {!finished && view.phase !== 'rejected' && (
-        <ol className="progression">
-          {PROGRESSION.map((phase, index) => (
-            <li
-              key={phase}
-              className={index <= reached ? 'reached' : 'pending'}
-              aria-current={phase === view.phase ? 'step' : undefined}
-            >
-              {PHASE_LABELS[phase]}
-            </li>
-          ))}
-        </ol>
-      )}
-
-      <dl className="points">
-        <dt>Richiesta</dt>
-        <dd data-testid="ride-request-id">{request.id}</dd>
-        <dt>Tipo</dt>
-        <dd>{request.kind === 'IMMEDIATE' ? 'Immediata' : 'Programmata'}</dd>
-        {request.scheduledPickup !== null && (
-          <>
-            <dt>Orario</dt>
-            <dd>{new Date(request.scheduledPickup).toLocaleString('it-IT')}</dd>
-          </>
+        {displayedEta !== null && (
+          <p className="eta" data-testid="ride-eta">
+            Arrivo stimato fra {formatEta(displayedEta)}
+          </p>
         )}
-        <dt>Robotaxi</dt>
-        <dd data-testid="ride-robotaxi">{view.robotaxiId ?? '—'}</dd>
-      </dl>
 
-      {cancellable && (
-        <div className="cancellation-actions">
-          <button
-            type="button"
-            className="danger-button"
-            data-testid="cancel-ride"
-            disabled={cancelling}
-            onClick={() => setConfirmingCancellation(true)}
-          >
-            {cancelling ? 'Annullamento in corso…' : 'Annulla corsa'}
+        {!finished && view.phase !== 'rejected' && (
+          <ol className="progression">
+            {PROGRESSION.map((phase, index) => (
+              <li
+                key={phase}
+                className={index <= reached ? 'reached' : 'pending'}
+                aria-current={phase === view.phase ? 'step' : undefined}
+              >
+                {PHASE_LABELS[phase]}
+              </li>
+            ))}
+          </ol>
+        )}
+
+        <dl className="points">
+          <dt>Richiesta</dt>
+          <dd data-testid="ride-request-id">{request.id}</dd>
+          <dt>Tipo</dt>
+          <dd>{request.kind === 'IMMEDIATE' ? 'Immediata' : 'Programmata'}</dd>
+          {request.scheduledPickup !== null && (
+            <>
+              <dt>Orario</dt>
+              <dd>{new Date(request.scheduledPickup).toLocaleString('it-IT')}</dd>
+            </>
+          )}
+          <dt>Robotaxi</dt>
+          <dd data-testid="ride-robotaxi">{view.robotaxiId ?? '—'}</dd>
+        </dl>
+
+        {cancellable && (
+          <div className="cancellation-actions">
+            <button
+              type="button"
+              className="danger-button"
+              data-testid="cancel-ride"
+              disabled={cancelling}
+              onClick={() => setConfirmingCancellation(true)}
+            >
+              {cancelling ? 'Annullamento in corso…' : 'Annulla corsa'}
+            </button>
+
+            <p className="muted">Puoi annullare gratuitamente fino all’inizio della corsa.</p>
+          </div>
+        )}
+
+        {cancellationError !== null && (
+          <p className="status-error" data-testid="cancellation-error" role="alert">
+            {cancellationError}
+          </p>
+        )}
+
+        {/* Il canale è la sola sorgente degli aggiornamenti: se cade, il passeggero deve saperlo,
+          o crederebbe ferma una corsa che sta avanzando. */}
+        {!connected && (
+          <p className="status-error" data-testid="push-disconnected">
+            Canale di aggiornamento non connesso: riconnessione in corso.
+          </p>
+        )}
+
+        {(finished || view.phase === 'rejected') && (
+          <button type="button" data-testid="new-request" onClick={onNewRequest}>
+            Richiedi un&apos;altra corsa
           </button>
-
-          <p className="muted">Puoi annullare gratuitamente fino all’inizio della corsa.</p>
-        </div>
-      )}
-
-      {cancellationError !== null && (
-        <p className="status-error" data-testid="cancellation-error" role="alert">
-          {cancellationError}
-        </p>
-      )}
+        )}
+      </section>
 
       {confirmingCancellation && (
-        <div className="confirmation-overlay">
-          <div
-            className="confirmation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cancel-confirmation-title"
-            data-testid="cancel-confirmation"
-          >
-            <h3 id="cancel-confirmation-title">Annullare la corsa?</h3>
-
-            <p>Sei sicuro di voler annullare questa corsa?</p>
-
-            <div className="confirmation-actions">
-              <button
-                type="button"
-                className="danger-button"
-                data-testid="confirm-cancellation"
-                onClick={() => {
-                  setConfirmingCancellation(false);
-                  onCancel();
-                }}
-              >
-                Sì, annulla
-              </button>
-
-              <button
-                type="button"
-                className="secondary-button"
-                data-testid="dismiss-cancellation"
-                onClick={() => setConfirmingCancellation(false)}
-              >
-                No, mantieni la corsa
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationDialog
+          titleId="cancel-confirmation-title"
+          title="Annullare la corsa?"
+          message="Sei sicuro di voler annullare questa corsa?"
+          confirmLabel="Sì, annulla"
+          dismissLabel="No, mantieni la corsa"
+          dialogTestId="cancel-confirmation"
+          confirmTestId="confirm-cancellation"
+          dismissTestId="dismiss-cancellation"
+          onConfirm={() => {
+            setConfirmingCancellation(false);
+            onCancel();
+          }}
+          onDismiss={() => setConfirmingCancellation(false)}
+        />
       )}
-
-      {/* Il canale è la sola sorgente degli aggiornamenti: se cade, il passeggero deve saperlo,
-          o crederebbe ferma una corsa che sta avanzando. */}
-      {!connected && (
-        <p className="status-error" data-testid="push-disconnected">
-          Canale di aggiornamento non connesso: riconnessione in corso.
-        </p>
-      )}
-
-      {(finished || view.phase === 'rejected') && (
-        <button type="button" data-testid="new-request" onClick={onNewRequest}>
-          Richiedi un&apos;altra corsa
-        </button>
-      )}
-    </section>
+    </>
   );
 }
