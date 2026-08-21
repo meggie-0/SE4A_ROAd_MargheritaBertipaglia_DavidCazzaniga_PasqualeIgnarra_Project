@@ -52,12 +52,19 @@ const DESTINATION_MAP_ICON = divIcon({
   html: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="M6 22V3"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2.5"
-        stroke-linecap="round"
-      />
+  d="M6 22V3"
+  fill="none"
+  stroke="white"
+  stroke-width="4.3"
+  stroke-linecap="round"
+/>
+<path
+  d="M6 22V3"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2.5"
+  stroke-linecap="round"
+/>
       <path
         d="M7 4h11l-2.5 4L18 12H7Z"
         fill="currentColor"
@@ -166,6 +173,9 @@ export function RideMap({
 
       <MapClickHandler onPick={onPick} />
       <FitRouteBounds pickup={pickup} destination={destination} />
+
+      <FocusRobotaxiBounds robotaxi={robotaxi} target={heading} mode={robotaxiHeadingTo} />
+
       <FocusDestination destination={destination} enabled={focusDestination} />
 
       {/* Le zone di Milano, dalla partizione di Voronoi condivisa (decisione D10): danno un
@@ -326,6 +336,52 @@ function FitRouteBounds({
       },
     );
   }, [map, pickup?.lat, pickup?.lon, destination?.lat, destination?.lon]);
+
+  return null;
+}
+
+function FocusRobotaxiBounds({
+  robotaxi,
+  target,
+  mode,
+}: {
+  readonly robotaxi: GeoPoint | null | undefined;
+  readonly target: GeoPoint | null;
+  readonly mode: 'pickup' | 'destination';
+}): null {
+  const map = useMap();
+  const lastFocusedMode = useRef<'pickup' | 'destination' | null>(null);
+
+  useEffect(() => {
+    if (robotaxi === null || robotaxi === undefined) {
+      lastFocusedMode.current = null;
+      return;
+    }
+
+    if (target === null) {
+      return;
+    }
+
+    if (lastFocusedMode.current === mode) {
+      return;
+    }
+
+    lastFocusedMode.current = mode;
+
+    map.flyToBounds(
+      [
+        [robotaxi.lat, robotaxi.lon],
+        [target.lat, target.lon],
+      ],
+      {
+        animate: true,
+        duration: 0.7,
+        maxZoom: 16,
+        paddingTopLeft: [35, 220],
+        paddingBottomRight: [35, 280],
+      },
+    );
+  }, [map, mode, robotaxi?.lat, robotaxi?.lon, target?.lat, target?.lon]);
 
   return null;
 }

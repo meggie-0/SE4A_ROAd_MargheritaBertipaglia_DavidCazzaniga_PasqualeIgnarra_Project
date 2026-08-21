@@ -2,6 +2,7 @@ import {
   ApiError,
   FLEET_POSITION_REFRESH_MS,
   fetchHealth,
+  haversineKm,
   type GeoPoint,
   type RideRequestKind,
   type RideRequestResponse,
@@ -63,6 +64,7 @@ import { BookingsPanel } from './components/BookingsPanel';
  * violerebbe la Regola 3, che vieta i timer nel sorgente delle applicazioni.
  */
 const VEHICLE_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
+const MIN_ROUTE_DISTANCE_KM = 0.01;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -344,23 +346,64 @@ function PassengerApp(): React.JSX.Element {
     setScheduledPickup('');
 
     if (pointType === 'pickup') {
+      // Se la destinazione è già presente, controlla che sia diversa.
+      if (destination !== null && haversineKm(point, destination) <= MIN_ROUTE_DISTANCE_KM) {
+        setPickup(null);
+        setPickupAddress(null);
+        setKind(null);
+        setActiveRoutePoint('pickup');
+
+        updateRoutePointError('pickup', 'Partenza e destinazione devono essere due punti diversi.');
+
+        return;
+      }
+
       setPickup(point);
       setPickupAddress(address);
 
-      // Dopo la partenza passa automaticamente alla destinazione.
+      // Se la destinazione era già stata scelta, entrambi i punti sono validi:
+      // passa alla scelta del servizio.
+      if (destination !== null) {
+        setKind('IMMEDIATE');
+        setActiveRoutePoint(null);
+        return;
+      }
+
+      // Altrimenti passa automaticamente alla destinazione.
       setKind(null);
       setActiveRoutePoint('destination');
+      return;
+    }
+
+    // Se la partenza è già presente, controlla che sia diversa.
+    if (pickup !== null && haversineKm(pickup, point) <= MIN_ROUTE_DISTANCE_KM) {
+      setDestination(null);
+      setDestinationAddress(null);
+      setKind(null);
+      setActiveRoutePoint('destination');
+
+      updateRoutePointError(
+        'destination',
+        'Partenza e destinazione devono essere due punti diversi.',
+      );
+
       return;
     }
 
     setDestination(point);
     setDestinationAddress(address);
 
-    // La corsa immediata è il servizio predefinito.
-    setKind('IMMEDIATE');
+    // Se la partenza era già stata scelta, entrambi i punti sono validi:
+    // passa alla scelta del servizio.
+    if (pickup !== null) {
+      setKind('IMMEDIATE');
+      setActiveRoutePoint(null);
+      return;
+    }
 
-    // Entrambi i punti sono presenti: mostra la scelta del servizio.
-    setActiveRoutePoint(null);
+    // Altrimenti passa automaticamente alla partenza.
+    setKind(null);
+    setActiveRoutePoint('pickup');
   }
 
   function returnToInitialView(): void {
@@ -584,6 +627,19 @@ function PassengerApp(): React.JSX.Element {
       return;
     }
 
+    if (haversineKm(pickup, destination) <= MIN_ROUTE_DISTANCE_KM) {
+      setKind(null);
+      setShowRoutePicker(true);
+      setActiveRoutePoint('destination');
+
+      updateRoutePointError(
+        'destination',
+        'Partenza e destinazione devono essere due punti diversi.',
+      );
+
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
@@ -719,7 +775,7 @@ function PassengerApp(): React.JSX.Element {
             </div>
           </div>
         </header>
-      ) : (
+      ) : request === null ? (
         <header className={`mobile-topbar ${showRoutePicker ? 'mobile-topbar--expanded' : ''}`}>
           {!showRoutePicker && (
             <button
@@ -793,11 +849,13 @@ function PassengerApp(): React.JSX.Element {
               }}
             />
           )}
-          {/* Mantiene disponibile il dato usato dai test automatici. */}
-          <span className="visually-hidden" data-testid="passenger-name">
-            {session.user.name}
-          </span>
         </header>
+      ) : null}
+
+      {session !== null && (
+        <span className="visually-hidden" data-testid="passenger-name">
+          {session.user.name}
+        </span>
       )}
 
       {session !== null && showMenu && (
@@ -820,11 +878,22 @@ function PassengerApp(): React.JSX.Element {
 
               <button
                 type="button"
-                className="menu-close"
+                className="route-back-button route-clear-button menu-close"
                 aria-label="Chiudi menu"
                 onClick={() => setShowMenu(false)}
               >
-                ×
+                <svg
+                  className="search-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6 6 18" />
+                </svg>
               </button>
             </div>
 

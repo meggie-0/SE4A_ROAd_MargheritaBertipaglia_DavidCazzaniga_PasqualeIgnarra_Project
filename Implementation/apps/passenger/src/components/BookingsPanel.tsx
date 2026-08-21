@@ -52,11 +52,22 @@ export function BookingsPanel({
 
         <button
           type="button"
-          className="bookings-close"
+          className="route-back-button route-clear-button bookings-close"
           aria-label="Chiudi le prenotazioni"
           onClick={onClose}
         >
-          ×
+          <svg
+            className="search-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M6 6l12 12" />
+            <path d="M18 6 6 18" />
+          </svg>
         </button>
       </div>
 

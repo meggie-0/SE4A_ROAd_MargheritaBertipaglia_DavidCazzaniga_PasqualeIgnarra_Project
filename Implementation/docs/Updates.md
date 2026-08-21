@@ -963,5 +963,608 @@ AdvanceBookingActivator
 
 L’app operatore non utilizza il nuovo endpoint e non richiede modifiche. L’effetto sull’allocazione rimane indiretto: le prenotazioni occupano le finestre temporali già gestite dal backend.
 
+# ROAd - Resoconto modifiche app passeggero 3
+
+**Data:** 20 agosto 2026
+**Autore:** Pasquale Ludovico Ignarra
+**Argomento:** Completamento dell’esperienza passeggero, area di servizio, mappa e stabilizzazione dei flussi
+
+## Estensione dell’area di servizio all’Aeroporto di Linate
+
+1. Mantenuto il Comune di Milano come area operativa principale dell’applicazione.
+
+2. Aggiunta un’eccezione esplicita per l’Aeroporto di Milano Linate, necessario perché alcuni servizi di geocoding possono associare il terminal e le relative strade di accesso a comuni diversi da Milano.
+
+3. Definito un punto di riferimento dedicato al terminal di Linate:
+
+   ```text
+   lat: 45.4618
+   lon: 9.2786
+   ```
+
+4. Definita una tolleranza di servizio di circa 700 metri attorno al terminal, sufficiente a comprendere:
+
+   * terminal;
+   * area Kiss&Ride;
+   * gate;
+   * viabilità immediatamente collegata all’aeroporto.
+
+5. Aggiunte in `service-area.ts` funzioni dedicate per riconoscere:
+
+   * punti appartenenti all’area di Linate;
+   * indirizzi relativi all’aeroporto;
+   * ricerche testuali riconducibili a Linate.
+
+6. Il riconoscimento considera anche formulazioni come:
+
+   * `Linate`;
+   * `Aeroporto Linate`;
+   * `Aeroporto di Milano Linate`;
+   * `Terminal`;
+   * `Gate`;
+   * `Kiss&Ride`;
+   * arrivi e partenze.
+
+7. Aggiornata la validazione dei punti scelti sulla mappa:
+
+   * i punti nel Comune di Milano continuano a essere accettati;
+   * i punti nell’area del terminal di Linate vengono accettati anche se il geocoder li classifica fuori dal Comune di Milano;
+   * tutti gli altri punti esterni vengono rifiutati con un messaggio esplicito.
+
+8. Applicata la stessa eccezione anche alla posizione corrente ottenuta tramite GPS.
+
+9. Aggiornati i messaggi mostrati all’utente in modo da indicare chiaramente che il servizio è disponibile nel:
+
+   * Comune di Milano;
+   * Aeroporto di Milano Linate.
+
+## Ricerca dell’Aeroporto di Linate
+
+1. Integrata l’eccezione di Linate anche nella ricerca testuale degli indirizzi.
+
+2. Le query riconducibili all’aeroporto producono direttamente un suggerimento dedicato:
+
+   **Aeroporto di Milano Linate — Terminal / Kiss&Ride**
+
+3. Il suggerimento utilizza il punto canonico del terminal, evitando risultati incoerenti prodotti dal geocoder.
+
+4. La gestione speciale è effettuata prima della normale ricerca MapTiler, mantenendo invariata la ricerca standard degli altri indirizzi di Milano.
+
+5. I risultati restituiti normalmente dal geocoder vengono comunque controllati per riconoscere eventuali riferimenti a Linate.
+
+## Marker delle zone di Milano
+
+1. Sostituiti i precedenti marker generici delle zone con marker grafici personalizzati.
+
+2. Creato un set di icone SVG dedicato alle diverse zone mostrate sulla mappa.
+
+3. Gli asset sono stati organizzati nella cartella:
+
+   `apps/passenger/public/zone-icons/`
+
+4. Aggiunte icone per le principali zone e punti di riferimento, tra cui:
+
+   * Duomo;
+   * Navigli;
+   * Cadorna;
+   * CityLife;
+   * San Siro;
+   * Stazione Centrale;
+   * Porta Garibaldi;
+   * Porta Venezia;
+   * Porta Romana;
+   * Isola;
+   * Bicocca;
+   * Lambrate;
+   * Politecnico Leonardo;
+   * Politecnico Bovisa;
+   * Rho Fiera;
+   * Linate.
+
+5. I marker utilizzano una maschera CSS, permettendo di adattarne automaticamente il colore al tema corrente.
+
+6. Aggiunto un tooltip al passaggio del mouse per mostrare il nome della zona.
+
+7. Per Linate:
+
+   * utilizzata un’icona dedicata;
+   * il marker viene posizionato sul terminal reale invece che sul centro astratto della zona;
+   * il tooltip specifica che il Terminal / Kiss&Ride è raggiungibile.
+
+8. Mantenuti separati dai marker delle zone:
+
+   * il pin di partenza;
+   * la bandiera della destinazione;
+   * il marker del robotaxi.
+
+## Conferme di annullamento
+
+1. Estratta la finestra di conferma in un componente riutilizzabile `ConfirmationDialog`.
+
+2. Lo stesso componente viene ora utilizzato per:
+
+   * annullamento della corsa live;
+   * annullamento di una corsa programmata.
+
+3. La finestra viene renderizzata tramite `createPortal`.
+
+4. Il portal utilizza come host l’intero contenitore `.passenger-app`, invece del singolo pannello che ha richiesto la conferma.
+
+5. In questo modo l’overlay:
+
+   * copre l’intera superficie dello smartphone;
+   * non rimane confinato nel bottom panel;
+   * mantiene la conferma visivamente centrale;
+   * funziona allo stesso modo per corsa immediata e prenotazione.
+
+6. Mantenuti gli attributi di accessibilità e i `data-testid` necessari ai test automatici.
+
+## Stabilizzazione della gestione delle prenotazioni
+
+1. Consolidato il flusso introdotto il giorno precedente per le corse programmate.
+
+2. Verificata la separazione tra:
+
+   * prenotazione futura;
+   * corsa live.
+
+3. Una prenotazione accettata continua a non essere trattata come una corsa già attiva.
+
+4. L’elenco delle prenotazioni viene riletto dal backend anche dopo un reload dell’applicazione.
+
+5. L’attivazione della prenotazione continua a dipendere dalla notifica WebSocket `ASSIGNED` prodotta dal backend.
+
+6. Al momento dell’attivazione vengono ripristinati:
+
+   * partenza;
+   * destinazione;
+   * robotaxi assegnato;
+   * normale `StatusPanel` della corsa live.
+
+7. La query delle prenotazioni viene invalidata dopo le operazioni che ne modificano il contenuto.
+
+## Aggiornamento dei test end-to-end
+
+1. Aggiornato il flusso Playwright di selezione del percorso per utilizzare la nuova interfaccia:
+
+   * apertura di **Dove si va?**;
+   * selezione della partenza;
+   * passaggio automatico alla destinazione;
+   * selezione della destinazione;
+   * apertura automatica della scelta del servizio.
+
+2. Esteso lo scenario relativo alle corse programmate per verificare:
+
+   * conferma della prenotazione;
+   * separazione dalla corsa live;
+   * apertura dell’elenco delle prenotazioni;
+   * persistenza della prenotazione dopo il reload;
+   * recupero dell’elenco tramite backend;
+   * conferma dell’annullamento;
+   * scomparsa della prenotazione cancellata.
+
+3. Mantenuto lo scenario R14 per verificare sia:
+
+   * **No, mantieni la corsa**;
+   * **Sì, annulla**.
+
+4. Aggiornato lo scenario di modifica del profilo per utilizzare il menu hamburger.
+
+5. Aggiunta una verifica esplicita del numero di interazioni necessario a richiedere una corsa da avvio a freddo.
+
+6. Il flusso rapido richiede al massimo quattro interazioni principali:
+
+   * apertura della ricerca;
+   * selezione della partenza;
+   * selezione della destinazione;
+   * richiesta della corsa.
+
+7. Rafforzato il gate M8 affinché controlli anche l’esistenza e l’eseguibilità degli scenari end-to-end previsti dalla milestone.
+
+## Verifiche automatiche
+
+Prima dell’ultima fase di rifinitura estetica sono stati completati con esito positivo:
+
+* formattazione;
+* lint;
+* typecheck TypeScript;
+* test unitari;
+* test di integrazione;
+* verifica del contratto;
+* verifica architetturale;
+* gate delle milestone;
+* tracciabilità dei requisiti;
+* test end-to-end Playwright;
+* comando completo `pnpm verify`.
+
+La parte funzionale principale dell’app passeggero è stata quindi considerata stabilizzata prima di procedere con gli ultimi interventi puramente estetici e di UX.
+
+## Restyling della schermata di login e registrazione
+
+1. Avviata la fase finale di rifinitura estetica dell’app procedendo schermata per schermata.
+
+2. Rimossa dalla schermata di login la possibilità di cambiare direttamente tema.
+
+3. Il comando giorno/notte rimane disponibile nel menu hamburger dopo l’autenticazione.
+
+4. Centrato maggiormente il logo ROAd e aumentate le sue dimensioni.
+
+5. Rimosso il titolo:
+
+   **ROAd — App passeggero**
+
+6. Promosso a titolo principale il testo:
+
+   **Accedi per richiedere una corsa**
+
+7. In modalità registrazione viene mantenuto il titolo:
+
+   **Crea un account**
+
+8. Aggiunto un bordo viola al pannello centrale.
+
+9. Modificato lo sfondo dei campi e-mail, password, nome e cognome in modo da utilizzare superfici coerenti con quelle della dashboard.
+
+10. Conservato integralmente il funzionamento della modalità registrazione.
+
+11. Migliorato l’attributo `autocomplete` della password distinguendo:
+
+* password corrente durante il login;
+* nuova password durante la registrazione.
+
+12. Aggiunte leggere animazioni di ingresso separate per:
+
+* logo;
+* pannello di autenticazione.
+
+13. Le animazioni rispettano `prefers-reduced-motion`.
+
+14. Tutti gli interventi continuano a utilizzare le variabili della palette ROAd e risultano quindi compatibili con i temi giorno e notte.
+
+## File principali coinvolti
+
+* `apps/passenger/public/zone-icons/*.svg`
+* `apps/passenger/src/App.tsx`
+* `apps/passenger/src/address-search.ts`
+* `apps/passenger/src/service-area.ts`
+* `apps/passenger/src/components/ConfirmationDialog.tsx`
+* `apps/passenger/src/components/BookingsPanel.tsx`
+* `apps/passenger/src/components/LoginScreen.tsx`
+* `apps/passenger/src/components/RideMap.tsx`
+* `apps/passenger/src/components/RoutePickerPanel.tsx`
+* `apps/passenger/src/components/StatusPanel.tsx`
+* `apps/passenger/src/styles.css`
+* `apps/api/test/gates/M8.gate.spec.ts`
+* `e2e/passenger-ride.e2e.spec.ts`
+
+## Nota architetturale
+
+Le modifiche della giornata non hanno introdotto una nuova logica di dominio.
+
+La gestione della corsa, delle prenotazioni, dell’assegnazione e delle transizioni continua a essere autoritativa nel backend.
+
+L’app passeggero aggiunge solamente:
+
+* validazione e presentazione dei punti dell’area operativa;
+* trattamento esplicito del terminal di Linate;
+* rappresentazione grafica delle zone;
+* miglioramenti di interazione;
+* copertura automatizzata dei flussi.
+
+---
+
+# ROAd - Resoconto modifiche app passeggero 4
+
+**Data:** 21 agosto 2026
+**Autore:** Pasquale Ludovico Ignarra
+**Argomento:** Rifiniture estetiche finali, comportamento della mappa e validazione del percorso
+
+## Verifica finale di login e registrazione
+
+1. Controllato il risultato del nuovo login all’interno del contenitore mobile.
+
+2. Confermata la corretta resa delle schermate di:
+
+   * login;
+   * registrazione;
+   * tema giorno;
+   * tema notte.
+
+3. Considerata conclusa la rifinitura della schermata di autenticazione.
+
+## Animazione del menu hamburger
+
+1. Aggiunta un’animazione di apertura del menu account da destra verso sinistra.
+
+2. Il pannello parte fuori dalla superficie dello smartphone e scorre nella posizione finale.
+
+3. Aggiunto contemporaneamente un leggero fade del backdrop.
+
+4. Utilizzata una curva di animazione coerente con le altre transizioni dell’app.
+
+5. Le animazioni vengono disabilitate quando il sistema richiede `prefers-reduced-motion`.
+
+## Uniformazione della X del menu
+
+1. Sostituito il precedente carattere `×` con lo stesso SVG utilizzato per cancellare partenza e destinazione nella dashboard.
+
+2. Riutilizzate le classi grafiche già presenti, evitando di duplicare lo stile.
+
+3. La X eredita quindi automaticamente:
+
+   * colore corretto nei temi giorno e notte;
+   * bordo circolare;
+   * sfondo colorato al passaggio del mouse;
+   * stato di focus da tastiera;
+   * leggera animazione alla pressione.
+
+## Evidenziazione del logout
+
+1. Mantenuta la voce **Esci** come azione distruttiva.
+
+2. Impedito che l’hover generico del menu ne sostituisca il colore rosso.
+
+3. Aggiunto uno stato dedicato per:
+
+   * hover;
+   * focus;
+   * pressione.
+
+4. In entrambi i temi la voce rimane rossa e viene accompagnata da un leggero sfondo rosso trasparente durante l’interazione.
+
+## Rifinitura del pannello profilo
+
+1. Aggiunta una X in alto a destra accanto al titolo **Il tuo profilo**.
+
+2. La X utilizza lo stesso componente grafico già adottato per dashboard e menu hamburger.
+
+3. Sostituito il precedente comando:
+
+   **Torna alla richiesta**
+
+   con:
+
+   **Annulla**
+
+4. Trasformato **Annulla** in un pulsante secondario con:
+
+   * solo contorno;
+   * sfondo trasparente;
+   * dimensione comparabile al pulsante **Salva**.
+
+5. Uniformata la larghezza dei due comandi finali.
+
+6. Aggiunta al pannello profilo la stessa animazione di ingresso dal basso utilizzata dal pannello di scelta del servizio.
+
+7. Il profilo viene quindi percepito come un bottom sheet appartenente allo stesso sistema visuale.
+
+## Rifinitura del pannello delle prenotazioni
+
+1. Applicata anche a **Le mie prenotazioni** la stessa animazione di ingresso dal basso.
+
+2. Uniformata la X di chiusura utilizzando lo stesso SVG e gli stessi stati grafici di:
+
+   * dashboard;
+   * menu hamburger;
+   * profilo.
+
+3. Rimossa quindi la differenza visiva tra i diversi comandi di chiusura dell’app.
+
+## Miglioramento del marker di destinazione
+
+1. Mantenuta la bandiera come simbolo della destinazione.
+
+2. Aggiunto un contorno bianco anche al bastoncino verticale della bandiera.
+
+3. Il contorno è ottenuto disegnando:
+
+   * un tratto bianco più spesso sullo sfondo;
+   * il normale tratto colorato sopra di esso.
+
+4. Il marker risulta così più leggibile indipendentemente dai colori e dai dettagli della cartografia sottostante.
+
+## Focus automatico all’assegnazione del robotaxi
+
+1. Aggiunto un focus automatico della mappa quando la corsa entra nella fase in cui il robotaxi è stato trovato e assegnato.
+
+2. Al primo rilevamento del veicolo la vista viene adattata per contenere contemporaneamente:
+
+   * posizione corrente del robotaxi;
+   * punto di pickup.
+
+3. Lo zoom è dinamico e dipende dalla distanza tra i due punti.
+
+4. Il focus viene eseguito solamente una volta all’ingresso nella fase.
+
+5. Gli aggiornamenti successivi della posizione del robotaxi non forzano nuovamente la vista.
+
+6. Dopo il focus iniziale il passeggero rimane quindi libero di:
+
+   * spostare la mappa;
+   * effettuare zoom;
+   * effettuare de-zoom;
+   * scegliere manualmente l’inquadratura.
+
+## Focus automatico all’inizio della corsa
+
+1. Quando la fase passa a `in_ride`, viene eseguito un secondo e unico focus automatico.
+
+2. In questo caso la vista comprende:
+
+   * posizione corrente del robotaxi;
+   * destinazione.
+
+3. Anche questo focus viene effettuato una sola volta.
+
+4. Durante il resto della corsa la posizione del taxi continua ad aggiornarsi senza modificare automaticamente l’inquadratura scelta dall’utente.
+
+5. Conservato il precedente focus finale sulla destinazione al completamento della corsa.
+
+6. La sequenza visuale complessiva diventa quindi:
+
+   ```text
+   percorso impostato
+       → taxi assegnato: taxi + pickup
+           → corsa iniziata: taxi + destinazione
+               → corsa conclusa: focus sulla destinazione
+   ```
+
+7. Tra un passaggio automatico e il successivo la mappa rimane completamente controllabile dal passeggero.
+
+8. Il controllo viene resettato alla conclusione della richiesta, consentendo di ripetere correttamente la sequenza durante una corsa successiva.
+
+## Rimozione della topbar durante una corsa attiva
+
+1. Modificata la condizione di rendering della barra superiore autenticata.
+
+2. **Dove si va?** e il menu hamburger vengono ora mostrati solamente quando non esiste una richiesta live.
+
+3. Quando `request !== null` la topbar viene rimossa completamente.
+
+4. Durante le fasi della corsa rimangono quindi in primo piano solamente:
+
+   * mappa;
+   * percorso;
+   * robotaxi;
+   * `StatusPanel`.
+
+5. Il dato invisibile `passenger-name`, utilizzato dai test automatici, è stato separato dall’header.
+
+6. In questo modo la scomparsa della topbar non elimina dal DOM l’informazione usata dai test di autenticazione e aggiornamento del profilo.
+
+## Riferimento permanente a partenza e destinazione durante la corsa
+
+1. Aggiunte al pannello **La tua corsa** le informazioni di:
+
+   * Partenza;
+   * Destinazione.
+
+2. I due valori vengono mostrati prima dei dati più tecnici della richiesta.
+
+3. Il passeggero mantiene quindi sempre un riferimento leggibile al viaggio selezionato anche dopo la scomparsa della dashboard di composizione.
+
+4. Quando disponibile viene mostrato l’indirizzo leggibile.
+
+5. In assenza dell’indirizzo viene mantenuto un fallback basato sulle coordinate.
+
+6. Partenza e destinazione sono state raccolte in un blocco visivamente distinto tramite:
+
+   * superficie elevata;
+   * bordo;
+   * label secondarie;
+   * indirizzo in evidenza.
+
+7. Le informazioni precedono i dati relativi a:
+
+   * codice richiesta;
+   * tipo di corsa;
+   * robotaxi assegnato.
+
+## Controllo di partenza e destinazione coincidenti
+
+1. Aggiunto un controllo per impedire la creazione di corse con partenza e destinazione sostanzialmente coincidenti.
+
+2. La distanza viene calcolata tramite `haversineKm`.
+
+3. Definita una soglia minima di:
+
+   ```text
+   0.01 km = 10 metri
+   ```
+
+4. Due punti entro circa 10 metri vengono quindi considerati equivalenti ai fini della richiesta.
+
+5. In caso di coincidenza:
+
+   * non viene aperto il pannello di scelta del servizio;
+   * il punto appena selezionato viene considerato non valido;
+   * il relativo campo rimane attivo;
+   * viene mostrato il messaggio:
+
+     **Partenza e destinazione devono essere due punti diversi.**
+
+6. Il controllo viene effettuato in entrambe le direzioni:
+
+   * partenza selezionata prima della destinazione;
+   * destinazione selezionata prima della partenza.
+
+7. Reso simmetrico anche il normale flusso di selezione:
+
+   * se viene scelta prima la partenza, l’app passa alla destinazione;
+   * se viene scelta prima la destinazione, l’app passa alla partenza;
+   * quando entrambi i punti sono presenti e validi viene aperta la scelta del servizio.
+
+8. Il controllo si applica indipendentemente dal modo in cui il punto è stato ottenuto, perché la selezione converge nella stessa funzione:
+
+   * click sulla mappa;
+   * suggerimento di indirizzo;
+   * posizione corrente.
+
+9. Aggiunta inoltre una seconda verifica immediatamente prima di `submit()`.
+
+10. La verifica nel submit agisce come protezione finale nel caso in cui una futura modifica dell’interfaccia consentisse di aggirare il controllo durante la selezione.
+
+11. Non sono stati introdotti altri limiti arbitrari sulla lunghezza minima della corsa: vengono bloccati solamente punti praticamente coincidenti.
+
+## Coerenza delle animazioni
+
+Al termine delle modifiche i principali pannelli utilizzano comportamenti coerenti:
+
+* menu hamburger: ingresso laterale da destra;
+* scelta del servizio: ingresso dal basso;
+* modifica profilo: ingresso dal basso;
+* elenco prenotazioni: ingresso dal basso;
+* login: ingresso leggero di logo e pannello.
+
+Le animazioni rimangono brevi e funzionali e rispettano le preferenze di riduzione del movimento del sistema operativo.
+
+## Stato delle verifiche
+
+Prima dell’ultima tranche di modifiche estetiche e UX risultavano già superati:
+
+* test unitari;
+* test end-to-end;
+* `pnpm verify`.
+
+Le modifiche del 21 agosto sono state controllate progressivamente durante lo sviluppo e tramite verifica visuale dell’interfaccia.
+
+Prima del commit conclusivo dell’app passeggero deve essere rieseguito il controllo completo sulla HEAD finale, in particolare:
+
+```powershell
+pnpm exec prettier --write apps/passenger/src
+pnpm verify
+```
+
+## File principali coinvolti
+
+* `apps/passenger/src/App.tsx`
+* `apps/passenger/src/components/BookingsPanel.tsx`
+* `apps/passenger/src/components/ProfilePanel.tsx`
+* `apps/passenger/src/components/RideMap.tsx`
+* `apps/passenger/src/components/StatusPanel.tsx`
+* `apps/passenger/src/styles.css`
+
+## Nota conclusiva
+
+Con queste modifiche viene conclusa la fase di sviluppo e rifinitura dell’app passeggero.
+
+Il flusso coperto comprende ora:
+
+```text
+autenticazione
+    → selezione partenza e destinazione
+        → validazione dell’area di servizio
+            → scelta corsa immediata o programmata
+                → conferma / gestione prenotazioni
+                    → assegnazione robotaxi
+                        → avvicinamento al pickup
+                            → corsa live
+                                → arrivo a destinazione
+```
+
+L’interfaccia mantiene una rappresentazione mobile coerente, supporta i temi giorno e notte e conserva la separazione tra logica visuale del client e stato autoritativo del backend.
+
+La fase successiva prevista è la rifinitura grafica della dashboard dell’operatore.
+
 
 

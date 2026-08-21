@@ -72,6 +72,10 @@ function formatEta(minutes: number): string {
   return `${String(hours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}`;
 }
 
+function formatPoint(address: string | null, point: RideRequestResponse['pickup']): string {
+  return address ?? `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
+}
+
 export function StatusPanel({
   request,
   view,
@@ -119,9 +123,22 @@ export function StatusPanel({
           </ol>
         )}
 
+        <div className="status-route-reference">
+          <div>
+            <span>Partenza</span>
+            <strong>{formatPoint(request.pickupAddress, request.pickup)}</strong>
+          </div>
+
+          <div>
+            <span>Destinazione</span>
+            <strong>{formatPoint(request.destinationAddress, request.destination)}</strong>
+          </div>
+        </div>
+
         <dl className="points">
           <dt>Richiesta</dt>
           <dd data-testid="ride-request-id">{request.id}</dd>
+
           <dt>Tipo</dt>
           <dd>{request.kind === 'IMMEDIATE' ? 'Immediata' : 'Programmata'}</dd>
           {request.scheduledPickup !== null && (
