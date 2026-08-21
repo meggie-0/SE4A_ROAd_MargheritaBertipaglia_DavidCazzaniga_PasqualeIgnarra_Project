@@ -76,7 +76,28 @@ export function ProfilePanel({
 
   return (
     <section className="panel profile-panel">
-      <h2>Il tuo profilo</h2>
+      <div className="profile-panel-heading">
+        <h2>Il tuo profilo</h2>
+
+        <button
+          type="button"
+          className="operator-menu-close profile-close-button"
+          aria-label="Chiudi profilo"
+          onClick={onClose}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M6 6l12 12" />
+            <path d="M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
 
       <form onSubmit={(event) => void submit(event)}>
         <label>
@@ -151,11 +172,11 @@ export function ProfilePanel({
           </button>
           <button
             type="button"
-            className="link-button"
+            className="profile-cancel-button"
             data-testid="close-profile"
             onClick={onClose}
           >
-            Chiudi
+            Annulla
           </button>
         </div>
       </form>

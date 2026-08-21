@@ -1,8 +1,16 @@
 import { MILAN_ZONES, type FleetVehicle } from '@road/shared';
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMapEvents } from 'react-leaflet';
-
+import {
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+  Tooltip,
+  useMapEvents,
+  useMap,
+} from 'react-leaflet';
+import { useEffect } from 'react';
 import { STATE_APPEARANCE } from '../robotaxi-states';
-
+import { divIcon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 /**
@@ -24,15 +32,92 @@ import 'leaflet/dist/leaflet.css';
 const MILAN_CENTER = { lat: 45.4642, lon: 9.19 };
 const INITIAL_ZOOM = 12;
 
+const MILAN_MAP_BOUNDS: [[number, number], [number, number]] = [
+  [45.39, 9.05],
+  [45.54, 9.31],
+];
+
+const LINATE_TERMINAL_POINT = {
+  lat: 45.4618,
+  lon: 9.2786,
+};
+function createRobotaxiIcon(color: string, selected: boolean) {
+  return divIcon({
+    className: 'robotaxi-marker',
+    html: `
+      <span
+        class="robotaxi-marker-badge${selected ? ' robotaxi-marker-badge--selected' : ''}"
+        style="--robotaxi-color: ${color}"
+      >
+        <span class="robotaxi-marker-glyph"></span>
+      </span>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -18],
+  });
+}
+
+function createServiceZoneMapIcon(zoneId: string) {
+  return divIcon({
+    className: 'service-zone-map-icon',
+    html: `
+      <span
+        class="service-zone-map-symbol service-zone-map-symbol--${zoneId}"
+        style="--zone-icon: url('/zone-icons/${zoneId}.svg')"
+        aria-hidden="true"
+      ></span>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    tooltipAnchor: [0, -18],
+  });
+}
+
+const SERVICE_ZONE_MARKERS = MILAN_ZONES.map((zone) => ({
+  zone,
+  icon: createServiceZoneMapIcon(zone.id),
+}));
+
 export interface FleetMapProps {
   readonly robotaxis: readonly FleetVehicle[];
   readonly selectedRobotaxiId: string | null;
   readonly onSelectRobotaxi: (robotaxiId: string) => void;
   readonly onClearSelection: () => void;
+  readonly focusTarget: {
+    readonly lat: number;
+    readonly lon: number;
+    readonly requestId: number;
+  } | null;
 }
 
 interface ClearSelectionOnMapClickProps {
   readonly onClearSelection: () => void;
+}
+
+function FocusRobotaxi({
+  target,
+}: {
+  readonly target: {
+    readonly lat: number;
+    readonly lon: number;
+    readonly requestId: number;
+  } | null;
+}): null {
+  const map = useMap();
+
+  useEffect(() => {
+    if (target === null) {
+      return;
+    }
+
+    map.flyTo([target.lat, target.lon], 15, {
+      animate: true,
+      duration: 0.7,
+    });
+  }, [map, target]);
+
+  return null;
 }
 
 function ClearSelectionOnMapClick({ onClearSelection }: ClearSelectionOnMapClickProps): null {
@@ -48,6 +133,7 @@ function ClearSelectionOnMapClick({ onClearSelection }: ClearSelectionOnMapClick
 export function FleetMap({
   robotaxis,
   selectedRobotaxiId,
+  focusTarget,
   onSelectRobotaxi,
   onClearSelection,
 }: FleetMapProps): React.JSX.Element {
@@ -56,9 +142,14 @@ export function FleetMap({
       className="fleet-map"
       center={[MILAN_CENTER.lat, MILAN_CENTER.lon]}
       zoom={INITIAL_ZOOM}
+      minZoom={11}
+      maxBounds={MILAN_MAP_BOUNDS}
+      maxBoundsViscosity={1}
+      zoomControl={false}
       scrollWheelZoom
     >
       <ClearSelectionOnMapClick onClearSelection={onClearSelection} />
+      <FocusRobotaxi target={focusTarget} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -67,42 +158,46 @@ export function FleetMap({
       {/* Le zone di Milano: la partizione di Voronoi su cui il riposizionamento ragiona
           (decisione D10). Sono il riferimento rispetto a cui l'operatore legge una concentrazione
           di veicoli o la sua assenza. */}
-      {MILAN_ZONES.map((zone) => (
-        <CircleMarker
-          key={zone.id}
-          center={[zone.lat, zone.lon]}
-          radius={5}
-          pathOptions={{ color: '#334155', weight: 1, fillOpacity: 0.3 }}
-        >
-          <Tooltip>{zone.name}</Tooltip>
-        </CircleMarker>
-      ))}
+      {SERVICE_ZONE_MARKERS.map(({ zone, icon }) => {
+        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
+
+        return (
+          <Marker
+            key={zone.id}
+            position={[position.lat, position.lon]}
+            icon={icon}
+            alt={`Zona: ${zone.name}`}
+            bubblingMouseEvents
+            riseOnHover
+            zIndexOffset={1000}
+          >
+            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -18]}>
+              <strong>{zone.name}</strong>
+
+              {zone.id === 'linate' && (
+                <>
+                  <br />
+                  Terminal / Kiss&Ride
+                </>
+              )}
+            </Tooltip>
+          </Marker>
+        );
+      })}
 
       {robotaxis.map((vehicle) => {
         const appearance = STATE_APPEARANCE[vehicle.state];
         const selected = vehicle.id === selectedRobotaxiId;
         return (
-          <CircleMarker
+          <Marker
             key={vehicle.id}
-            center={[vehicle.position.lat, vehicle.position.lon]}
-            radius={selected ? 10 : 8}
+            position={[vehicle.position.lat, vehicle.position.lon]}
+            icon={createRobotaxiIcon(appearance.color, selected)}
             eventHandlers={{
               click: () => onSelectRobotaxi(vehicle.id),
             }}
             bubblingMouseEvents={false}
-            /*
-             * La classe distingue un veicolo da una zona, che sulla mappa sono entrambi dei cerchi.
-             * Serve a chi guarda il DOM — il test di sistema, che senza di essa asseriva «i marker
-             * dei veicoli ci sono» su un selettore soddisfatto dalle sole sedici zone, e sarebbe
-             * passato con la flotta vuota.
-             */
-            className="robotaxi-marker"
-            pathOptions={{
-              color: selected ? '#000305' : appearance.color,
-              fillColor: appearance.color,
-              fillOpacity: 0.85,
-              weight: selected ? 2 : 2,
-            }}
+            zIndexOffset={selected ? 2000 : 0}
           >
             <Popup>
               <strong>{vehicle.id}</strong>
@@ -117,7 +212,7 @@ export function FleetMap({
                 </>
               )}
             </Popup>
-          </CircleMarker>
+          </Marker>
         );
       })}
     </MapContainer>

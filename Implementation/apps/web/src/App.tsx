@@ -8,7 +8,7 @@ import {
 } from '@road/shared';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-
+import { applyTheme, loadTheme, type Theme } from './theme';
 import {
   completeMaintenance,
   enableAutoMode,
@@ -27,6 +27,7 @@ import { StrategyPanel } from './components/StrategyPanel';
 import { clearSession, loadSession, saveSession, type Session } from './session';
 import { useNotifications } from './use-notifications';
 import { MaintenancePanel } from './components/MaintenancePanel';
+import { OperationalLog } from './components/OperationalLog';
 
 /**
  * La dashboard dell'operatore di flotta (DD §3.2).
@@ -73,13 +74,20 @@ function Dashboard(): React.JSX.Element {
   const [commandError, setCommandError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => loadTheme());
+  const [showMenu, setShowMenu] = useState(false);
   const [selectedRobotaxiId, setSelectedRobotaxiId] = useState<string | null>(null);
+  const [mapFocusTarget, setMapFocusTarget] = useState<{
+    lat: number;
+    lon: number;
+    requestId: number;
+  } | null>(null);
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
   const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
   const health = useApiHealth();
   const queries = useQueryClient();
   const token = session?.accessToken ?? null;
-  const { notifications, connection } = useNotifications(token);
+  const { notifications } = useNotifications(token);
 
   /** L'ultimo evento già applicato a ciascuno dei due pannelli, per non riapplicarlo a ogni render. */
   const lastModeEventRef = useRef<string | null>(null);
@@ -95,6 +103,22 @@ function Dashboard(): React.JSX.Element {
   const selectedRobotaxi =
     fleet.data?.robotaxis.find((vehicle) => vehicle.id === selectedRobotaxiId) ?? null;
 
+  function focusRobotaxiFromStatus(robotaxiId: string): void {
+    const vehicle = fleet.data?.robotaxis.find((candidate) => candidate.id === robotaxiId);
+
+    setSelectedRobotaxiId(robotaxiId);
+
+    if (vehicle === undefined) {
+      return;
+    }
+
+    setMapFocusTarget((current) => ({
+      lat: vehicle.position.lat,
+      lon: vehicle.position.lon,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
+  }
+
   const mode = useQuery({
     queryKey: ['mode'],
     enabled: token !== null,
@@ -104,6 +128,10 @@ function Dashboard(): React.JSX.Element {
   useEffect(() => {
     setMaintenanceError(null);
   }, [selectedRobotaxiId]);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   /**
    * Modo e strategia si aggiornano dal **canale push**, non ri-chiedendoli.
@@ -162,6 +190,7 @@ function Dashboard(): React.JSX.Element {
     clearSession();
     setSession(null);
     setShowProfile(false);
+    setShowMenu(false);
     queries.clear();
     setSelectedRobotaxiId(null);
   }
@@ -275,8 +304,19 @@ function Dashboard(): React.JSX.Element {
 
   if (session === null) {
     return (
-      <main className="dashboard">
+      <main className="dashboard dashboard--guest">
+        <header className="operator-guest-header">
+          <div className="operator-login-logo-frame">
+            <img
+              className="operator-login-logo"
+              src={theme === 'dark' ? '/road-logo-dark.png' : '/road-logo-light.png'}
+              alt="ROAd"
+            />
+          </div>
+        </header>
+
         <LoginScreen onAuthenticated={onAuthenticated} />
+
         <ApiFooter health={health} />
       </main>
     );
@@ -284,78 +324,164 @@ function Dashboard(): React.JSX.Element {
 
   return (
     <main className="dashboard">
-      <header className="app-header">
-        <h1>ROAd — Dashboard operatore</h1>
-        <div className="who">
-          <span
-            className={connection === 'connected' ? 'push-on' : 'push-off'}
-            data-testid="push-connection"
-            data-connection={connection}
-          >
-            {connection === 'connected' ? 'canale attivo' : 'canale non connesso'}
-          </span>
-          <span data-testid="operator-name">{session.user.name}</span>
-          <button
-            type="button"
-            className="link-button"
-            data-testid="open-profile"
-            onClick={() => setShowProfile(!showProfile)}
-          >
-            {showProfile ? 'Chiudi profilo' : 'Profilo'}
-          </button>
-          <button type="button" className="link-button" data-testid="sign-out" onClick={signOut}>
-            Esci
-          </button>
-        </div>
-      </header>
-
-      <StatusBar status={fleet.data ?? null} stale={fleet.isError} />
-
-      <div className="dashboard-body">
-        <FleetMap
-          robotaxis={fleet.data?.robotaxis ?? []}
+      <div className="operator-toolbar">
+        <StatusBar
+          status={fleet.data ?? null}
+          stale={fleet.isError}
           selectedRobotaxiId={selectedRobotaxiId}
-          onSelectRobotaxi={setSelectedRobotaxiId}
-          onClearSelection={() => setSelectedRobotaxiId(null)}
+          onFocusRobotaxi={focusRobotaxiFromStatus}
         />
 
+        <button
+          type="button"
+          className="operator-menu-toggle"
+          data-testid="open-menu"
+          aria-label={showMenu ? 'Chiudi menu' : 'Apri menu'}
+          aria-expanded={showMenu}
+          aria-controls="operator-menu"
+          onClick={() => setShowMenu((current) => !current)}
+        >
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </button>
+      </div>
+
+      {showMenu && (
+        <>
+          <button
+            type="button"
+            className="operator-menu-backdrop"
+            aria-label="Chiudi menu"
+            onClick={() => setShowMenu(false)}
+          />
+
+          <aside id="operator-menu" className="operator-menu" aria-label="Menu operatore">
+            <div className="operator-menu-heading">
+              <h2>Il tuo account</h2>
+
+              <button
+                type="button"
+                className="operator-menu-close"
+                aria-label="Chiudi menu"
+                onClick={() => setShowMenu(false)}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="operator-menu-profile">
+              <div className="operator-menu-avatar" aria-hidden="true">
+                {session.user.name.charAt(0)}
+                {session.user.surname.charAt(0)}
+              </div>
+
+              <div>
+                <strong data-testid="operator-name">
+                  {session.user.name} {session.user.surname}
+                </strong>
+                <span>{session.user.email}</span>
+              </div>
+            </div>
+
+            <div className="operator-menu-actions">
+              <button
+                type="button"
+                className="operator-menu-action"
+                data-testid="open-profile"
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowProfile(true);
+                }}
+              >
+                Modifica profilo
+              </button>
+              <button
+                type="button"
+                className="operator-menu-action"
+                data-testid="theme-toggle"
+                data-theme={theme}
+                onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              >
+                <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+                <span>{theme === 'dark' ? 'Attiva modalità giorno' : 'Attiva modalità notte'}</span>
+              </button>
+              <button
+                type="button"
+                className="operator-menu-action operator-menu-action--danger"
+                data-testid="sign-out"
+                onClick={signOut}
+              >
+                Esci
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
+      <div className="dashboard-body">
+        <div className="map-column">
+          <FleetMap
+            robotaxis={fleet.data?.robotaxis ?? []}
+            selectedRobotaxiId={selectedRobotaxiId}
+            onSelectRobotaxi={setSelectedRobotaxiId}
+            onClearSelection={() => setSelectedRobotaxiId(null)}
+            focusTarget={mapFocusTarget}
+          />
+          <OperationalLog notifications={notifications} onFocusRobotaxi={focusRobotaxiFromStatus} />
+        </div>
         <div className="side-panels">
           {/* Il profilo prende il posto dei pannelli laterali, non della mappa né della status
               bar: la superficie di monitoraggio resta visibile (R7, NFR10). */}
+          <StrategyPanel
+            mode={mode.data?.mode ?? null}
+            activeStrategy={mode.data?.activeStrategy ?? null}
+            busy={busy}
+            error={commandError}
+            onSelectStrategy={(strategy) => void chooseStrategy(strategy)}
+            onEnableAuto={() => void backToAuto()}
+          />
+
           {showProfile ? (
             <ProfilePanel
               profile={session.user}
               token={session.accessToken}
               onUpdated={(profile) => {
-                const next: Session = { accessToken: session.accessToken, user: profile };
+                const next: Session = {
+                  accessToken: session.accessToken,
+                  user: profile,
+                };
+
                 saveSession(next);
                 setSession(next);
               }}
               onClose={() => setShowProfile(false)}
               onSessionExpired={(failure) => {
-                if (failure instanceof ApiError && failure.status === 401) signOut();
+                if (failure instanceof ApiError && failure.status === 401) {
+                  signOut();
+                }
               }}
             />
           ) : (
-            <>
-              <StrategyPanel
-                mode={mode.data?.mode ?? null}
-                activeStrategy={mode.data?.activeStrategy ?? null}
-                busy={busy}
-                error={commandError}
-                onSelectStrategy={(strategy) => void chooseStrategy(strategy)}
-                onEnableAuto={() => void backToAuto()}
-              />
-              <MaintenancePanel
-                vehicle={selectedRobotaxi}
-                busy={maintenanceBusy}
-                error={maintenanceError}
-                onStartMaintenance={(reason) => void beginSelectedMaintenance(reason)}
-                onCompleteMaintenance={() => void completeSelectedMaintenance()}
-              />
-              <AlertsPanel notifications={notifications} />
-            </>
+            <MaintenancePanel
+              vehicle={selectedRobotaxi}
+              busy={maintenanceBusy}
+              error={maintenanceError}
+              onStartMaintenance={(reason) => void beginSelectedMaintenance(reason)}
+              onCompleteMaintenance={() => void completeSelectedMaintenance()}
+            />
           )}
+
+          <AlertsPanel notifications={notifications} />
         </div>
       </div>
 

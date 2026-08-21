@@ -45,9 +45,8 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps): React.JSX.El
   }
 
   return (
-    <section className="panel login-panel">
-      <h1>ROAd — Dashboard operatore</h1>
-      <p className="muted">Accedi con il tuo account operatore di flotta.</p>
+    <section className="panel login-panel operator-login-panel">
+      <h1>Accedi con il tuo account operatore di flotta</h1>
 
       <form onSubmit={(event) => void submit(event)}>
         <label>

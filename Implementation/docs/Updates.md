@@ -1566,5 +1566,367 @@ L’interfaccia mantiene una rappresentazione mobile coerente, supporta i temi g
 
 La fase successiva prevista è la rifinitura grafica della dashboard dell’operatore.
 
+# ROAd - Aggiornamento UI e completamento revisione grafica
 
+**Data:** 21 agosto 2026
+**Autore:** Pasquale Ludovico Ignarra
+**Argomento:** Revisione grafica e miglioramento dell'interazione delle applicazioni passeggero e operatore
 
+## Obiettivo
+
+Uniformare l'aspetto delle due applicazioni ROAd, migliorare la leggibilità delle informazioni e rendere più chiari i principali flussi di interazione senza modificare la logica di dominio o l'architettura del sistema.
+
+La revisione ha interessato sia l'app passeggero sia la dashboard operatore ed è stata sviluppata mantenendo una palette grafica comune, il supporto ai temi giorno e notte e componenti coerenti tra i due client.
+
+## Aggiornamento dell'app passeggero
+
+La schermata di accesso è stata completamente riallineata allo stile grafico ROAd.
+
+In particolare:
+
+1. rimosso il selettore del tema dalla schermata di login, mantenendolo nel menu account;
+
+2. aumentate e centrate le dimensioni del logo ROAd;
+
+3. semplificata la schermata eliminando il riferimento ridondante ad "App passeggero";
+
+4. mantenuta come intestazione principale la frase:
+
+   `Accedi per richiedere una corsa`;
+
+5. applicato al pannello centrale un bordo viola coerente con la palette ROAd;
+
+6. uniformato lo stile dei campi email e password;
+
+7. aggiunte animazioni leggere di ingresso per logo e pannello;
+
+8. aggiornata l'icona della scheda browser con la favicon ROAd dedicata.
+
+## Menu account passeggero
+
+Il menu account è stato rivisto per renderlo coerente con il resto dell'interfaccia.
+
+Sono stati introdotti:
+
+- apertura laterale da destra;
+- backdrop della pagina;
+- pulsante di chiusura circolare con icona `X`;
+- sezione profilo con avatar e informazioni dell'utente;
+- selettore tema giorno/notte;
+- accesso alle prenotazioni;
+- comando di logout con evidenziazione dedicata;
+- animazioni di apertura e chiusura.
+
+Il selettore del tema rimane quindi disponibile solamente dopo l'accesso.
+
+## Miglioramenti dell'interazione con la mappa passeggero
+
+La gestione della mappa durante una corsa è stata resa meno invasiva.
+
+Il comportamento implementato prevede:
+
+1. un primo focus automatico quando viene trovato il robotaxi, mostrando robotaxi e punto di partenza;
+
+2. un secondo focus all'inizio della corsa, mostrando robotaxi e destinazione;
+
+3. dopo il focus iniziale, la mappa rimane liberamente controllabile dall'utente e non viene ricentrata continuamente dagli aggiornamenti della posizione;
+
+4. mantenimento del focus finale sulla destinazione al completamento della corsa.
+
+Sono inoltre state mantenute le icone ROAd dedicate alle zone di servizio e migliorata la visibilità del marker di destinazione.
+
+## Informazioni sulla corsa passeggero
+
+Durante una corsa attiva:
+
+- vengono nascosti il titolo "Dove si va?" e il menu hamburger;
+- il pannello di stato diventa il principale elemento informativo;
+- vengono mostrati chiaramente punto di partenza e destinazione;
+- l'interfaccia mantiene visibile solamente ciò che è rilevante per la corsa in corso.
+
+È stato inoltre aggiunto un controllo che impedisce di selezionare partenza e destinazione coincidenti o poste a meno di 10 metri l'una dall'altra.
+
+Il controllo è simmetrico e viene verificato indipendentemente dall'ordine con cui vengono selezionati i due punti.
+
+## Revisione della dashboard operatore
+
+La dashboard operatore è stata ridisegnata mantenendo invariata la struttura funzionale principale.
+
+La nuova organizzazione utilizza:
+
+- status bar superiore;
+- menu hamburger dedicato;
+- mappa come elemento principale;
+- pannelli operativi sulla destra;
+- log operativo sotto la mappa.
+
+È stato eliminato il precedente header contenente informazioni ridondanti come:
+
+- stato del canale;
+- nome operatore;
+- accesso diretto al profilo;
+- logout.
+
+Tali funzioni sono ora raccolte nel menu account.
+
+## Menu account operatore
+
+È stato introdotto un menu laterale coerente con quello dell'app passeggero.
+
+Il menu contiene:
+
+- avatar dell'operatore;
+- nome e cognome;
+- indirizzo email;
+- comando **Modifica profilo**;
+- selettore tema giorno/notte;
+- comando **Esci**.
+
+Il menu utilizza lo stesso linguaggio grafico dell'app passeggero, comprese animazioni, backdrop e pulsante circolare di chiusura.
+
+## Tema giorno e notte
+
+La dashboard operatore supporta ora entrambi i temi attraverso una palette ROAd condivisa a livello grafico.
+
+Sono state definite variabili dedicate per:
+
+- background;
+- superfici;
+- superfici elevate;
+- bordi;
+- testo principale;
+- testo secondario;
+- accent;
+- colori di stato;
+- overlay;
+- ombre.
+
+Il tema selezionato viene salvato nel browser e ripristinato alle aperture successive.
+
+In assenza di una preferenza precedentemente salvata viene utilizzata la preferenza del sistema operativo.
+
+## Status bar della flotta
+
+La status bar è stata trasformata in un elemento interattivo.
+
+Ogni stato dei robotaxi è selezionabile e apre un menu contenente i veicoli appartenenti a quello stato.
+
+Il menu mostra:
+
+- identificatore del robotaxi;
+- zona corrente.
+
+Anche gli stati con zero veicoli rimangono selezionabili e mostrano un messaggio dedicato.
+
+La selezione di un robotaxi dalla status bar:
+
+1. seleziona il robotaxi nella dashboard;
+
+2. effettua un singolo focus sulla sua posizione;
+
+3. lascia successivamente la mappa libera di essere controllata manualmente.
+
+Gli aggiornamenti periodici della flotta non provocano quindi continui ricentramenti della mappa.
+
+## Marker dei robotaxi
+
+I precedenti marker circolari sono stati sostituiti con l'icona ROAd del robotaxi.
+
+Ogni marker utilizza:
+
+- icona del robotaxi;
+- colore associato allo stato corrente;
+- bordo dello stesso colore;
+- sfondo coerente con il tema corrente.
+
+Il robotaxi selezionato viene evidenziato tramite:
+
+- ingrandimento;
+- doppio bordo;
+- priorità grafica maggiore rispetto agli altri marker.
+
+## Zone di servizio
+
+Le zone della mappa operatore utilizzano ora le stesse icone presenti nell'app passeggero.
+
+È stata inoltre definita una priorità grafica tra i diversi elementi:
+
+```text
+robotaxi normale
+    ↓
+icona zona di servizio
+    ↓
+robotaxi selezionato
+
+In questo modo le zone rimangono riconoscibili anche in presenza di veicoli vicini, mentre il robotaxi selezionato rimane sempre in primo piano.
+
+La mappa è inoltre limitata all'area di Milano ed è stato rimosso il controllo grafico `+/-` di Leaflet.
+
+## Log operativo
+
+È stato aggiunto un nuovo pannello **Log operativo** direttamente sotto la mappa.
+
+Il log utilizza le notifiche già ricevute dal client e mostra gli eventi più recenti con:
+
+- timestamp;
+- robotaxi coinvolto oppure indicazione `Sistema`;
+- descrizione dell'evento.
+
+Quando un evento è associato a un robotaxi, il relativo identificatore è selezionabile.
+
+Il click sul robotaxi nel log:
+
+1. seleziona il veicolo;
+2. effettua il focus sulla sua posizione nella mappa.
+
+Il log ha la stessa larghezza della mappa e non modifica la disposizione dei pannelli operativi laterali.
+
+## Schermata di accesso operatore
+
+Anche la schermata di login dell'operatore è stata uniformata allo stile dell'app passeggero.
+
+Sono stati introdotti:
+
+- logo ROAd grande e centrato;
+- versione corretta del logo per tema giorno e notte;
+- pannello centrale con bordo viola;
+- campi coerenti con la palette;
+- pulsante di accesso coerente con il design ROAd;
+- animazioni leggere di ingresso.
+
+La precedente intestazione:
+
+`ROAd — Dashboard operatore`
+
+è stata sostituita con:
+
+`Accedi con il tuo account operatore di flotta.`
+
+I campi e il comportamento del login sono rimasti invariati.
+
+È stata inoltre aggiunta alla scheda del browser la favicon ROAd dedicata, utilizzando le varianti per tema chiaro e scuro.
+
+## Modifica del profilo operatore
+
+Il pannello di modifica del profilo è stato rivisto per integrarsi meglio con la dashboard.
+
+Quando viene aperto:
+
+- il pannello **Strategia di allocazione** rimane visibile;
+- il pannello profilo sostituisce temporaneamente solamente **Manutenzione**;
+- il pannello **Alert** rimane visibile.
+
+La struttura laterale diventa quindi:
+
+```text
+Strategia di allocazione
+        ↓
+Il tuo profilo
+        ↓
+Alert
+```
+
+Il pannello profilo include ora:
+
+- pulsante circolare `X` in alto a destra;
+- comando **Salva**;
+- comando **Annulla** al posto del precedente **Chiudi**;
+- maggiore separazione grafica tra i due comandi;
+- stile coerente con i temi giorno e notte.
+
+Alla chiusura del profilo viene nuovamente mostrato il pannello di manutenzione.
+
+## Stato della revisione grafica
+
+Con queste modifiche la revisione estetica delle due applicazioni viene considerata completata.
+
+Non sono previste ulteriori modifiche grafiche prima dell'integrazione delle funzionalità sviluppate parallelamente e della fase finale di verifica, salvo eventuali correzioni dovute a bug o regressioni.
+
+Il workflow successivo previsto è:
+
+```text
+Completamento UI
+    → formattazione
+        → typecheck
+            → commit e push del branch
+                → riallineamento con main
+                    → integrazione delle modifiche parallele
+                        → aggiornamento dei test
+                            → pnpm verify
+                                → merge finale
+```
+
+## Branch di sviluppo
+
+La revisione della dashboard operatore è stata sviluppata sul branch:
+
+`feat/operator-dashboard-redesign`
+
+in modo da mantenere isolate le modifiche grafiche durante lo sviluppo parallelo delle funzionalità R10 e R12.
+
+Prima del merge finale il branch dovrà essere riallineato con `main` e dovranno essere risolti eventuali conflitti nei componenti condivisi della dashboard.
+
+## Test e verifiche
+
+Durante lo sviluppo sono state effettuate verifiche manuali delle principali modifiche grafiche e interattive nei temi giorno e notte.
+
+La fase finale prevede ancora:
+
+1. formattazione tramite Prettier;
+2. typecheck dell'intero workspace;
+3. verifica dello stato Git e delle modifiche incluse nel branch;
+4. aggiornamento degli eventuali test interessati dai nuovi flussi dell'interfaccia;
+5. esecuzione completa di:
+
+   `pnpm verify`
+
+6. verifica finale dopo l'integrazione delle modifiche sviluppate parallelamente.
+
+## File principali coinvolti
+
+### App passeggero
+
+- `apps/passenger/src/App.tsx`
+- `apps/passenger/src/components/LoginScreen.tsx`
+- `apps/passenger/src/components/ProfilePanel.tsx`
+- `apps/passenger/src/components/BookingsPanel.tsx`
+- `apps/passenger/src/components/RideMap.tsx`
+- `apps/passenger/src/components/StatusPanel.tsx`
+- `apps/passenger/src/styles.css`
+- `apps/passenger/public/`
+- asset grafici ROAd e icone delle zone
+
+### Dashboard operatore
+
+- `apps/web/src/App.tsx`
+- `apps/web/src/theme.ts`
+- `apps/web/src/components/LoginScreen.tsx`
+- `apps/web/src/components/ProfilePanel.tsx`
+- `apps/web/src/components/StatusBar.tsx`
+- `apps/web/src/components/FleetMap.tsx`
+- `apps/web/src/components/OperationalLog.tsx`
+- `apps/web/src/components/StrategyPanel.tsx`
+- `apps/web/src/styles.css`
+- `apps/web/index.html`
+- `apps/web/public/`
+- asset grafici ROAd e icone delle zone
+
+## Nota architetturale
+
+La revisione è stata mantenuta prevalentemente a livello di presentazione e interazione dei client.
+
+Le informazioni relative a:
+
+- stato della flotta;
+- strategia di allocazione;
+- manutenzione;
+- traffico;
+- notifiche operative;
+- prenotazioni;
+- stato delle corse;
+
+continuano a provenire dai servizi e dai contratti già esistenti.
+
+La dashboard non introduce una nuova sorgente di stato: status bar, mappa, pannelli e log rappresentano differenti visualizzazioni dello stesso stato applicativo ricevuto dal backend.
+
+La fase successiva è quindi dedicata alla verifica e all'integrazione, non a ulteriori interventi estetici.

@@ -75,7 +75,7 @@ export function StrategyPanel(props: StrategyPanelProps): React.JSX.Element {
 
       <button
         type="button"
-        className="link-button"
+        className="link-button  strategy-auto-button"
         data-testid="enable-auto"
         disabled={busy || mode === 'AUTO'}
         onClick={props.onEnableAuto}
