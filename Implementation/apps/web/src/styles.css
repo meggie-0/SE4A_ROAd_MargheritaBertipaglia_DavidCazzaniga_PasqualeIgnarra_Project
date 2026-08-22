@@ -513,6 +513,8 @@ body {
 /* --- corpo --------------------------------------------------------------- */
 
 .dashboard-body {
+  --fleet-map-height: clamp(20rem, 60vh, 46rem);
+  --operational-log-height: 10.5rem;
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.75rem;
@@ -526,7 +528,7 @@ body {
 }
 .fleet-map {
   /* Leaflet ha bisogno di un'altezza esplicita: senza, il contenitore collassa. */
-  height: clamp(20rem, 60vh, 46rem);
+  height: var(--fleet-map-height);
   width: 100%;
   border-radius: 0.75rem;
   border: 1px solid var(--surface-border);
@@ -536,7 +538,7 @@ body {
 /* --- log operativo ----------------------------------------------------- */
 
 .operational-log {
-  height: 10.5rem;
+  height: var(--operational-log-height);
   min-height: 10.5rem;
   display: flex;
   flex-direction: column;
@@ -755,6 +757,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-height: 0;
 }
 
 .panel {
@@ -835,6 +838,17 @@ body {
 
 /* --- alert --------------------------------------------------------------- */
 
+.alerts-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.alerts-panel h2 {
+  flex: 0 0 auto;
+}
+
 .alerts {
   list-style: none;
   margin: 0;
@@ -842,8 +856,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  max-height: 18rem;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .alert {

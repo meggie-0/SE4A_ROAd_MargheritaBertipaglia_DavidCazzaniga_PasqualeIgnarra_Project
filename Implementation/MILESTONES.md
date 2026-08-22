@@ -266,7 +266,9 @@ divergono (NFR3).
 `@Cron` in produzione, chiamata diretta nei test. Nessun timer nel dominio.
 
 `RebalancingPort`: `analyzeDemand` combina base storica e eventi attivi per stimare la domanda per
-zona; `rebalance` invia i veicoli inattivi verso le zone scoperte e produce alert in dashboard.
+zona; `rebalance` invia i veicoli inattivi verso le zone scoperte e produce alert in dashboard;
+`completeArrivedRebalancing` chiude i riposizionamenti quando la telemetria segnala l'arrivo,
+senza attendere il successivo ciclo decennale (DD, decisione D74).
 Anche qui manca una tabella: `rebalancing_action` (RASD §2.2.3, con il suo `RebalancingStatus`) va
 aggiunta con una migrazione, insieme all'enum in `packages/shared`.
 
@@ -278,6 +280,9 @@ invece `RebalancingPort.rebalance()`**, che è già pubblica e a cui quel metodo
 non registrare gli errori: darle un secondo nome su una porta significherebbe pubblicare due volte la
 stessa operazione (DD, decisione D49). `TrafficMonitor` è il caso opposto e ha la sua porta, perché
 legge una sorgente esterna e traduce — comportamento che nessun'altra operazione realizza.
+Il `runOnce()` decennale decide solamente nuovi riposizionamenti. Il completamento dei movimenti già
+in corso viene controllato separatamente alla cadenza `FLEET_POSITION_REFRESH_MS`; i test guidano
+direttamente `RebalancingPort.completeArrivedRebalancing()`.
 
 **Metrica e ordinamento** (DD §2.2.1, decisione D12), obbligatori perché i test siano stabili:
 

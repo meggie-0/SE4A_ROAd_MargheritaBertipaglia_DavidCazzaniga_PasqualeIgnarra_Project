@@ -174,6 +174,15 @@ async function stateOf(robotaxiId: string): Promise<string | undefined> {
   return record?.state;
 }
 
+async function zoneOf(robotaxiId: string): Promise<string | null | undefined> {
+  const [record] = await persistence.find('robotaxi', {
+    where: { id: robotaxiId },
+    limit: 1,
+  });
+
+  return record?.zoneId;
+}
+
 async function positionOf(robotaxiId: string): Promise<{ lat: number; lon: number }> {
   const [record] = await persistence.find('robotaxi', { where: { id: robotaxiId }, limit: 1 });
   if (record === undefined) throw new Error(`Nessun robotaxi ${robotaxiId}.`);
@@ -459,8 +468,9 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       expect(await stateOf('RT-01')).toBe('REBALANCING');
 
       // Finché non arriva, il ciclo successivo non lo chiude.
-      const stillGoing = await rebalancing.rebalance();
-      expect(stillGoing.completed).toEqual([]);
+      const stillGoing = await rebalancing.completeArrivedRebalancing();
+
+      expect(stillGoing).toEqual([]);
       expect(await stateOf('RT-01')).toBe('REBALANCING');
 
       simulation.tick(ticksBetween(DUOMO, SAN_SIRO));
@@ -471,10 +481,7 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
        * `RT-01` risulterebbe ancora in centro — la sua zona si calcola dalle coordinate, decisione
        * D53 — e il ciclo successivo lo rimanderebbe fuori un istante dopo averlo richiamato.
        */
-      const observed = await telemetry.runOnce();
-      expect(observed.positionsRecorded).toBe(1);
-
-      const closing = await rebalancing.rebalance();
+      const completed = await rebalancing.completeArrivedRebalancing();
 
       /**
        * Transizione 9, che fino a M6 **non aveva nessuno che la innescasse** (decisione D60): la
@@ -482,8 +489,9 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
        * telemetria nasce qui. Senza, un veicolo mandato a riposizionarsi non tornava mai fra gli
        * inattivi, quindi non era più spostabile.
        */
-      expect(closing.completed).toEqual(['RT-01']);
+      expect(completed).toEqual(['RT-01']);
       expect(await stateOf('RT-01')).toBe('AVAILABLE');
+      expect(await zoneOf('RT-01')).toBe(SAN_SIRO.id);
 
       const [action] = await persistence.find('rebalancing_action', {
         where: { robotaxiId: 'RT-01' },
@@ -522,9 +530,9 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       simulation.tick(5);
       await telemetry.runOnce();
 
-      const plan = await rebalancing.rebalance();
+      const completed = await rebalancing.completeArrivedRebalancing();
 
-      expect(plan.completed).toEqual([]);
+      expect(completed).toEqual([]);
       const [action] = await persistence.find('rebalancing_action', {
         where: { robotaxiId: 'RT-01' },
         limit: 1,

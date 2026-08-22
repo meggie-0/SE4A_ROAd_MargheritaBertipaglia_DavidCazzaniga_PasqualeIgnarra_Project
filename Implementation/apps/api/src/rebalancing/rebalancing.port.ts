@@ -64,7 +64,6 @@ export interface RebalancingPlan extends DemandAnalysis {
    * quindi mai più spostabile (decisione D60). È vuota finché nessuno è arrivato, che è lo stato
    * normale di una flotta ferma.
    */
-  readonly completed: readonly string[];
 }
 
 export abstract class RebalancingPort {
@@ -81,6 +80,14 @@ export abstract class RebalancingPort {
    * **Non scrive nulla e non muove nessun veicolo.** È una stima: chi la legge decide.
    */
   abstract analyzeDemand(): Promise<DemandAnalysis>;
+
+  /**
+   * Chiude i riposizionamenti dei robotaxi che hanno raggiunto la zona di destinazione.
+   *
+   * È separata da `rebalance()` perché l'arrivo di un veicolo è un evento della telemetria e non deve
+   * attendere il successivo ciclo di previsione della domanda.
+   */
+  abstract completeArrivedRebalancing(): Promise<readonly string[]>;
 
   /**
    * Un ciclo di riposizionamento (R11, G9; DD §2.4, Figura 2.7).

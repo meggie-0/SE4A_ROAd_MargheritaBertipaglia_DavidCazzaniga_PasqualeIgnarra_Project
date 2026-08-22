@@ -80,7 +80,6 @@ export class RebalancingManager extends RebalancingPort {
     // destinazione torna `AVAILABLE` e rientra fra quelli che questo stesso ciclo può contare come
     // copertura della zona in cui si trova. Nell'ordine opposto resterebbe invisibile per un giro,
     // e il ciclo manderebbe un secondo veicolo dove uno è appena arrivato.
-    const completed = await this.completeArrivedRebalancing();
 
     const { zones, idleByZone, zoneById } = await this.analyse(analyzedAt);
 
@@ -120,7 +119,7 @@ export class RebalancingManager extends RebalancingPort {
       if (dispatch !== null) dispatched.push(dispatch);
     }
 
-    return { analyzedAt, zones, dispatched, completed };
+    return { analyzedAt, zones, dispatched };
   }
 
   /**
@@ -137,7 +136,7 @@ export class RebalancingManager extends RebalancingPort {
    * è sua. La revoca della rotta è ciò che impedisce al veicolo, ora disponibile, di continuare a
    * dichiararsi arrivato a una destinazione che non ha più.
    */
-  private async completeArrivedRebalancing(): Promise<readonly string[]> {
+  async completeArrivedRebalancing(): Promise<readonly string[]> {
     const telemetry = await this.external.readTelemetry();
     const arrived = telemetry.filter((reading) => reading.hasArrived);
     if (arrived.length === 0) return [];
@@ -153,8 +152,17 @@ export class RebalancingManager extends RebalancingPort {
       // riposizionamento, e non è affare di questo ciclo.
       if (action === undefined) continue;
 
+      await this.fleet.recordPositions([
+        {
+          robotaxiId: reading.robotaxiId,
+          lat: reading.position.lat,
+          lon: reading.position.lon,
+          observedAt: reading.observedAt,
+        },
+      ]);
+
       try {
-        await this.fleet.completeRebalancing(reading.robotaxiId);
+        await this.fleet.completeRebalancing(reading.robotaxiId, action.targetZoneId);
       } catch (error) {
         if (error instanceof IllegalTransitionError || error instanceof ConcurrentTransitionError) {
           /**

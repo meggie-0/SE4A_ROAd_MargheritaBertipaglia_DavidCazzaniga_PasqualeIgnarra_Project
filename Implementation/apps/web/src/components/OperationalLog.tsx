@@ -66,7 +66,7 @@ export function OperationalLog({
   notifications,
   onFocusRobotaxi,
 }: OperationalLogProps): React.JSX.Element {
-  const events = [...notifications].slice(-40).reverse();
+  const events = [...notifications].reverse();
 
   return (
     <section className="panel operational-log" aria-label="Log operativo">
