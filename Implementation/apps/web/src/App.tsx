@@ -127,6 +127,17 @@ function Dashboard(): React.JSX.Element {
     queries.setQueryData(['mode'], (previous: ModeResponse | undefined) => ({
       mode: last.mode ?? previous?.mode ?? 'AUTO',
       activeStrategy: last.strategy ?? previous?.activeStrategy ?? 'NEAREST_AVAILABLE',
+      /**
+       * Il livello va riportato come gli altri due, e per una ragione in più: questo oggetto
+       * **sostituisce** la risposta in cache, quindi un campo non elencato qui verrebbe perso al
+       * primo evento e l'indicatore si svuoterebbe da solo pochi secondi dopo il caricamento.
+       *
+       * `?? previous` non è una precauzione di stile: gli eventi che portano un modo non portano
+       * necessariamente un livello — `STRATEGY_CHANGED` con `source: 'manual'` nasce da una scelta
+       * umana e ha `trafficLevel` nullo quando nessuna osservazione è ancora arrivata — e senza il
+       * ripiego una scelta manuale cancellerebbe dallo schermo un livello perfettamente valido.
+       */
+      trafficLevel: last.trafficLevel ?? previous?.trafficLevel ?? null,
     }));
   }, [notifications, queries]);
 
@@ -341,6 +352,7 @@ function Dashboard(): React.JSX.Element {
               <StrategyPanel
                 mode={mode.data?.mode ?? null}
                 activeStrategy={mode.data?.activeStrategy ?? null}
+                trafficLevel={mode.data?.trafficLevel ?? null}
                 busy={busy}
                 error={commandError}
                 onSelectStrategy={(strategy) => void chooseStrategy(strategy)}

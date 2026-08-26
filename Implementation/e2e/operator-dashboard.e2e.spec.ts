@@ -61,7 +61,7 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
     await expect(mode).toHaveAttribute('data-mode', 'AUTO');
   });
 
-  test('[NFR6] modo e strategia attiva si vedono al primo render, senza navigare', async ({
+  test('[NFR6][R12] modo, strategia attiva e traffico si vedono al primo render, senza navigare', async ({
     page,
   }) => {
     /*
@@ -79,6 +79,23 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
       'data-strategy',
       /NEAREST_AVAILABLE|MINIMUM_ETA/,
     );
+
+    /*
+     * Il livello di traffico, alla stessa condizione (RASD §2.3: «a clear overview of traffic
+     * levels»).
+     *
+     * `unknown` è fra i valori ammessi e non è una concessione: se nessuna osservazione è ancora
+     * arrivata l'indicatore **deve** dire proprio quello invece di mostrare un livello che nessuno
+     * ha misurato. Ciò che il caso pretende è che l'indicatore ci sia e porti uno dei quattro stati
+     * previsti, non che il traffico sia in una condizione particolare — che dipenderebbe dall'ora
+     * in cui la suite gira.
+     */
+    const traffic = page.getByTestId('traffic-level');
+    await expect(traffic).toBeVisible();
+    await expect(traffic).toHaveAttribute('data-traffic', /LOW|MEDIUM|HIGH|unknown/);
+
+    // Il colore non basta: l'etichetta testuale accompagna sempre la pastiglia.
+    await expect(traffic).not.toHaveText('');
   });
 
   test('[R7][G8] la mappa e la status bar mostrano la flotta viva', async ({ page }) => {

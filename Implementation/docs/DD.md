@@ -131,6 +131,7 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.5 | August 12, 2026 | **[v1.5]** Decisions taken while connecting the real external providers and the fleet simulator (M7), the ordering rule between fleet commands and lifecycle transitions that a design review made explicit (D65), the numeric ETA that D46 had deferred to this milestone (D66), and the completion of R14: `commandRoute()` now exists, so transitions 12 and 13 close the gap that v1.2 had documented and left open — cancellation is legal until the passenger boards. Also: the two `FleetMonitor` operations that telemetry makes possible (transition 9 had no trigger at all), the fourth port of `rides` that reads telemetry, the second port of `external` that advances the simulated world, and `getDemandData()` staying out of the port for the reason D47 gave rather than for the milestone it named. See decisions D59–D66 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.6 | August 13, 2026 | **[v1.6]** Decisions taken while building the two clients (M8): the fleet overview endpoint the operator dashboard needs — the arc Figure 2.1 drew and no route realised — the passenger session kept in the browser, without which the interaction budget of NFR6 is unreachable, the position of the assigned vehicle shown to the passenger without letting a polled route carry the state that NFR2 reserves to the push channel, and the operator's own profile, which R2 grants to users and no screen offered. See decisions D67–D70 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.7 | August 13, 2026 | **[v1.7]** Decisions taken while writing the system tests and the demo dataset (M9): the passenger's map keeps the vehicle marker for the whole ride and turns the segment towards the destination once the passenger boards, and the cadence at which positions are produced and read becomes one shared constant of half a second instead of two numbers that could drift apart (D71). Both are defects that only show on screen — a map that empties at the moment the ride starts, and a vehicle that jumps rather than moves. The faster cadence also forced the amendment of D63: the wait at the pickup point is now **ten seconds** rather than "the next telemetry cycle", because a cycle and the time a person takes to board are not the same quantity, and tying them made `arrived` last half a second. Two more decisions belong to the same release and were taken by the team when the review surfaced them: the periodic work runs on a **single instance**, which is what NFR3 never said either way (D72), and the seed is **recalibrated** — 64 vehicles, demand brought to the scale of the fleet, and zones deliberately far apart — because with twenty vehicles and city-scale demand no zone ever had a vehicle to spare, so R11 could not fire in the running system at all between 07:00 and 23:00 (D73). See decisions D63, D71, D72 and D73 in [Appendice A](#appendice-a--registro-delle-decisioni). |
+| 1.8 | August 24, 2026 | **[v1.8]** One decision, taken when a review of the requirement coverage found a value that the system computed, persisted and never showed. RASD §2.3 lists «a clear overview of traffic levels» among what the operator needs, and `ModeController` writes the observed level on every reading (D20) — but no operation returned it, so it reached the database and never the screen. R12 was covered on the switching side and absent on the *visibility* side, which no test caught because no test looked at what the dashboard displays. `getMode()` now returns the mode **and** the last known traffic level, and the strategy panel shows it next to the strategy it explains. See decision D74 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
 ## 1.4 Document Structure
 
@@ -394,6 +395,13 @@ signatures are more precise than in v1.0:
   and by R8.
 - `ModeController.getMode(): Mode` — added, because NFR10 requires the current control mode to be
   always visible on the dashboard (Section 3.2), which needs a read path.
+- **[v1.8]** `ModeController.getMode(): ModeReading` — widened to return the mode **and** the last
+  observed traffic level, nullable. The same argument that added this reader applies to the level:
+  RASD §2.3 asks for «a clear overview of traffic levels», `onTrafficLevel()` persists it on every
+  reading (decision D20), and no operation returned it — so it needed a read path too. It travels
+  with the mode rather than through a fifth operation because the two are columns of the **same**
+  record and this component owns both, which keeps the port at four operations and makes one read
+  return a pair that cannot be out of step (decision D74).
 
 `RebalancingManager.analyzeDemand()` is exported **without arguments**: the
 `analyzeDemand(demandData, trafficData, fleetStatus)` message in Figure 2.7 is a self-call, and the
@@ -552,7 +560,14 @@ class ModeController {
     + onTrafficLevel(level: TrafficLevel): void
     + setManual(name: StrategyName): void
     + enableAuto(): void
-    + getMode(): Mode
+    + getMode(): ModeReading
+}
+
+' **[v1.8]** Il valore che `getMode()` restituisce: il modo e l'ultimo livello
+' noto, nullo finché nessuna osservazione è arrivata (decisione D74).
+class ModeReading <<record>> {
+    + mode: Mode
+    + lastTrafficLevel: TrafficLevel [0..1]
 }
 
 enum StrategyName {
@@ -1411,6 +1426,20 @@ system to Manual mode), and an alerts panel that surfaces automatic strategy swi
 rebalancing suggestions. A status bar summarises the fleet by state. The Auto/Manual toggle makes
 the current control mode always visible (NFR10).
 
+**[v1.8] Traffic level.** The strategy panel also shows the **last observed traffic level** — a
+coloured badge with its label, and a line of prose saying what the system is doing with it. RASD §2.3
+asks for «a clear overview of traffic levels» among what the operator needs, and until v1.8 the value
+was observed and persisted (D20) without any read path: it reached the database and never the screen.
+It sits in the strategy panel rather than in the status bar because the status bar describes the
+*fleet*, while the traffic level is the **input** of the hysteresis rule whose **output** — the
+active strategy — the panel already shows: side by side, the two explain the system's behaviour
+instead of merely reporting it. Three things it must be able to say, and each corresponds to a
+requirement that would otherwise be invisible: that no reading has arrived yet (distinct from a low
+level, which is what makes the field nullable); that the level is Medium and the system is therefore
+**suggesting and not switching**, which is the dead band NFR9 requires; and that a level may
+disagree with the active strategy, which is what Manual mode looks like from the outside (R13) and
+precisely what tells the operator whether their intervention still applies.
+
 **[v1.6] Account panel.** The dashboard also gives the operator access to **their own profile** —
 personal data and password — because R2 grants that to *users*, and an operator is one. It is not a
 fifth command-and-control panel and it is not part of the monitoring surface: it is reached from the
@@ -1593,7 +1622,8 @@ correspond to defects.
 # Appendice A — Registro delle decisioni
 
 Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento: D1–D26 sono di
-v1.1, D27–D33 di v1.2, D34–D46 di v1.3, D47–D58 di v1.4, D59–D66 di v1.5 e D67–D70 di v1.6.
+v1.1, D27–D33 di v1.2, D34–D46 di v1.3, D47–D58 di v1.4, D59–D66 di v1.5, D67–D70 di v1.6,
+D71–D73 di v1.7 e D74 di v1.8.
 Serve a due cose:
 rigenerare il PDF a fine progetto senza rileggere il diff, e permettere a chi rivede il codice di
 capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove, e per quale ragione.
@@ -1682,6 +1712,7 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 
 | D72 | Il **lavoro periodico gira su una sola istanza dell'applicazione**. La replicabilità che NFR3 chiede riguarda il cammino delle richieste, non gli scheduler | §2.5, §4.3; NFR3; decisioni D16, D64 | NFR3 ha in §4.3 una formulazione falsificabile precisa — «un token emesso da un'istanza è accettato da una seconda che non ha visto il login» — e riguarda l'**assenza di stato di sessione lato server**: è ciò che rende il tier delle richieste replicabile, ed è verificato dal cancello di M1b. Dei cinque lavori periodici il documento non diceva nulla, e replicarli non sarebbe innocuo. Due sono innocui davvero: attivazione delle prenotazioni e riposizionamento girerebbero due volte, ma ogni transizione è condizionata sullo stato letto (`FleetMonitor.applyTransition`), quindi la seconda viene rifiutata con `ConcurrentTransitionError` — lavoro doppio e righe di registro, non incoerenza. Il terzo no: il simulatore **vive nella memoria del processo** (D64, «il simulatore *è* la flotta»), quindi due repliche avrebbero due mondi simulati distinti che scrivono le stesse righe, e una rotta comandata dall'una sarebbe invisibile all'altra. Le alternative erano un lock in database per ciascun lavoro — ingegneria che nessun requisito chiede, e che per il simulatore non basterebbe comunque, perché lì il problema è la memoria e non la concorrenza — oppure dichiarare l'assunzione. Si dichiara: **in un deploy replicato, `ScheduleModule` va acceso su un'istanza sola**, come le migrazioni sono un passo a sé prima di avviare le repliche (README). Con veicoli veri la questione cadrebbe da sé per il simulatore, che non esisterebbe |
 | D73 | Il seed è tarato perché il riposizionamento possa **davvero** avvenire: **64 robotaxi**, quattro per zona in modo uniforme; domanda di base riportata alla scala della flotta da un fattore unico; scale per zona **volutamente distanti**, con tre zone-calamita che chiedono circa dieci volte il resto della città | §2.2.1, §4.2; MILESTONES.md §M1; RASD R11, G9; decisione D12 | Un difetto che nessun test coglieva perché nessun test guardava il seed. `RebalancingManager` presta solo ciò che a una zona **avanza** dopo aver coperto la propria domanda; con venti veicoli su sedici zone e profili di domanda alla scala di una città vera — fino a diciotto corse attese in un'ora in centro — quel resto era zero ovunque e a ogni ora fra le 07 e le 23. Conseguenza: R11 e G9 erano verificati dal cancello di M6 sul proprio dataset e **non potevano manifestarsi** nel sistema in esecuzione, il che è precisamente il genere di requisito «coperto da un test che non asserisce nulla di osservabile» contro cui mette in guardia HARNESS.md §9. Le tre leve si muovono insieme per ragioni diverse: la **flotta più grande** e la **domanda più bassa** creano i veicoli da prestare; lo **squilibrio fra zone** crea le zone verso cui mandarli, e senza di esso una domanda uniformemente bassa produrrebbe surplus ovunque e deficit da nessuna parte. La distribuzione uniforme della flotta è la scelta complementare: se i veicoli partissero già dove la domanda è, lo scarto che il riposizionamento esiste per correggere sarebbe zero. Ciò che **non** cambia è il modello: la forma delle giornate resta quella della tabella di MILESTONES.md §M1, la metrica e l'ordinamento restano quelli della D12, e i dati restano dichiaratamente simulati |
+| D74 | `ModeController.getMode()` restituisce il modo **e** l'ultimo livello di traffico noto, annullabile, invece del solo modo. Il pannello strategia della dashboard lo mostra come pastiglia colorata con etichetta, accompagnata da una riga che dice cosa il sistema ne sta facendo | §2.2.1, §3.2, Fig. 2.2; RASD §2.3, R12, R13; NFR9, NFR10; decisioni D4, D11, D20 | Un requisito coperto a metà, e la metà mancante era quella osservabile. Il RASD §2.3 elenca fra i bisogni dell'operatore «a clear overview of traffic levels», e `onTrafficLevel()` scrive il livello a ogni lettura (D20) — ma **nessuna operazione lo restituiva**: il valore arrivava al database e non allo schermo. R12 era verificato sul lato della commutazione, dove i cancelli lo esercitano a fondo, e assente sul lato della *visibilità*, che nessun test copriva perché nessun test guardava che cosa la dashboard mostra. Le due strade erano aggiungere un quinto lettore alla porta o allargare quello che c'era, e si è scelta la seconda per tre ragioni che convergono. La prima è di competenza: modo e livello sono due colonne dello **stesso** record `system_mode`, entrambe di `ModeController`, quindi l'obiezione che la §2.2.1 muove all'idea di una lettura unica per modo *e strategia* — «nessuno dei due componenti a cui il DD affida le due letture ha titolo per esporla», perché quelli sono due componenti diversi — qui non si applica. La seconda è di correttezza: una lettura sola tiene i due valori coerenti per costruzione, mentre una terza `SELECT` avrebbe aggiunto all'analisi di interleaving del `GET /mode` un caso nuovo — un livello letto prima di un cambio di modo e mostrato accanto a quello dopo. La terza è di economia: la porta resta alle **quattro** operazioni che la §2.2.1 le assegna. Il campo è **annullabile** perché «nessuna lettura ancora arrivata» è uno stato con un significato proprio e non un valore mancante: è la stessa distinzione su cui si regge la D11, che non rivaluta nulla quando il livello è nullo, e mostrare `LOW` al suo posto sarebbe un'affermazione che nessuno ha verificato. Il livello **non** giustifica la strategia attiva, e in modo Manual può contraddirla — là le osservazioni si registrano senza commutare niente (R13) — il che non è un difetto ma esattamente ciò che l'operatore deve vedere per decidere se il suo intervento ha ancora senso |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
 D38, D39, D40, D41, D47, D49, D54 e D64 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

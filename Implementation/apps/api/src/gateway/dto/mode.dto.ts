@@ -2,10 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   CONTROL_MODES,
   STRATEGY_NAMES,
+  TRAFFIC_LEVELS,
   type ControlMode,
   type EnableAutoModeRequest,
   type ModeResponse,
   type StrategyName,
+  type TrafficLevel,
 } from '@road/shared';
 
 /**
@@ -35,6 +37,19 @@ export class ModeResponseDto implements ModeResponse {
       'cambiarla subito rivalutando l ultimo livello di traffico noto.',
   })
   activeStrategy!: StrategyName;
+
+  @ApiProperty({
+    enum: TRAFFIC_LEVELS,
+    nullable: true,
+    example: 'LOW',
+    description:
+      'L ultimo livello di traffico osservato, `null` se nessuna lettura è ancora arrivata. Il ' +
+      'RASD §2.3 lo mette fra i bisogni dell operatore accanto al modo operativo. Su Medium il ' +
+      'sistema **avvisa e non commuta**: è la banda morta che NFR9 richiede, e la scelta resta ' +
+      'all operatore. In modo Manual le letture continuano a registrarsi senza commutare nulla ' +
+      '(R13), quindi questo campo può non corrispondere alla strategia attiva.',
+  })
+  trafficLevel!: TrafficLevel | null;
 }
 
 export class EnableAutoModeRequestDto implements EnableAutoModeRequest {

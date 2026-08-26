@@ -45,6 +45,26 @@ export const STRATEGY_BY_TRAFFIC: Readonly<Partial<Record<TrafficLevel, Strategy
  */
 export const SUGGESTED_ON_MEDIUM: StrategyName = 'MINIMUM_ETA';
 
+/**
+ * Ciò che `getMode()` restituisce: le due colonne di `system_mode` che questo componente possiede.
+ *
+ * Sono insieme perché **una sola lettura le tiene coerenti**. La §2.3 del RASD chiede all'operatore
+ * «a clear overview of traffic levels» accanto al modo operativo, e i due valori servono a rispondere
+ * a una domanda sola: il sistema sta ancora decidendo da solo, e in base a che cosa. Restituirli con
+ * due operazioni distinte avrebbe reso possibile mostrarli disallineati — un modo appena passato a
+ * Manual accanto al livello che aveva provocato l'ultimo cambio automatico — senza che nessuno dei
+ * due valori fosse sbagliato preso da solo.
+ *
+ * La strategia attiva **non** è qui, e la sua assenza è la stessa regola di sempre: la possiede
+ * `AllocationPort.getActiveStrategy()` (DD §2.2.1, decisione D4). Comporre le tre cose in una
+ * risposta HTTP è lavoro del gateway, non di questa porta.
+ */
+export interface ModeReading {
+  readonly mode: ControlMode;
+  /** `null` finché nessuna lettura di traffico è arrivata: è uno stato, non un valore mancante. */
+  readonly lastTrafficLevel: TrafficLevel | null;
+}
+
 export abstract class ModePort {
   /**
    * Registra il livello di traffico osservato e applica la regola di isteresi (R12, NFR9).
@@ -96,13 +116,20 @@ export abstract class ModePort {
   abstract enableAuto(): Promise<void>;
 
   /**
-   * Il modo di controllo corrente, letto dalla sua unica sede autorevole — il record `system_mode` —
-   * attraverso `PersistencePort` (DD §2.2.1).
+   * Il modo di controllo corrente **e l'ultimo livello di traffico noto**, letti dalla loro unica
+   * sede autorevole — il record `system_mode` — attraverso `PersistencePort` (DD §2.2.1).
    *
    * Esiste perché NFR10 chiede che il modo sia sempre visibile sulla dashboard (DD §3.2), e un
    * valore sempre visibile ha bisogno di una via di lettura. Come per la strategia attiva, non c'è
    * una copia in memoria: due repliche che tenessero il modo ciascuna per sé mostrerebbero
    * all'operatore un Auto/Manual diverso a seconda di quale ha risposto (NFR3).
+   *
+   * **Perché il livello di traffico esce da qui e non da una quinta operazione** (decisione D74).
+   * Il RASD §2.3 lo vuole sulla dashboard e `onTrafficLevel()` lo persiste a ogni osservazione
+   * (decisione D20), ma nessuna via di lettura lo restituiva: il valore stava nel database e non
+   * raggiungeva lo schermo. Allargare questo lettore invece di aggiungerne uno tiene la porta alle
+   * quattro operazioni del DD §2.2.1 e, soprattutto, legge le due colonne **in una volta** — il
+   * livello mostrato è quindi sempre quello che valeva per il modo mostrato accanto.
    */
-  abstract getMode(): Promise<ControlMode>;
+  abstract getMode(): Promise<ModeReading>;
 }

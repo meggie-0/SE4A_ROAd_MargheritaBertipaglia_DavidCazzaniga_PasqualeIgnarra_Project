@@ -77,7 +77,7 @@ let operatorToken: string;
 /** La coppia che il pannello di controllo mostra (DD §3.2). */
 async function control(): Promise<{ mode: string; strategy: StrategyName }> {
   const [current, strategy] = await Promise.all([mode.getMode(), allocation.getActiveStrategy()]);
-  return { mode: current, strategy };
+  return { mode: current.mode, strategy };
 }
 
 /** Una sequenza di livelli osservati, nell'ordine, con la strategia attiva dopo ciascuno. */
@@ -271,7 +271,13 @@ describe('[M6] Cancello: ModeController e RebalancingManager', () => {
         .get(API_ROUTES.mode)
         .set('Authorization', `Bearer ${operatorToken}`)
         .expect(200);
-      expect(before.body).toEqual({ mode: 'AUTO', activeStrategy: 'NEAREST_AVAILABLE' });
+      // `trafficLevel` nullo: nessuna osservazione è ancora arrivata in questo caso, e il campo lo
+      // dice invece di far finta che il traffico sia basso (decisione D74).
+      expect(before.body).toEqual({
+        mode: 'AUTO',
+        activeStrategy: 'NEAREST_AVAILABLE',
+        trafficLevel: null,
+      });
 
       await request(api.getHttpServer())
         .put(API_ROUTES.allocationStrategy)
@@ -285,7 +291,11 @@ describe('[M6] Cancello: ModeController e RebalancingManager', () => {
         .expect(200);
       // È il criterio del cancello di M8 visto dal lato del backend: la dashboard passa a Manual
       // perché il sistema ci è passato, non perché il client se lo ricorda.
-      expect(after.body).toEqual({ mode: 'MANUAL', activeStrategy: 'MINIMUM_ETA' });
+      expect(after.body).toEqual({
+        mode: 'MANUAL',
+        activeStrategy: 'MINIMUM_ETA',
+        trafficLevel: null,
+      });
     });
 
     it('riabilitare Auto rivaluta e risponde con la strategia che ne risulta', async () => {
@@ -303,8 +313,67 @@ describe('[M6] Cancello: ModeController e RebalancingManager', () => {
         .expect(200);
 
       // L'ultimo livello noto è Low, quindi il rientro riporta al default nella stessa risposta:
-      // l'operatore non deve fare una seconda chiamata per sapere che cosa ha provocato.
-      expect(response.body).toEqual({ mode: 'AUTO', activeStrategy: 'NEAREST_AVAILABLE' });
+      // l'operatore non deve fare una seconda chiamata per sapere che cosa ha provocato. E il
+      // livello che ha motivato la rivalutazione viaggia con essa, così la dashboard può mostrare
+      // la causa accanto all'effetto.
+      expect(response.body).toEqual({
+        mode: 'AUTO',
+        activeStrategy: 'NEAREST_AVAILABLE',
+        trafficLevel: 'LOW',
+      });
+    });
+
+    /**
+     * R12 sul percorso pubblico: il livello che ha provocato il cambio arriva alla dashboard.
+     *
+     * Il RASD §2.3 chiede all'operatore «a clear overview of traffic levels» e il valore era
+     * persistito senza uscire da nessuna rotta. Questo caso è la prova che la via di lettura esiste
+     * **dall'HTTP**, non solo dalla porta di dominio.
+     */
+    it('[R12] il livello di traffico osservato arriva sulla rotta del modo', async () => {
+      await mode.onTrafficLevel('HIGH');
+
+      const response = await request(api.getHttpServer())
+        .get(API_ROUTES.mode)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(200);
+
+      // I tre valori insieme: il traffico è intenso, quindi il sistema ha commutato a ETA minimo
+      // restando in Auto. Causa ed effetto nella stessa risposta.
+      expect(response.body).toEqual({
+        mode: 'AUTO',
+        activeStrategy: 'MINIMUM_ETA',
+        trafficLevel: 'HIGH',
+      });
+    });
+
+    /**
+     * Il caso che l'indicatore esiste per rendere visibile (R13, NFR10).
+     *
+     * In Manual le osservazioni continuano a registrarsi ma non commutano niente: la risposta porta
+     * quindi un traffico intenso accanto alla politica scelta a mano, che è un disaccordo **voluto**
+     * e non un difetto. Senza il campo, l'operatore non avrebbe modo di sapere che la condizione per
+     * cui era intervenuto è cambiata.
+     */
+    it('[R13] in Manual il livello resta visibile pur non corrispondendo alla strategia', async () => {
+      await request(api.getHttpServer())
+        .put(API_ROUTES.allocationStrategy)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ strategy: 'NEAREST_AVAILABLE' })
+        .expect(200);
+
+      await mode.onTrafficLevel('HIGH');
+
+      const response = await request(api.getHttpServer())
+        .get(API_ROUTES.mode)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(200);
+
+      expect(response.body).toEqual({
+        mode: 'MANUAL',
+        activeStrategy: 'NEAREST_AVAILABLE',
+        trafficLevel: 'HIGH',
+      });
     });
 
     it('un corpo che chiede il modo Manual viene rifiutato dal contratto', async () => {

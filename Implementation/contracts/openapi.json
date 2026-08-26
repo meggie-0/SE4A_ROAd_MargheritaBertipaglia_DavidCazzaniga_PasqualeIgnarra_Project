@@ -409,7 +409,7 @@
     },
     "/mode": {
       "get": {
-        "description": "NFR10: il modo corrente è sempre visibile sulla dashboard. I due valori vengono dal record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier applicativo rispondono la stessa cosa (NFR3).",
+        "description": "NFR10: il modo corrente è sempre visibile sulla dashboard. I tre valori vengono dal record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier applicativo rispondono la stessa cosa (NFR3). Il livello di traffico esce dalla stessa lettura del modo (decisione D74) ed è `null` finché nessuna osservazione è arrivata.",
         "operationId": "ControlModeController_getMode",
         "parameters": [],
         "responses": {
@@ -435,7 +435,7 @@
             "bearer": []
           }
         ],
-        "summary": "Legge il modo di controllo e la strategia attiva",
+        "summary": "Legge il modo di controllo, la strategia attiva e il livello di traffico",
         "tags": [
           "mode"
         ]
@@ -1149,11 +1149,23 @@
             ],
             "example": "NEAREST_AVAILABLE",
             "description": "La politica attiva dopo l operazione. Compare anche qui perché il pannello di controllo della dashboard mostra i due valori insieme, e perché il rientro in modo Auto può cambiarla subito rivalutando l ultimo livello di traffico noto."
+          },
+          "trafficLevel": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "nullable": true,
+            "example": "LOW",
+            "description": "L ultimo livello di traffico osservato, `null` se nessuna lettura è ancora arrivata. Il RASD §2.3 lo mette fra i bisogni dell operatore accanto al modo operativo. Su Medium il sistema **avvisa e non commuta**: è la banda morta che NFR9 richiede, e la scelta resta all operatore. In modo Manual le letture continuano a registrarsi senza commutare nulla (R13), quindi questo campo può non corrispondere alla strategia attiva."
           }
         },
         "required": [
           "mode",
-          "activeStrategy"
+          "activeStrategy",
+          "trafficLevel"
         ]
       },
       "EnableAutoModeRequestDto": {

@@ -34,11 +34,16 @@ let harness: ApiHarness;
 
 /** La coppia che il pannello di controllo mostra (DD §3.2), letta dalle due porte. */
 async function control(): Promise<{ mode: string; strategy: StrategyName }> {
-  const [mode, strategy] = await Promise.all([
+  const [reading, strategy] = await Promise.all([
     harness.mode.getMode(),
     harness.allocation.getActiveStrategy(),
   ]);
-  return { mode, strategy };
+  return { mode: reading.mode, strategy };
+}
+
+/** L'ultimo livello di traffico noto, che `getMode()` restituisce col modo (decisione D74). */
+async function trafficLevel(): Promise<TrafficLevel | null> {
+  return (await harness.mode.getMode()).lastTrafficLevel;
 }
 
 /** Una sequenza di livelli osservati, nell'ordine. */
@@ -98,6 +103,51 @@ describe('[R12][NFR9] Auto Mode: isteresi sui livelli di traffico', () => {
     // saprebbe che cosa rivalutare, e una replica che non ha gestito la lettura nemmeno.
     const [record] = await harness.persistence.find('system_mode', { limit: 1 });
     expect(record?.lastTrafficLevel).toBe('MEDIUM');
+  });
+});
+
+/**
+ * La **via di lettura** del livello di traffico (RASD §2.3, decisione D74).
+ *
+ * Il caso di sopra verifica che il livello venga *scritto*, interrogando la persistenza. Questi
+ * verificano che si possa *leggere* dal dominio, che è la cosa che mancava: il valore era nel
+ * record e nessuna operazione lo restituiva, quindi la dashboard che il RASD §2.3 descrive — «a
+ * clear overview of traffic levels» — non aveva modo di mostrarlo.
+ */
+describe('[R12] Il livello di traffico è leggibile insieme al modo', () => {
+  it('è nullo finché nessuna osservazione è arrivata', async () => {
+    // Non è `LOW`. Un sistema appena avviato non ha ancora interrogato il servizio di mappe, e i
+    // due casi vanno distinti: è la stessa distinzione su cui si regge la decisione D11, che non
+    // rivaluta nulla quando il livello è nullo.
+    expect(await trafficLevel()).toBeNull();
+  });
+
+  it('restituisce l ultimo livello osservato', async () => {
+    await observe('LOW', 'HIGH');
+    expect(await trafficLevel()).toBe('HIGH');
+  });
+
+  it('esce dalla stessa lettura del modo, quindi i due valori non possono disallinearsi', async () => {
+    await observe('HIGH');
+
+    const reading = await harness.mode.getMode();
+    expect(reading).toEqual({ mode: 'AUTO', lastTrafficLevel: 'HIGH' });
+  });
+
+  it('resta leggibile in modo Manual, dove può non corrispondere alla strategia attiva', async () => {
+    await harness.mode.setManual('NEAREST_AVAILABLE');
+    await observe('HIGH');
+
+    /**
+     * Il caso che rende l'indicatore utile invece che decorativo.
+     *
+     * In Manual le letture continuano a registrarsi (decisione D20) ma non commutano niente (R13),
+     * quindi il sistema alloca col veicolo più vicino mentre il traffico è intenso. È esattamente
+     * la situazione in cui l'operatore deve poter vedere il livello per decidere se il suo
+     * intervento ha ancora senso — e senza questa lettura non potrebbe.
+     */
+    expect(await harness.mode.getMode()).toEqual({ mode: 'MANUAL', lastTrafficLevel: 'HIGH' });
+    expect((await control()).strategy).toBe('NEAREST_AVAILABLE');
   });
 });
 
