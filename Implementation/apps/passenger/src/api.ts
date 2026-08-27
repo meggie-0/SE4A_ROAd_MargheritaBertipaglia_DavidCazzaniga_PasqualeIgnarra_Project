@@ -15,6 +15,8 @@ import {
   type UpdateProfileRequest,
   type UserProfile,
   rideVehicleRoute,
+  passengerBookingsResponseSchema,
+  type PassengerBookingsResponse,
 } from '@road/shared';
 
 import { apiBaseUrl } from './api-base-url';
@@ -74,6 +76,8 @@ export interface RideRequestDraft {
   readonly destination: GeoPoint;
   /** L'orario concordato, in ISO 8601 con fuso: presente solo per una corsa programmata. */
   readonly scheduledPickup?: string;
+  readonly pickupAddress?: string | null;
+  readonly destinationAddress?: string | null;
 }
 
 /**
@@ -90,7 +94,12 @@ export async function requestImmediateRide(
   return apiRequest(apiBaseUrl, API_ROUTES.ridesImmediate, {
     method: 'POST',
     token,
-    body: { pickup: draft.pickup, destination: draft.destination },
+    body: {
+      pickup: draft.pickup,
+      destination: draft.destination,
+      pickupAddress: draft.pickupAddress,
+      destinationAddress: draft.destinationAddress,
+    },
     schema: rideRequestResponseSchema,
   });
 }
@@ -107,8 +116,21 @@ export async function requestAdvanceBooking(
       pickup: draft.pickup,
       destination: draft.destination,
       scheduledPickup: draft.scheduledPickup,
+      pickupAddress: draft.pickupAddress,
+      destinationAddress: draft.destinationAddress,
     },
     schema: rideRequestResponseSchema,
+  });
+}
+
+/**
+ * `GET /rides/bookings` — prenotazioni anticipate non ancora attivate
+ * appartenenti al passeggero autenticato.
+ */
+export async function fetchPassengerBookings(token: string): Promise<PassengerBookingsResponse> {
+  return apiRequest(apiBaseUrl, API_ROUTES.rideBookings, {
+    token,
+    schema: passengerBookingsResponseSchema,
   });
 }
 

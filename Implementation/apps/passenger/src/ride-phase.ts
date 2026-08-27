@@ -45,6 +45,8 @@ export interface RideView {
   readonly etaMinutes: number | null;
   /** L'ultimo messaggio ricevuto dal canale push, già pronto da mostrare. */
   readonly lastMessage: string | null;
+  /** Istante a cui si riferisce l’ultimo ETA ricevuto. */
+  readonly etaUpdatedAt: string | null;
 }
 
 /**
@@ -71,6 +73,7 @@ export function initialView(request: RideRequestResponse): RideView {
     robotaxiId: request.assignedRobotaxiId,
     etaMinutes: null,
     lastMessage: null,
+    etaUpdatedAt: null,
   };
 }
 
@@ -85,12 +88,14 @@ export function initialView(request: RideRequestResponse): RideView {
 export function applyNotification(current: RideView, event: NotificationPush): RideView {
   const phase = phaseOf(event) ?? current.phase;
 
+  const receivedNewEta = phase === 'arriving' && event.etaMinutes !== null;
+
   return {
     phase,
     robotaxiId: event.robotaxiId ?? current.robotaxiId,
-    // L'ETA vale finché il veicolo sta arrivando: mostrarlo ancora a passeggero a bordo direbbe
-    // quanto ci avrebbe messo ad arrivare dove è già.
     etaMinutes: phase === 'arriving' ? (event.etaMinutes ?? current.etaMinutes) : null,
+    etaUpdatedAt:
+      phase === 'arriving' ? (receivedNewEta ? event.occurredAt : current.etaUpdatedAt) : null,
     lastMessage: event.message,
   };
 }

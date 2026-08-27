@@ -310,6 +310,40 @@
         ]
       }
     },
+    "/rides/bookings": {
+      "get": {
+        "description": "Restituisce le prenotazioni anticipate accettate che non sono ancora state annullate o attivate. Ogni passeggero può possedere più prenotazioni contemporaneamente.",
+        "operationId": "RidesController_listBookings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassengerBookingsResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account passeggero."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Elenca le prenotazioni future del passeggero",
+        "tags": [
+          "rides"
+        ]
+      }
+    },
     "/rides/{rideRequestId}/cancel": {
       "post": {
         "description": "R14: la richiesta passa a `CANCELLED`, la riserva viene rilasciata e la finestra torna prenotabile; se un veicolo era già stato assegnato, torna disponibile. Non si può annullare una corsa già cominciata.",
@@ -409,7 +443,7 @@
     },
     "/mode": {
       "get": {
-        "description": "NFR10: il modo corrente è sempre visibile sulla dashboard. I tre valori vengono dal record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier applicativo rispondono la stessa cosa (NFR3). Il livello di traffico esce dalla stessa lettura del modo (decisione D74) ed è `null` finché nessuna osservazione è arrivata.",
+        "description": "NFR10: il modo corrente è sempre visibile sulla dashboard. I tre valori vengono dal record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier applicativo rispondono la stessa cosa (NFR3). Il livello di traffico esce dalla stessa lettura del modo (decisione D75) ed è `null` finché nessuna osservazione è arrivata.",
         "operationId": "ControlModeController_getMode",
         "parameters": [],
         "responses": {
@@ -1082,6 +1116,20 @@
           "pickup",
           "destination",
           "scheduledPickup"
+        ]
+      },
+      "PassengerBookingsResponseDto": {
+        "type": "object",
+        "properties": {
+          "bookings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideRequestResponseDto"
+            }
+          }
+        },
+        "required": [
+          "bookings"
         ]
       },
       "AssignedVehiclePositionDto": {

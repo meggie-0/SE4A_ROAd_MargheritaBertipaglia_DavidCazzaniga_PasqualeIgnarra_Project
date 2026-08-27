@@ -96,6 +96,18 @@ export const rideRequestResponseSchema = z.object({
 export type RideRequestResponse = z.infer<typeof rideRequestResponseSchema>;
 
 /**
+ * `GET /rides/bookings` — prenotazioni anticipate ancora in attesa di attivazione
+ * appartenenti al passeggero autenticato.
+ *
+ * La risposta è racchiusa in un oggetto per permettere di aggiungere in futuro
+ * paginazione o altri metadati senza modificare la forma principale del contratto.
+ */
+export const passengerBookingsResponseSchema = z.object({
+  bookings: z.array(rideRequestResponseSchema),
+});
+
+export type PassengerBookingsResponse = z.infer<typeof passengerBookingsResponseSchema>;
+/**
  * `GET /rides/:rideRequestId/vehicle` — dove si trova il veicolo della propria corsa (M8, R3, R6;
  * decisione D69).
  *

@@ -312,6 +312,34 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.status-route-reference {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 0.9rem;
+  padding: 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+}
+
+.status-route-reference > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.status-route-reference span {
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+}
+
+.status-route-reference strong {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
 .kind {
   border: 1px solid var(--surface-border);
   border-radius: 0.5rem;
@@ -385,7 +413,8 @@ button:disabled {
 }
 
 .progression li.reached {
-  color: var(--ink);
+  color: var(--ok);
+  font-weight: 500;
 }
 
 .progression li.reached::before {
@@ -400,12 +429,6 @@ button:disabled {
 
 .progression li[aria-current='step']::before {
   color: var(--accent);
-}
-
-.last-message {
-  color: var(--ink-muted);
-  font-size: 0.9rem;
-  margin: 0 0 0.75rem;
 }
 
 .muted {
@@ -430,10 +453,52 @@ button:disabled {
   }
 }
 
+.profile-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.profile-panel-heading h2 {
+  margin: 0;
+}
+
+.profile-close-button {
+  grid-column: auto;
+  justify-self: auto;
+  flex: 0 0 2rem;
+}
+
 .profile-panel form {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+.profile-panel .actions {
+  width: 100%;
+}
+
+.profile-panel .actions > button {
+  flex: 1 1 0;
+}
+
+.profile-cancel-button {
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+
+.profile-cancel-button:hover:not(:disabled),
+.profile-cancel-button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.profile-cancel-button:active:not(:disabled) {
+  background: var(--accent-soft);
 }
 
 .status-saved {
@@ -470,7 +535,7 @@ button:disabled {
 /* --- conferma cancellazione --------------------------------------------- */
 
 .confirmation-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 2000;
   display: grid;
@@ -803,6 +868,36 @@ button:disabled {
   box-shadow: var(--dialog-shadow);
 }
 
+@keyframes mobile-menu-enter {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes mobile-menu-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mobile-menu {
+    animation: mobile-menu-enter 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .mobile-menu-backdrop {
+    animation: mobile-menu-backdrop-enter 220ms ease-out;
+  }
+}
+
 .mobile-menu-heading {
   display: flex;
   align-items: center;
@@ -814,21 +909,6 @@ button:disabled {
 .mobile-menu-heading h2 {
   margin: 0;
   font-size: 1.15rem;
-}
-
-.menu-close {
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ink);
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.menu-close:hover:not(:disabled) {
-  background: var(--accent-soft);
 }
 
 .menu-profile-summary {
@@ -895,6 +975,16 @@ button:disabled {
 }
 
 .menu-action--danger {
+  color: var(--error);
+}
+.menu-action--danger:hover:not(:disabled),
+.menu-action--danger:focus-visible {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.menu-action--danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 18%, transparent);
   color: var(--error);
 }
 
@@ -1121,10 +1211,6 @@ button:disabled {
 
 .panel {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.panel.panel--scrolling {
   scrollbar-color: var(--surface-border) transparent;
 }
 
@@ -1139,11 +1225,6 @@ button:disabled {
 
 .panel::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background-color: transparent;
-  transition: background-color 250ms ease;
-}
-
-.panel.panel--scrolling::-webkit-scrollbar-thumb {
   background-color: var(--surface-border);
 }
 
@@ -1166,6 +1247,234 @@ button:disabled {
 .passenger-app--authenticated > .request-panel {
   bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
   padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* --- prenotazioni programmate ------------------------------------------ */
+
+.menu-action-count {
+  min-width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  padding: 0 0.4rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.bookings-panel,
+.booking-success-panel {
+  padding-top: 0.65rem;
+}
+
+.bookings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.bookings-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.bookings-heading p {
+  margin: 0.18rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
+.bookings-close {
+  grid-column: auto;
+  justify-self: auto;
+  flex: 0 0 2rem;
+}
+
+.booking-confirmation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ok);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+  color: var(--ok);
+}
+
+.booking-confirmation span {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.bookings-empty {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px dashed var(--surface-border);
+  border-radius: 0.85rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.bookings-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.booking-card {
+  padding: 0.85rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 1rem;
+  background: var(--surface-elevated);
+}
+
+.booking-card--confirmed {
+  border-color: var(--ok);
+  box-shadow: inset 0 0 0 1px var(--ok);
+}
+
+.booking-card-heading {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.booking-card-heading > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.booking-card-heading span {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+.booking-card-heading strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.booking-calendar {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.booking-calendar svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.booking-route,
+.booking-success-route {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.4rem 0.65rem;
+  margin: 0.75rem 0;
+  font-size: 0.78rem;
+}
+
+.booking-route dt,
+.booking-success-route dt {
+  color: var(--ink-muted);
+}
+
+.booking-route dd,
+.booking-success-route dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.booking-cancel {
+  width: 100%;
+  min-height: 2.5rem;
+}
+
+/* --- conferma della prenotazione --------------------------------------- */
+
+.booking-success-heading {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.booking-success-heading > div {
+  min-width: 0;
+}
+
+.booking-success-heading span {
+  color: var(--ok);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.booking-success-heading h2 {
+  margin: 0.08rem 0 0;
+  font-size: 1.15rem;
+}
+
+.booking-success-icon {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ok);
+  border-radius: 50%;
+  background: var(--surface-elevated);
+  color: var(--ok);
+  font-size: 1.4rem !important;
+}
+
+.booking-success-time {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.85rem;
+  background: var(--surface-elevated);
+}
+
+.booking-success-time span {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+.booking-success-time strong {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.booking-success-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.booking-success-secondary {
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 0.85rem;
 }
 
 /* --- selezione del percorso -------------------------------------------- */
@@ -1425,4 +1734,614 @@ div.route-search-preview--expanded:focus-within {
 :root[data-theme='dark'] .service-area-boundary {
   stroke: #a99cff;
   filter: drop-shadow(0 0 4px rgb(169 156 255 / 55%));
+}
+
+/* --- ricerca indirizzi ------------------------------------------------- */
+
+.route-address-field {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.3rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  background: var(--surface-elevated);
+}
+
+.route-address-field--active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.route-address-copy {
+  min-width: 0;
+  gap: 0.05rem;
+}
+
+.route-address-copy small {
+  color: var(--ink-muted);
+  font-size: 0.68rem;
+}
+
+.route-address-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.route-address-input:focus-visible {
+  outline: none;
+}
+
+.route-address-input::placeholder {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.address-search-status,
+.address-search-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.76rem;
+}
+
+.address-search-status {
+  color: var(--ink-muted);
+}
+
+.address-search-error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.address-suggestions {
+  max-height: 10rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+}
+
+.address-suggestions li + li {
+  border-top: 1px solid var(--surface-border);
+}
+
+.address-suggestion {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.7rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.address-suggestion:hover:not(:disabled),
+.address-suggestion:focus-visible {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.address-suggestion-icon {
+  color: var(--accent);
+  font-size: 0.55rem;
+}
+
+.address-search-attribution {
+  margin: 0.45rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.62rem;
+  text-align: right;
+}
+
+.current-location-option .route-point-marker {
+  flex: 0 0 auto;
+}
+
+.current-location-option:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.current-location-button:hover,
+.current-location-button:focus-visible {
+  background: var(--accent-soft);
+}
+
+.current-location-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.current-location-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+@keyframes request-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(100% + 1.5rem));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.passenger-app--authenticated > .request-panel,
+.passenger-app--authenticated > .profile-panel,
+.passenger-app--authenticated > .bookings-panel {
+  animation: request-panel-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .passenger-app--authenticated > .request-panel,
+  .passenger-app--authenticated > .profile-panel,
+  .passenger-app--authenticated > .bookings-panel {
+    animation: none;
+  }
+}
+
+/* Il pannello aperto contiene direttamente freccia e campi. */
+.mobile-topbar--expanded .mobile-topbar-row {
+  display: none;
+}
+
+.mobile-topbar--expanded .route-search-dropdown {
+  margin-top: 0;
+  border: 1px solid var(--floating-border);
+  border-radius: 1rem;
+}
+
+.route-search-dropdown .route-point-selector {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.55rem;
+  row-gap: 0.45rem;
+}
+
+.route-picker-back-button {
+  grid-column: 1;
+  grid-row: 1;
+  position: static;
+  inset: auto;
+  transform: none;
+  margin: 0;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  align-self: center;
+  justify-self: center;
+}
+
+.route-address-field--pickup {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.route-address-field--destination {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.route-address-field {
+  grid-template-columns: 1.15rem minmax(0, 1fr) 2rem;
+}
+
+.route-point-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: grid;
+  place-items: center;
+}
+
+.route-point-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.route-point-icon--pickup {
+  color: var(--road-blue);
+}
+
+.route-point-icon--destination {
+  color: var(--road-blue);
+}
+
+.route-map-icon {
+  border: 0;
+  background: transparent;
+  color: var(--road-blue);
+  filter: drop-shadow(0 2px 2px rgb(15 23 42 / 35%));
+}
+
+.route-map-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+:root[data-theme='dark'] .route-map-icon {
+  color: var(--road-deep-blue);
+}
+
+.service-zone-map-icon {
+  display: grid;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--road-blue);
+  box-shadow: 0 2px 7px rgb(6 19 40 / 35%);
+}
+
+.service-zone-map-symbol {
+  width: 1.05rem;
+  height: 1.05rem;
+  display: block;
+  background: white;
+  -webkit-mask: var(--zone-icon) center / contain no-repeat;
+  mask: var(--zone-icon) center / contain no-repeat;
+}
+
+.ride-map .service-zone-tooltip {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--floating-border);
+  border-radius: 0.65rem;
+  background: var(--floating-surface);
+  color: var(--ink);
+  box-shadow: var(--panel-shadow);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+:root[data-theme='dark'] .service-zone-map-icon {
+  border-color: var(--road-purple);
+  background: var(--road-deep-blue);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 55%);
+}
+
+:root[data-theme='dark'] .service-zone-map-symbol {
+  background: white;
+}
+
+/* Regolazioni specifiche per l’aereo di Linate */
+.service-zone-map-symbol--linate {
+  width: 0.9rem;
+  height: 0.9rem;
+
+  /* orizzontale, verticale */
+  transform: translate(0, 1px);
+}
+
+.route-clear-button {
+  grid-column: 3;
+  width: 2rem;
+  height: 2rem;
+  flex-basis: 2rem;
+  justify-self: end;
+  color: var(--ink-muted);
+}
+
+/* Nasconde la X nativa di Chrome ed Edge. */
+.route-address-input::-webkit-search-cancel-button {
+  appearance: none;
+  display: none;
+}
+
+.address-suggestions {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-border) transparent;
+}
+
+.address-suggestions::-webkit-scrollbar {
+  width: 3px;
+}
+
+.address-suggestions::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.address-suggestions::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: var(--surface-border);
+}
+
+.address-suggestions::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.route-point-error {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, transparent);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+  color: var(--error);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.route-point-error + .route-point-error {
+  margin-top: 0.35rem;
+}
+
+.route-point-warning {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--road-blue) 40%, transparent);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--road-blue) 9%, transparent);
+  color: var(--road-blue);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.robotaxi-map-icon {
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--road-blue);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--road-blue);
+  box-shadow: 0 2px 5px rgb(6 19 40 / 35%);
+}
+
+.robotaxi-map-symbol {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.mobile-schedule {
+  margin-top: 0.8rem;
+  margin-bottom: 0;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--surface-border));
+  border-radius: 0.9rem;
+  background: var(--surface-elevated);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mobile-schedule input {
+  width: 100%;
+  min-height: 2.8rem;
+  margin-top: 0.25rem;
+  padding: 0.6rem 0.7rem;
+  border-color: var(--surface-border);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.mobile-schedule input:hover {
+  border-color: var(--accent);
+}
+
+:root[data-theme='light'] .mobile-schedule input {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] .mobile-schedule input {
+  color-scheme: dark;
+}
+
+.schedule-input-shell {
+  position: relative;
+  display: block;
+  width: 100%;
+  color: var(--accent);
+}
+
+.schedule-input-shell input {
+  padding-right: 3rem;
+}
+
+.schedule-input-shell input {
+  position: relative;
+  padding-right: 3rem;
+}
+
+.schedule-input-shell input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 3rem;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.schedule-calendar-icon {
+  position: absolute;
+  top: 50%;
+  right: 0.85rem;
+  z-index: 1;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--accent);
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: color 150ms ease;
+}
+
+.schedule-input-shell:hover .schedule-calendar-icon {
+  color: var(--accent-hover);
+}
+
+.schedule-input-shell:focus-within .schedule-calendar-icon {
+  color: var(--accent);
+}
+
+/* Pin e bandiera nei campi Partenza e Destinazione. */
+:root[data-theme='dark'] .route-point-icon--pickup,
+:root[data-theme='dark'] .route-point-icon--destination {
+  color: var(--accent);
+}
+
+.mobile-schedule input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Pallino di “Usa la mia posizione”. */
+:root[data-theme='dark'] .current-location-option .route-point-marker--pickup {
+  background: var(--accent);
+}
+
+/* Sagoma del taxi dentro il cerchio. */
+:root[data-theme='dark'] .robotaxi-map-icon {
+  color: var(--accent);
+}
+
+:root[data-theme='dark'] .route-back-button:hover:not(:disabled),
+:root[data-theme='dark'] .route-back-button:focus-visible {
+  border-color: var(--road-purple);
+  background: color-mix(in srgb, var(--road-purple) 20%, transparent);
+  color: var(--road-purple);
+}
+
+:root[data-theme='dark'] .route-back-button:focus-visible {
+  outline-color: var(--road-purple);
+}
+
+/* --- Restyling schermata di accesso ---------------------------------- */
+
+.passenger-app--guest .guest-header {
+  display: flex;
+  justify-content: center;
+  min-height: 8.5rem;
+  padding-top: 1rem;
+}
+
+.passenger-app--guest .guest-header .brand-lockup {
+  display: flex;
+  align-items: center;
+}
+
+.passenger-app--guest .guest-header .brand-logo-frame {
+  width: 13rem;
+}
+
+.passenger-app--guest .login-panel {
+  width: 100%;
+  margin: auto 0;
+  border: 1.5px solid var(--road-purple);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgb(86 61 230 / 8%),
+    var(--panel-shadow);
+}
+
+.passenger-app--guest .login-panel input {
+  min-height: 2.75rem;
+  background: var(--surface-elevated);
+  border-color: color-mix(in srgb, var(--road-purple) 35%, var(--surface-border));
+}
+
+.passenger-app--guest .login-panel input:focus-visible {
+  border-color: var(--road-purple);
+  outline-color: var(--road-purple);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .passenger-app--guest .guest-header {
+    animation: guest-logo-enter 360ms ease-out both;
+  }
+
+  .passenger-app--guest .login-panel {
+    animation: guest-panel-enter 420ms 60ms ease-out both;
+  }
+
+  @keyframes guest-logo-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-0.5rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes guest-panel-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+.passenger-app--guest .login-heading {
+  margin: 0 0 1.15rem;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.passenger-app--guest .login-panel form {
+  gap: 0.85rem;
+}
+
+.passenger-app--guest .login-panel label {
+  gap: 0.35rem;
+}
+
+.passenger-app--guest .login-panel input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+}
+
+.passenger-app--guest .login-panel button[type='submit'] {
+  min-height: 2.75rem;
+  margin-top: 0.1rem;
+}
+
+.passenger-app--guest .login-panel .link-button {
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.25rem 0;
+  text-align: left;
+}
+
+.passenger-app--guest .guest-header .brand-lockup {
+  transform: translate(-0.55rem, 1rem);
+}
+
+.passenger-app--guest .guest-header .brand-logo-frame {
+  width: 18rem;
 }

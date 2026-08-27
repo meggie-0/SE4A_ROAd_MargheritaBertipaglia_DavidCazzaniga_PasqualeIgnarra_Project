@@ -29,7 +29,7 @@ import { trafficAppearance, trafficExplanation } from '../traffic-levels';
  * già mostra. Accostati, i due valori spiegano il comportamento del sistema invece di limitarsi a
  * riportarlo: l'operatore legge «traffico alto» sopra «ETA minimo» e vede la causa accanto
  * all'effetto. Separati, dovrebbe ricostruire il nesso da sé. Arrivano inoltre dalla stessa risposta
- * (`GET /mode`, decisione D74), quindi non c'è nemmeno un istante in cui l'uno è più fresco
+ * (`GET /mode`, decisione D75), quindi non c'è nemmeno un istante in cui l'uno è più fresco
  * dell'altro.
  */
 
@@ -118,7 +118,7 @@ export function StrategyPanel(props: StrategyPanelProps): React.JSX.Element {
 
       <button
         type="button"
-        className="link-button"
+        className="link-button strategy-auto-button"
         data-testid="enable-auto"
         disabled={busy || mode === 'AUTO'}
         onClick={props.onEnableAuto}

@@ -23,6 +23,7 @@ import {
   maintenanceStartedResponseSchema,
   rideVehicleRoute,
   modeResponseSchema,
+  passengerBookingsResponseSchema,
   ROBOTAXI_STATES,
   type UserRole,
 } from '@road/shared';
@@ -272,6 +273,7 @@ describe('[M8] Cancello: i due client', () => {
       [API_ROUTES.authLogin, 'post'],
       [API_ROUTES.ridesImmediate, 'post'],
       [API_ROUTES.ridesAdvance, 'post'],
+      [API_ROUTES.rideBookings, 'get'],
       [API_ROUTES.rideCancel, 'post'],
       [API_ROUTES.rideVehicle, 'get'],
       [API_ROUTES.authProfile, 'patch'],
@@ -433,6 +435,104 @@ describe('[M8] Cancello: i due client', () => {
         .post(maintenanceStartRoute('rt-01'))
         .send({ reason: 'Controllo sensori' })
         .expect(401);
+    });
+  });
+
+  describe('[R4][G3] GET /rides/bookings: prenotazioni del passeggero', () => {
+    async function createBooking(
+      token: string,
+      hoursFromNow: number,
+    ): Promise<{ id: string; scheduledPickup: string | null }> {
+      const scheduledPickup = new Date(NOW.getTime() + hoursFromNow * 60 * 60 * 1000).toISOString();
+
+      const response = await request(api.getHttpServer())
+        .post(API_ROUTES.ridesAdvance)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          pickup: {
+            lat: 45.4642,
+            lon: 9.19,
+          },
+          pickupAddress: 'Piazza del Duomo, Milano',
+          destination: {
+            lat: 45.4863,
+            lon: 9.205,
+          },
+          destinationAddress: 'Stazione Centrale, Milano',
+          scheduledPickup,
+        })
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        kind: 'ADVANCE',
+        status: 'ACCEPTED',
+        scheduledPickup,
+      });
+
+      return response.body as {
+        id: string;
+        scheduledPickup: string | null;
+      };
+    }
+
+    it('restituisce solamente le prenotazioni del passeggero, ordinate per orario', async () => {
+      /*
+       * Si crea prima quella più lontana, così l'ordine della risposta
+       * non può coincidere accidentalmente con quello di creazione.
+       */
+      const later = await createBooking(passengerToken, 8);
+      const earlier = await createBooking(passengerToken, 2);
+
+      const anotherPassenger = {
+        ...PASSEGGERA,
+        email: 'altra.passeggera@example.com',
+        name: 'Alessia',
+      };
+
+      await harness.auth.register(anotherPassenger);
+      const anotherPassengerToken = await signIn(anotherPassenger);
+
+      await createBooking(anotherPassengerToken, 5);
+
+      const response = await request(api.getHttpServer())
+        .get(API_ROUTES.rideBookings)
+        .set('Authorization', `Bearer ${passengerToken}`)
+        .expect(200);
+
+      const parsed = passengerBookingsResponseSchema.safeParse(response.body);
+
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) return;
+
+      expect(parsed.data.bookings.map((booking) => booking.id)).toEqual([earlier.id, later.id]);
+
+      expect(parsed.data.bookings.map((booking) => booking.scheduledPickup)).toEqual([
+        earlier.scheduledPickup,
+        later.scheduledPickup,
+      ]);
+
+      expect(parsed.data.bookings[0]?.pickupAddress).toBe('Piazza del Duomo, Milano');
+      expect(parsed.data.bookings[0]?.destinationAddress).toBe('Stazione Centrale, Milano');
+    });
+
+    it('restituisce un elenco vuoto quando il passeggero non ha prenotazioni', async () => {
+      const response = await request(api.getHttpServer())
+        .get(API_ROUTES.rideBookings)
+        .set('Authorization', `Bearer ${passengerToken}`)
+        .expect(200);
+
+      expect(response.body).toEqual({
+        bookings: [],
+      });
+    });
+
+    it('è riservato ai passeggeri autenticati', async () => {
+      await request(api.getHttpServer())
+        .get(API_ROUTES.rideBookings)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .expect(403);
+
+      await request(api.getHttpServer()).get(API_ROUTES.rideBookings).expect(401);
     });
   });
 

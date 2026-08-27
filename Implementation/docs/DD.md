@@ -131,7 +131,9 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.5 | August 12, 2026 | **[v1.5]** Decisions taken while connecting the real external providers and the fleet simulator (M7), the ordering rule between fleet commands and lifecycle transitions that a design review made explicit (D65), the numeric ETA that D46 had deferred to this milestone (D66), and the completion of R14: `commandRoute()` now exists, so transitions 12 and 13 close the gap that v1.2 had documented and left open — cancellation is legal until the passenger boards. Also: the two `FleetMonitor` operations that telemetry makes possible (transition 9 had no trigger at all), the fourth port of `rides` that reads telemetry, the second port of `external` that advances the simulated world, and `getDemandData()` staying out of the port for the reason D47 gave rather than for the milestone it named. See decisions D59–D66 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.6 | August 13, 2026 | **[v1.6]** Decisions taken while building the two clients (M8): the fleet overview endpoint the operator dashboard needs — the arc Figure 2.1 drew and no route realised — the passenger session kept in the browser, without which the interaction budget of NFR6 is unreachable, the position of the assigned vehicle shown to the passenger without letting a polled route carry the state that NFR2 reserves to the push channel, and the operator's own profile, which R2 grants to users and no screen offered. See decisions D67–D70 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.7 | August 13, 2026 | **[v1.7]** Decisions taken while writing the system tests and the demo dataset (M9): the passenger's map keeps the vehicle marker for the whole ride and turns the segment towards the destination once the passenger boards, and the cadence at which positions are produced and read becomes one shared constant of half a second instead of two numbers that could drift apart (D71). Both are defects that only show on screen — a map that empties at the moment the ride starts, and a vehicle that jumps rather than moves. The faster cadence also forced the amendment of D63: the wait at the pickup point is now **ten seconds** rather than "the next telemetry cycle", because a cycle and the time a person takes to board are not the same quantity, and tying them made `arrived` last half a second. Two more decisions belong to the same release and were taken by the team when the review surfaced them: the periodic work runs on a **single instance**, which is what NFR3 never said either way (D72), and the seed is **recalibrated** — 64 vehicles, demand brought to the scale of the fleet, and zones deliberately far apart — because with twenty vehicles and city-scale demand no zone ever had a vehicle to spare, so R11 could not fire in the running system at all between 07:00 and 23:00 (D73). See decisions D63, D71, D72 and D73 in [Appendice A](#appendice-a--registro-delle-decisioni). |
-| 1.8 | August 24, 2026 | **[v1.8]** One decision, taken when a review of the requirement coverage found a value that the system computed, persisted and never showed. RASD §2.3 lists «a clear overview of traffic levels» among what the operator needs, and `ModeController` writes the observed level on every reading (D20) — but no operation returned it, so it reached the database and never the screen. R12 was covered on the switching side and absent on the *visibility* side, which no test caught because no test looked at what the dashboard displays. `getMode()` now returns the mode **and** the last known traffic level, and the strategy panel shows it next to the strategy it explains. See decision D74 in [Appendice A](#appendice-a--registro-delle-decisioni). |
+| 1.8 | August 22, 2026 | **[v1.8]** Corrective design decision after live validation of fleet rebalancing: the ten-minute cycle remains responsible for demand analysis and the dispatch of new repositionings, while completion of vehicles that have reached their target is checked independently at the shared fleet-telemetry cadence. Transition 9 now also updates the robotaxi `zoneId` to the persisted target zone together with `REBALANCING → AVAILABLE`. Decision D74 supersedes only the trigger timing introduced by D60, while preserving the ownership boundaries and the State pattern. |
+| 1.9 | August 27, 2026 | **[v1.9]** No design decision: a declaration of something the document did not say. Section 3.1 presented the passenger app as a consumer of the system's public contract alone, while the client in fact contacts **two external providers on its own** — a geocoding provider for addresses, and a public demonstration instance of OSRM for snapping a tapped point to a road — and **neither has a fallback**, so either one being unavailable makes R3 unreachable. Recorded as a declared limitation of the prototype, alongside the simulated demand data and the hourly traffic model, and deliberately contrasted with the backend, where `OsrmRouteGateway` does degrade and the M7 gate proves it. No entry in [Appendice A](#appendice-a--registro-delle-decisioni): nothing was decided here, and hardening the client remains open work. |
+| 1.10 | August 28, 2026 | **[v1.10]** One decision, taken when a review of the requirement coverage found a value that the system computed, persisted and never showed. RASD §2.3 lists «a clear overview of traffic levels» among what the operator needs, and `ModeController` writes the observed level on every reading (D20) — but no operation returned it, so it reached the database and never the screen. R12 was covered on the switching side and absent on the *visibility* side, which no test caught because no test looked at what the dashboard displays. `getMode()` now returns the mode **and** the last known traffic level, and the strategy panel shows it next to the strategy it explains. See decision D75 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 
 ## 1.4 Document Structure
 
@@ -325,19 +327,32 @@ The main components and the operations they export are:
 - **FleetMonitor**: `getCandidates()`, `getBookableRobotaxis()` **[v1.2]**,
   `getAvailableRobotaxis()`, `getFleetStatus()`, `assign()`,
   `startPickupNavigation()`, `pickupReached()`, `startRide()`, `completeRide()` **[v1.3]**,
-  `releaseAssignment()` **[v1.2]**, `requestRebalancing()`. The four operations added in v1.3 are
+  `releaseAssignment()` **[v1.2]**, `requestRebalancing()`,
+`completeRebalancing()` **[v1.5]**, `recordPositions()` **[v1.5]**.
+  **[v1.8]** `completeRebalancing(robotaxiId, targetZoneId)` drives transition 9 and
+updates the persisted `zoneId` to the target zone in the same robotaxi update that changes
+`REBALANCING` to `AVAILABLE`. `recordPositions()` remains responsible for storing the coordinates
+observed through fleet telemetry. Both operations stay in `FleetMonitor` because the robotaxi row
+and its lifecycle state belong to this component (decisions D28, D61 and D74).
+  The four operations added in v1.3 are
   transitions 4-7 of Figure 2.10, which the figure defined from v1.0 and no component operation could
   trigger (decision D37). Keeps the real-time picture of every
   robotaxi (position, state) and coordinates vehicle lifecycle updates (R7, G6, G8). Each Robotaxi
   manages its own lifecycle through the State pattern. `releaseAssignment()` drives transition 11 and
   is what makes R14 realisable: `RideRequestManager` owns the cancellation, but the state column is
   written only here (decision D28).
-- **RebalancingManager**: `analyzeDemand()`, `rebalance()`. Identifies high-demand zones and
-  repositions available robotaxis (R10, R11, G9). **[v1.4]** It owns the `rebalancing_action` table,
-  which records where each vehicle was sent — the target zone is neither a column of `robotaxi` nor
-  an argument of `requestRebalancing()`, so without it the destination would be written nowhere. Its
-  arc to `IExternalServices` is not yet realised: in this prototype the demand source is the
+
+- **RebalancingManager**: `analyzeDemand()`, `rebalance()`,
+  `completeArrivedRebalancing()` **[v1.8]**. Identifies high-demand zones and repositions available
+  robotaxis (R10, R11, G9). **[v1.4]** It owns the `rebalancing_action` table, which records where
+  each vehicle was sent. Its demand source in this prototype is the
   `demand_sample` / `demand_event` pair, read through `IPersistenceService` (decision D47).
+  **[v1.8]** Demand planning and vehicle-arrival completion are deliberately separate:
+  `rebalance()` decides new repositionings on the ten-minute planning cycle, while
+  `completeArrivedRebalancing()` reads fleet telemetry, matches an arrived vehicle with its
+  `TRIGGERED` rebalancing action and asks `FleetMonitor` to perform transition 9. The target zone
+  stored in `rebalancing_action` is passed to `FleetMonitor`, so an arrived vehicle becomes
+  `AVAILABLE` in the zone it has actually been repositioned to (decision D74).
   **[v1.5]** M7 adds the two operations that telemetry makes possible: `completeRebalancing()`,
   transition 9 of Figure 2.10, which until then no component could trigger because its guard
   `hasReachedTargetArea()` depends on where the vehicle actually is (decision D60); and
@@ -395,13 +410,13 @@ signatures are more precise than in v1.0:
   and by R8.
 - `ModeController.getMode(): Mode` — added, because NFR10 requires the current control mode to be
   always visible on the dashboard (Section 3.2), which needs a read path.
-- **[v1.8]** `ModeController.getMode(): ModeReading` — widened to return the mode **and** the last
+- **[v1.10]** `ModeController.getMode(): ModeReading` — widened to return the mode **and** the last
   observed traffic level, nullable. The same argument that added this reader applies to the level:
   RASD §2.3 asks for «a clear overview of traffic levels», `onTrafficLevel()` persists it on every
   reading (decision D20), and no operation returned it — so it needed a read path too. It travels
   with the mode rather than through a fifth operation because the two are columns of the **same**
   record and this component owns both, which keeps the port at four operations and makes one read
-  return a pair that cannot be out of step (decision D74).
+  return a pair that cannot be out of step (decision D75).
 
 `RebalancingManager.analyzeDemand()` is exported **without arguments**: the
 `analyzeDemand(demandData, trafficData, fleetStatus)` message in Figure 2.7 is a self-call, and the
@@ -476,9 +491,16 @@ tests:
 
 | Driver | Component | Drives |
 |---|---|---|
-| `RebalancingScheduler.runOnce()` | RebalancingManager | the cycle of Figure 2.7 |
+| `RebalancingScheduler.runOnce()` | RebalancingManager | demand analysis and dispatch of new repositionings every ten minutes (Figure 2.7) |
+| `RebalancingScheduler.completeArrivedVehicles()` | RebalancingManager | `completeArrivedRebalancing()` at `FLEET_POSITION_REFRESH_MS`, closing repositionings as soon as fleet telemetry reports arrival |
 | `TrafficMonitor.runOnce()` | ModeController | reads `getTraffic()` and calls `onTrafficLevel()` (Figure 2.6) |
 | `AdvanceBookingActivator.runOnce()` | RideRequestManager | activates due bookings (see §2.4) |
+**[v1.8]** The two rebalancing activities have deliberately different cadences. Ten minutes is the
+planning horizon used to decide whether the expected-demand distribution justifies moving new
+vehicles; it is not part of the robotaxi lifecycle. Completion is therefore driven by the same
+shared cadence at which fleet telemetry is produced. No timer enters the business logic:
+the production scheduler invokes the public port operation, while tests call
+`RebalancingPort.completeArrivedRebalancing()` directly (decision D74).
 
 **Validation and the published contract.** Request and response shapes are declared once as schemas
 shared by backend and clients, and the REST contract published by the API Gateway is generated from
@@ -563,8 +585,8 @@ class ModeController {
     + getMode(): ModeReading
 }
 
-' **[v1.8]** Il valore che `getMode()` restituisce: il modo e l'ultimo livello
-' noto, nullo finché nessuna osservazione è arrivata (decisione D74).
+' **[v1.10]** Il valore che `getMode()` restituisce: il modo e l'ultimo livello
+' noto, nullo finché nessuna osservazione è arrivata (decisione D75).
 class ModeReading <<record>> {
     + mode: Mode
     + lastTrafficLevel: TrafficLevel [0..1]
@@ -961,12 +983,16 @@ for the shape of the flow; three messages differ from what M7 realises, and the 
 document applies to Figure 2.10 — where the transition table is kept row by row — requires saying so
 here rather than leaving the reader to find out from the code:
 
-- the cycle **begins** by reading `readTelemetry()` and closing the repositionings that have arrived
-  (transition 9), because a vehicle that has reached its target zone must count as coverage of that
-  zone in the same cycle, not in the next one (decision D60). A vehicle whose repositioning was
-  interrupted by a ride (transition 10) has its `rebalancing_action` closed as `CANCELLED`: the
-  figure has no branch for it, and leaving the row `TRIGGERED` would describe a movement that is not
-  happening and that no later cycle could ever close;
+- **[v1.8] completion of an already dispatched repositioning is independent of this ten-minute
+  cycle.** `RebalancingScheduler.completeArrivedVehicles()` invokes
+  `completeArrivedRebalancing()` at `FLEET_POSITION_REFRESH_MS`. The operation reads telemetry and,
+  for every robotaxi whose `hasArrived` flag is true and whose `rebalancing_action` is still
+  `TRIGGERED`, records the final observed position and asks
+  `FleetMonitor.completeRebalancing(robotaxiId, targetZoneId)` to perform transition 9. The
+  robotaxi therefore becomes `AVAILABLE` without waiting for the next demand-planning cycle and its
+  `zoneId` is updated to the target zone. A repositioning interrupted by a ride remains closed as
+  `CANCELLED`, since leaving its action `TRIGGERED` would describe a movement that is no longer
+  taking place;
 - `getDemandData()` is **not** called: the demand source is `demand_sample` / `demand_event`, read
   through `IPersistenceService` (decisions D47 and D62);
 - `getTraffic()` is **not** called either. The figure feeds it into `analyzeDemand()`, but decision
@@ -1405,6 +1431,28 @@ what R6 promises and it travels on the push channel; letting a polled route carr
 give the client a second way of learning the same fact, and the property NFR2 asks for — that a
 state change reaches a connected client without the client asking — would stop being observable.
 
+**[v1.9] Two external providers the client contacts on its own, and neither has a fallback.** This
+section described the passenger app as a consumer of the system's public HTTP contract and nothing
+else. That is not the whole truth, and the omission is recorded here rather than left to be
+discovered from the code:
+
+- **address search and reverse geocoding** are served by a third-party geocoding provider, reached
+  directly from the browser with an API key supplied as a build-time variable. It turns a tapped map
+  point into a street address and decides whether that point lies inside the Comune di Milano;
+- **snapping a tapped point to the nearest drivable road** is served by a **public demonstration
+  instance** of OSRM, reached without credentials and subject to its rate limits.
+
+Neither degrades. If the geocoder is unavailable the pickup point cannot be selected at all, so R3
+becomes unreachable for a reason no requirement admits; if the OSRM instance is unavailable the same
+happens one step earlier. This is a **declared limitation of the prototype**, in the same sense as
+the simulated demand data and the hourly traffic model: the system is a course prototype and its
+external dependencies are stated rather than hardened. It is worth contrasting with the backend,
+which does the opposite — `OsrmRouteGateway` falls back to a straight-line estimate when its provider
+does not answer, and the M7 gate verifies it by shutting the provider down — so the asymmetry between
+the two sides is known and deliberate, not an oversight. Giving the client the same treatment is
+recorded work, not a design question: what it would degrade to is the zone of decision D10, which
+`packages/shared` already computes.
+
 **[v1.1] Delivery form.** The passenger app is delivered as a **responsive progressive web
 application** rather than a native mobile build. Nothing in the RASD or in this document depends on
 a native runtime — R3, R4, R6 and NFR6 constrain the interaction, not the packaging — and a web
@@ -1426,7 +1474,7 @@ system to Manual mode), and an alerts panel that surfaces automatic strategy swi
 rebalancing suggestions. A status bar summarises the fleet by state. The Auto/Manual toggle makes
 the current control mode always visible (NFR10).
 
-**[v1.8] Traffic level.** The strategy panel also shows the **last observed traffic level** — a
+**[v1.10] Traffic level.** The strategy panel also shows the **last observed traffic level** — a
 coloured badge with its label, and a line of prose saying what the system is doing with it. RASD §2.3
 asks for «a clear overview of traffic levels» among what the operator needs, and until v1.8 the value
 was observed and persisted (D20) without any read path: it reached the database and never the screen.
@@ -1623,7 +1671,7 @@ correspond to defects.
 
 Questa appendice raccoglie tutte le differenze fra il PDF v1.0 e questo documento: D1–D26 sono di
 v1.1, D27–D33 di v1.2, D34–D46 di v1.3, D47–D58 di v1.4, D59–D66 di v1.5, D67–D70 di v1.6,
-D71–D73 di v1.7 e D74 di v1.8.
+D71–D73 di v1.7, D74 di v1.8 e D75 di v1.10.
 Serve a due cose:
 rigenerare il PDF a fine progetto senza rileggere il diff, e permettere a chi rivede il codice di
 capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove, e per quale ragione.
@@ -1690,7 +1738,8 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 | D58 | `Zone.demandLevel` e l'enum `DemandLevel` del RASD non sono realizzati | RASD §2.2.3, Fig. 2.2 | Il RASD attribuisce a `Zone` un livello di domanda discreto (`LOW`, `MEDIUM`, `HIGH`). La decisione D12 lo sostituisce con una domanda attesa **continua**, calcolata a ogni analisi da base storica e moltiplicatori: una colonna con tre valori sarebbe una discretizzazione di quel numero, e per di più persistita — cioè una seconda verità da riscrivere a ogni cambio di fascia oraria e a ogni evento che comincia o finisce. `analyzeDemand()` restituisce il numero e l'ordinamento, che è ciò di cui R10 e R11 hanno bisogno; se la dashboard vorrà tre colori userà tre soglie sue |
 
 | D59 | **Transizioni 12 e 13**: `cancelRide()` è legale anche da `ARRIVING` e da `ARRIVED`, e chi annulla **revoca la rotta prima** di chiedere la transizione | §2.6.3, Fig. 2.10; RASD R14 | La D27 aveva limitato l'annullamento ad `ASSIGNED` per una ragione dichiaratamente temporanea: fermare un veicolo in movimento richiede `commandRoute()`, che non esisteva. Con M7 esiste, quindi la limitazione cade e il confine torna dove R14 lo mette — «before the ride begins», e la corsa comincia quando il passeggero sale (RASD §1.2.2), non quando il veicolo parte. Da `IN_RIDE` l'annullamento resta rifiutato, ed è l'unico rifiuto che sopravvive. L'ordine fra revoca e transizione non è un dettaglio di implementazione: senza, un veicolo verrebbe dichiarato disponibile — quindi assegnabile a un altro passeggero — mentre continua a percorrere la rotta di una corsa annullata |
-| D60 | `FleetMonitor` espone la **transizione 9**, `completeRebalancing(robotaxiID)`, e a innescarla è il `RebalancingManager` all'inizio del proprio ciclo | §2.2, §2.6.3, Fig. 2.10 | La transizione è nella figura dal v1.0 e `RebalancingState` la implementa dal M2, ma **nessuna operazione di componente la provocava**: la sua guardia `hasReachedTargetArea()` dipende da dove il veicolo si trova davvero, e la telemetria nasce con M7. L'effetto era che un veicolo mandato a riposizionarsi restava in `REBALANCING` finché una corsa non lo interrompeva — allocabile, ma mai più contato fra gli inattivi e quindi mai più spostabile. È la stessa lacuna che la D37 aveva colmato per le transizioni 4-7, lasciata aperta sulla 9 perché allora nessuno sapeva dire *quando*. A chiudere è chi ha mandato il veicolo: è lui a sapere dove doveva arrivare, ed è sua la riga di `rebalancing_action` che passa a `COMPLETED` |
+| D60 | `FleetMonitor` espone la **transizione 9**, `completeRebalancing(robotaxiID)`, e a innescarla è il `RebalancingManager` all'inizio del proprio ciclo | §2.2, §2.6.3, Fig. 2.10 | La transizione è nella figura dal v1.0 e `RebalancingState` la implementa dal M2, ma **nessuna operazione di componente la provocava**: la sua guardia `hasReachedTargetArea()` dipende da dove il veicolo si trova davvero, e la telemetria nasce con M7. L'effetto era che un veicolo mandato a riposizionarsi restava in `REBALANCING` finché una corsa non lo interrompeva — allocabile, ma mai più contato fra gli inattivi e quindi mai più spostabile. È la stessa lacuna che la D37 aveva colmato per le transizioni 4-7, lasciata aperta sulla 9 perché allora nessuno sapeva dire *quando*. A chiudere è chi ha mandato il veicolo: è lui a sapere dove doveva arrivare, ed è sua la riga di `rebalancing_action` che passa a `COMPLETED` |.**[v1.8]** La decisione D74 sostituisce il solo momento di innesco della transizione:
+il completamento non attende più l'inizio del successivo ciclo decennale.
 | D61 | `rides` espone una **quarta porta**, `FleetTelemetryPort.runOnce()`, che legge la telemetria, consegna le posizioni a `FleetMonitor.recordPositions()` e innesca le transizioni 4-7 | §2.2, §2.2.1; decisione D37 | La D37 scriveva che «da M7 le transizioni le innescherà la telemetria del simulatore» senza dire quale componente la legge. Sta in `rides` per la stessa ragione per cui ci sta `RideLifecycle` (M5): ogni passo muove insieme lo stato del veicolo e quello della corsa, e il componente che coordina due moduli è il `RideRequestManager` — metterlo in `fleet` avrebbe costretto quel modulo a conoscere le corse, invertendo un arco della Figura 2.1. Le **posizioni** però le scrive `fleet`, perché la riga del veicolo è sua (D28): chi osserva consegna, chi possiede registra. `recordPositions()` non è una transizione e non notifica — una posizione cambia a ogni tick, e spingerne una per veicolo per tick inonderebbe il canale che M5 ha costruito per gli eventi della corsa |
 | D62 | `getDemandData()` **non entra in M7**: la D47 resta valida oltre la milestone che aveva nominato | §2.2, §2.4 Fig. 2.7 | La D47 rimandava l'operazione a «M7 insieme a un fornitore vero», e il calendario è arrivato mentre il fornitore no: di sorgenti di domanda per Milano collegabili non ce n'è nessuna, e la domanda di questo prototipo continua a stare in `demand_sample` e `demand_event`. Aggiungerla adesso significherebbe mettere `external` sopra `persistence` per rileggere righe che il `RebalancingManager` legge da sé — l'argomento della D47, che non è scaduto. L'arco `RebalancingManager --( IExternalServices` **viene realizzato lo stesso**, ma per le altre due operazioni: comandare la rotta verso la zona (Fig. 2.7) e leggere la telemetria per sapere chi è arrivato |
 | D63 | La guardia `isPassengerOnBoard()` è risolta assumendo che il passeggero salga **dopo una sosta di dieci secondi** dall'arrivo al punto di ritiro. **[v1.7]** L'arrivo si registra su `ride.pickup_reached_at` | §2.6.3, Fig. 2.10; §3.1 | Delle guardie della figura è l'unica che **nessun sensore risolve**: né un simulatore né una flotta vera sanno dire se qualcuno è salito. Le alternative erano due, entrambe peggiori: non far partire mai la corsa da sola, cioè lasciare `ARRIVED` come stato terminale di fatto, oppure introdurre un'azione del passeggero sull'app — che nessun requisito di ROAd prevede e che allargherebbe il RASD invece di realizzarlo. È un'assunzione dichiarata del prototipo, come la velocità media della stima lineare. **[v1.7] La sosta è un tempo e non un numero di cicli.** Fino alla v1.6 era «al giro successivo all'arrivo», e finché un giro di telemetria durava dieci secondi le due formulazioni coincidevano di fatto; con il giro sceso a mezzo secondo (D71) coincidere hanno smesso, e lo stato `arrived` durava mezzo secondo — il passeggero non faceva in tempo a leggere che il suo robotaxi era arrivato, cioè l'assunzione produceva un'interfaccia sbagliata invece di una semplificazione accettabile. Legata al tempo, la sosta dura quanto una salita, e quanti giri ci stiano dentro smette di essere una cosa che qualcuno debba sapere. Sono secondi di **tempo reale**, presi da `ClockPort`, non di mondo simulato: chi aspetta è una persona. Valutarla richiede l'istante dell'arrivo, e la colonna nuova è la sua sede: `robotaxi.updated_at` non poteva esserlo — la telemetria vi scrive anche le posizioni, quindi per un veicolo fermo al ritiro quella marca avanzerebbe a ogni giro e la sosta non scadrebbe mai — e tenerlo in memoria nel componente che legge la telemetria è escluso dalle due proprietà che quel componente dichiara: nessuna memoria fra un giro e l'altro, e un tier applicativo replicabile (NFR3). La costante vive sulla porta, non nell'implementazione, perché chi guida `runOnce()` deve poter far scadere la sosta invece di indovinarla |
@@ -1712,7 +1761,8 @@ capire *perché* un dettaglio è come è. Ogni riga dice cosa è cambiato, dove,
 
 | D72 | Il **lavoro periodico gira su una sola istanza dell'applicazione**. La replicabilità che NFR3 chiede riguarda il cammino delle richieste, non gli scheduler | §2.5, §4.3; NFR3; decisioni D16, D64 | NFR3 ha in §4.3 una formulazione falsificabile precisa — «un token emesso da un'istanza è accettato da una seconda che non ha visto il login» — e riguarda l'**assenza di stato di sessione lato server**: è ciò che rende il tier delle richieste replicabile, ed è verificato dal cancello di M1b. Dei cinque lavori periodici il documento non diceva nulla, e replicarli non sarebbe innocuo. Due sono innocui davvero: attivazione delle prenotazioni e riposizionamento girerebbero due volte, ma ogni transizione è condizionata sullo stato letto (`FleetMonitor.applyTransition`), quindi la seconda viene rifiutata con `ConcurrentTransitionError` — lavoro doppio e righe di registro, non incoerenza. Il terzo no: il simulatore **vive nella memoria del processo** (D64, «il simulatore *è* la flotta»), quindi due repliche avrebbero due mondi simulati distinti che scrivono le stesse righe, e una rotta comandata dall'una sarebbe invisibile all'altra. Le alternative erano un lock in database per ciascun lavoro — ingegneria che nessun requisito chiede, e che per il simulatore non basterebbe comunque, perché lì il problema è la memoria e non la concorrenza — oppure dichiarare l'assunzione. Si dichiara: **in un deploy replicato, `ScheduleModule` va acceso su un'istanza sola**, come le migrazioni sono un passo a sé prima di avviare le repliche (README). Con veicoli veri la questione cadrebbe da sé per il simulatore, che non esisterebbe |
 | D73 | Il seed è tarato perché il riposizionamento possa **davvero** avvenire: **64 robotaxi**, quattro per zona in modo uniforme; domanda di base riportata alla scala della flotta da un fattore unico; scale per zona **volutamente distanti**, con tre zone-calamita che chiedono circa dieci volte il resto della città | §2.2.1, §4.2; MILESTONES.md §M1; RASD R11, G9; decisione D12 | Un difetto che nessun test coglieva perché nessun test guardava il seed. `RebalancingManager` presta solo ciò che a una zona **avanza** dopo aver coperto la propria domanda; con venti veicoli su sedici zone e profili di domanda alla scala di una città vera — fino a diciotto corse attese in un'ora in centro — quel resto era zero ovunque e a ogni ora fra le 07 e le 23. Conseguenza: R11 e G9 erano verificati dal cancello di M6 sul proprio dataset e **non potevano manifestarsi** nel sistema in esecuzione, il che è precisamente il genere di requisito «coperto da un test che non asserisce nulla di osservabile» contro cui mette in guardia HARNESS.md §9. Le tre leve si muovono insieme per ragioni diverse: la **flotta più grande** e la **domanda più bassa** creano i veicoli da prestare; lo **squilibrio fra zone** crea le zone verso cui mandarli, e senza di esso una domanda uniformemente bassa produrrebbe surplus ovunque e deficit da nessuna parte. La distribuzione uniforme della flotta è la scelta complementare: se i veicoli partissero già dove la domanda è, lo scarto che il riposizionamento esiste per correggere sarebbe zero. Ciò che **non** cambia è il modello: la forma delle giornate resta quella della tabella di MILESTONES.md §M1, la metrica e l'ordinamento restano quelli della D12, e i dati restano dichiaratamente simulati |
-| D74 | `ModeController.getMode()` restituisce il modo **e** l'ultimo livello di traffico noto, annullabile, invece del solo modo. Il pannello strategia della dashboard lo mostra come pastiglia colorata con etichetta, accompagnata da una riga che dice cosa il sistema ne sta facendo | §2.2.1, §3.2, Fig. 2.2; RASD §2.3, R12, R13; NFR9, NFR10; decisioni D4, D11, D20 | Un requisito coperto a metà, e la metà mancante era quella osservabile. Il RASD §2.3 elenca fra i bisogni dell'operatore «a clear overview of traffic levels», e `onTrafficLevel()` scrive il livello a ogni lettura (D20) — ma **nessuna operazione lo restituiva**: il valore arrivava al database e non allo schermo. R12 era verificato sul lato della commutazione, dove i cancelli lo esercitano a fondo, e assente sul lato della *visibilità*, che nessun test copriva perché nessun test guardava che cosa la dashboard mostra. Le due strade erano aggiungere un quinto lettore alla porta o allargare quello che c'era, e si è scelta la seconda per tre ragioni che convergono. La prima è di competenza: modo e livello sono due colonne dello **stesso** record `system_mode`, entrambe di `ModeController`, quindi l'obiezione che la §2.2.1 muove all'idea di una lettura unica per modo *e strategia* — «nessuno dei due componenti a cui il DD affida le due letture ha titolo per esporla», perché quelli sono due componenti diversi — qui non si applica. La seconda è di correttezza: una lettura sola tiene i due valori coerenti per costruzione, mentre una terza `SELECT` avrebbe aggiunto all'analisi di interleaving del `GET /mode` un caso nuovo — un livello letto prima di un cambio di modo e mostrato accanto a quello dopo. La terza è di economia: la porta resta alle **quattro** operazioni che la §2.2.1 le assegna. Il campo è **annullabile** perché «nessuna lettura ancora arrivata» è uno stato con un significato proprio e non un valore mancante: è la stessa distinzione su cui si regge la D11, che non rivaluta nulla quando il livello è nullo, e mostrare `LOW` al suo posto sarebbe un'affermazione che nessuno ha verificato. Il livello **non** giustifica la strategia attiva, e in modo Manual può contraddirla — là le osservazioni si registrano senza commutare niente (R13) — il che non è un difetto ma esattamente ciò che l'operatore deve vedere per decidere se il suo intervento ha ancora senso |
+| D74 | Il completamento di un riposizionamento è **disaccoppiato dal ciclo decennale di pianificazione**: `RebalancingScheduler` chiama `RebalancingPort.completeArrivedRebalancing()` alla cadenza condivisa `FLEET_POSITION_REFRESH_MS`, mentre `rebalance()` resta responsabile della sola decisione di nuovi spostamenti. Quando la telemetria segnala `hasArrived`, `FleetMonitor.completeRebalancing(robotaxiId, targetZoneId)` esegue la transizione 9 e aggiorna `zoneId` alla zona target nello stesso update del robotaxi | §2.2, §2.2.1, §2.4, §2.6.3, Fig. 2.10; R11, G9; decisioni D60, D71 | I dieci minuti sono una scelta di stabilità della **previsione della domanda**, non una latenza richiesta dal lifecycle del veicolo. Legare la transizione 9 a quel ciclo lasciava un robotaxi fisicamente arrivato ma logicamente `REBALANCING` fino al ciclo successivo: nell'intervallo non era allocabile e non veniva contato come disponibilità della nuova zona. La telemetria produce già l'informazione di arrivo alla cadenza condivisa di mezzo secondo (D71), quindi il completamento usa la stessa osservazione. La separazione non modifica il pattern State: il `RebalancingManager` decide che un riposizionamento è terminato, ma la transizione `REBALANCING → AVAILABLE` continua a essere eseguita dal `FleetMonitor` attraverso `Robotaxi`/`RebalancingState`. Il `targetZoneId` viene preso dall'azione persistita, non dedotto nuovamente dalle coordinate, e aggiornare `zoneId` insieme allo stato evita di esporre un taxi `AVAILABLE` associato alla zona precedente. D74 sostituisce **soltanto il momento di innesco** stabilito da D60; ownership e transizione rimangono invariati |
+| D75 | `ModeController.getMode()` restituisce il modo **e** l'ultimo livello di traffico noto, annullabile, invece del solo modo. Il pannello strategia della dashboard lo mostra come pastiglia colorata con etichetta, accompagnata da una riga che dice cosa il sistema ne sta facendo | §2.2.1, §3.2, Fig. 2.2; RASD §2.3, R12, R13; NFR9, NFR10; decisioni D4, D11, D20 | Un requisito coperto a metà, e la metà mancante era quella osservabile. Il RASD §2.3 elenca fra i bisogni dell'operatore «a clear overview of traffic levels», e `onTrafficLevel()` scrive il livello a ogni lettura (D20) — ma **nessuna operazione lo restituiva**: il valore arrivava al database e non allo schermo. R12 era verificato sul lato della commutazione, dove i cancelli lo esercitano a fondo, e assente sul lato della *visibilità*, che nessun test copriva perché nessun test guardava che cosa la dashboard mostra. Le due strade erano aggiungere un quinto lettore alla porta o allargare quello che c'era, e si è scelta la seconda per tre ragioni che convergono. La prima è di competenza: modo e livello sono due colonne dello **stesso** record `system_mode`, entrambe di `ModeController`, quindi l'obiezione che la §2.2.1 muove all'idea di una lettura unica per modo *e strategia* — «nessuno dei due componenti a cui il DD affida le due letture ha titolo per esporla», perché quelli sono due componenti diversi — qui non si applica. La seconda è di correttezza: una lettura sola tiene i due valori coerenti per costruzione, mentre una terza `SELECT` avrebbe aggiunto all'analisi di interleaving del `GET /mode` un caso nuovo — un livello letto prima di un cambio di modo e mostrato accanto a quello dopo. La terza è di economia: la porta resta alle **quattro** operazioni che la §2.2.1 le assegna. Il campo è **annullabile** perché «nessuna lettura ancora arrivata» è uno stato con un significato proprio e non un valore mancante: è la stessa distinzione su cui si regge la D11, che non rivaluta nulla quando il livello è nullo, e mostrare `LOW` al suo posto sarebbe un'affermazione che nessuno ha verificato. Il livello **non** giustifica la strategia attiva, e in modo Manual può contraddirla — là le osservazioni si registrano senza commutare niente (R13) — il che non è un difetto ma esattamente ciò che l'operatore deve vedere per decidere se il suo intervento ha ancora senso |
 
 **Fuori dal perimetro di questo documento.** Le decisioni D1, D2, D3, D4, D5, D10, D12, D13, D16, D25, D37,
 D38, D39, D40, D41, D47, D49, D54 e D64 hanno un riflesso anche nei file operativi del repository (`CLAUDE.md`, `MILESTONES.md`,

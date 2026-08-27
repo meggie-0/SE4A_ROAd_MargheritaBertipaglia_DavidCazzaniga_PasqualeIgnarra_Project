@@ -2,16 +2,17 @@ import {
   ApiError,
   FLEET_POSITION_REFRESH_MS,
   fetchHealth,
+  haversineKm,
   type GeoPoint,
   type RideRequestKind,
   type RideRequestResponse,
 } from '@road/shared';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-
 import {
   cancelRide,
   fetchAssignedVehicle,
+  fetchPassengerBookings,
   requestAdvanceBooking,
   requestImmediateRide,
 } from './api';
@@ -26,6 +27,16 @@ import { applyNotification, initialView, type RideView } from './ride-phase';
 import { clearSession, loadSession, saveSession, type Session } from './session';
 import { useNotifications } from './use-notifications';
 import { applyTheme, loadTheme, type Theme } from './theme';
+import { reverseGeocodeMilanPoint, snapToNearestDrivableRoad } from './address-search';
+import {
+  isInsideLinateAirportArea,
+  isInsideMilanServiceArea,
+  isLinateAirportAddress,
+  LINATE_TERMINAL_POINT,
+} from './service-area';
+import { BookingConfirmationPanel } from './components/BookingConfirmationPanel';
+import { BookingsPanel } from './components/BookingsPanel';
+
 /**
  * L'app del passeggero (DD §3.1), consegnata come PWA responsive (decisione D15).
  *
@@ -53,51 +64,13 @@ import { applyTheme, loadTheme, type Theme } from './theme';
  * violerebbe la Regola 3, che vieta i timer nel sorgente delle applicazioni.
  */
 const VEHICLE_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
+const MIN_ROUTE_DISTANCE_KM = 0.01;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 
 export function App(): React.JSX.Element {
-  useEffect(() => {
-    const hideTimers = new Map<HTMLElement, number>();
-
-    const handlePanelScroll = (event: Event): void => {
-      const panel = event.target;
-
-      if (!(panel instanceof HTMLElement) || !panel.classList.contains('panel')) {
-        return;
-      }
-
-      panel.classList.add('panel--scrolling');
-
-      const previousTimer = hideTimers.get(panel);
-
-      if (previousTimer !== undefined) {
-        window.clearTimeout(previousTimer);
-      }
-
-      const hideTimer = window.setTimeout(() => {
-        panel.classList.remove('panel--scrolling');
-        hideTimers.delete(panel);
-      }, 250);
-
-      hideTimers.set(panel, hideTimer);
-    };
-
-    document.addEventListener('scroll', handlePanelScroll, true);
-
-    return () => {
-      document.removeEventListener('scroll', handlePanelScroll, true);
-
-      hideTimers.forEach((timer, panel) => {
-        window.clearTimeout(timer);
-        panel.classList.remove('panel--scrolling');
-      });
-
-      hideTimers.clear();
-    };
-  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <PassengerApp />
@@ -109,24 +82,119 @@ function PassengerApp(): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [pickup, setPickup] = useState<GeoPoint | null>(null);
   const [destination, setDestination] = useState<GeoPoint | null>(null);
-  const [kind, setKind] = useState<RideRequestKind>('IMMEDIATE');
+  const [pickupAddress, setPickupAddress] = useState<string | null>(null);
+  const [destinationAddress, setDestinationAddress] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [kind, setKind] = useState<RideRequestKind | null>(null);
   const [scheduledPickup, setScheduledPickup] = useState('');
   const [request, setRequest] = useState<RideRequestResponse | null>(null);
+  const [bookingConfirmation, setBookingConfirmation] = useState<RideRequestResponse | null>(null);
+  const [showBookings, setShowBookings] = useState(false);
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+  const [bookingsError, setBookingsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [routePointErrors, setRoutePointErrors] = useState<{
+    readonly pickup: string | null;
+    readonly destination: string | null;
+  }>({
+    pickup: null,
+    destination: null,
+  });
+  const [routePointWarnings, setRoutePointWarnings] = useState<{
+    readonly pickup: string | null;
+    readonly destination: string | null;
+  }>({
+    pickup: null,
+    destination: null,
+  });
   const [showProfile, setShowProfile] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showRoutePicker, setShowRoutePicker] = useState(false);
-  const [activeRoutePoint, setActiveRoutePoint] = useState<'pickup' | 'destination'>('pickup');
+  const [activeRoutePoint, setActiveRoutePoint] = useState<'pickup' | 'destination' | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancellationError, setCancellationError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
+  const [mapResetKey, setMapResetKey] = useState(0);
   const health = useApiHealth();
   const { notifications, connection } = useNotifications(session?.accessToken ?? null);
+  const passengerBookings = useQuery({
+    queryKey: ['passenger-bookings', session?.user.id ?? null],
+    enabled: session !== null,
+    queryFn: () => {
+      if (session === null) {
+        throw new Error('Sessione non disponibile.');
+      }
+
+      return fetchPassengerBookings(session.accessToken);
+    },
+  });
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const currentBookings = passengerBookings.data?.bookings;
+
+    if (request !== null || currentBookings === undefined) {
+      return;
+    }
+
+    /*
+     * La notifica ASSIGNED indica che una prenotazione è stata realmente
+     * attivata e che il robotaxi è stato assegnato.
+     */
+    const activation = [...notifications]
+      .reverse()
+      .find(
+        (event) =>
+          event.rideRequestId !== null &&
+          event.robotaxiId !== null &&
+          event.robotaxiState === 'ASSIGNED' &&
+          currentBookings.some((booking) => booking.id === event.rideRequestId),
+      );
+
+    if (
+      activation === undefined ||
+      activation.rideRequestId === null ||
+      activation.robotaxiId === null
+    ) {
+      return;
+    }
+
+    const activatedBooking = currentBookings.find(
+      (booking) => booking.id === activation.rideRequestId,
+    );
+
+    if (activatedBooking === undefined) {
+      return;
+    }
+
+    /*
+     * Da questo momento non è più una prenotazione in attesa:
+     * diventa la corsa live seguita da StatusPanel.
+     */
+    setRequest({
+      ...activatedBooking,
+      assignedRobotaxiId: activation.robotaxiId,
+    });
+    setPickup(activatedBooking.pickup);
+    setPickupAddress(activatedBooking.pickupAddress);
+    setDestination(activatedBooking.destination);
+    setDestinationAddress(activatedBooking.destinationAddress);
+    setBookingConfirmation(null);
+    setShowBookings(false);
+    setShowProfile(false);
+    setShowRoutePicker(false);
+    setShowMenu(false);
+
+    if (session !== null) {
+      void queryClient.invalidateQueries({
+        queryKey: ['passenger-bookings', session.user.id],
+      });
+    }
+  }, [notifications, passengerBookings.data, request, session]);
 
   /**
    * La vista di stato è **derivata**, non accumulata: si ricalcola ogni volta riducendo tutte le
@@ -179,6 +247,8 @@ function PassengerApp(): React.JSX.Element {
    * trova. Tenerla puntata sul ritiro dopo la salita indicherebbe un punto che si è già lasciato.
    */
   const onBoard = view?.phase === 'in_ride';
+  const rideCompleted = view?.phase === 'completed';
+  const hidePickupOnMap = onBoard || rideCompleted;
 
   const vehicle = useQuery({
     queryKey: ['assigned-vehicle', request?.id ?? null],
@@ -202,6 +272,20 @@ function PassengerApp(): React.JSX.Element {
     setCancelling(false);
     setShowRoutePicker(false);
     setActiveRoutePoint('pickup');
+    setRoutePointWarnings({
+      pickup: null,
+      destination: null,
+    });
+    setPickupAddress(null);
+    setDestinationAddress(null);
+    setRoutePointErrors({
+      pickup: null,
+      destination: null,
+    });
+    setBookingConfirmation(null);
+    setShowBookings(false);
+    setBookingsError(null);
+    setCancellingBookingId(null);
   }
 
   function signOut(): void {
@@ -225,60 +309,384 @@ function PassengerApp(): React.JSX.Element {
     return false;
   }
 
-  /** Il tocco sulla mappa riempie il primo posto libero: prima il ritiro, poi la destinazione. */
-  function onPick(point: GeoPoint): void {
-    if (showRoutePicker) {
-      if (activeRoutePoint === 'pickup') {
-        setPickup(point);
+  function updateRoutePointError(
+    pointType: 'pickup' | 'destination',
+    message: string | null,
+  ): void {
+    setRoutePointErrors((current) => ({
+      ...current,
+      [pointType]: message,
+    }));
+  }
 
-        if (destination !== null) {
-          setShowRoutePicker(false);
-        } else {
-          setActiveRoutePoint('destination');
-        }
+  function updateRoutePointWarning(
+    pointType: 'pickup' | 'destination',
+    message: string | null,
+  ): void {
+    setRoutePointWarnings((current) => ({
+      ...current,
+      [pointType]: message,
+    }));
+  }
+
+  function activateRoutePoint(pointType: 'pickup' | 'destination'): void {
+    updateRoutePointError(pointType, null);
+    setActiveRoutePoint(pointType);
+    updateRoutePointWarning(pointType, null);
+  }
+
+  function selectRoutePoint(
+    pointType: 'pickup' | 'destination',
+    point: GeoPoint,
+    address: string | null,
+  ): void {
+    setError(null);
+    updateRoutePointError(pointType, null);
+    updateRoutePointWarning(pointType, null);
+    setScheduledPickup('');
+
+    if (pointType === 'pickup') {
+      // Se la destinazione è già presente, controlla che sia diversa.
+      if (destination !== null && haversineKm(point, destination) <= MIN_ROUTE_DISTANCE_KM) {
+        setPickup(null);
+        setPickupAddress(null);
+        setKind(null);
+        setActiveRoutePoint('pickup');
+
+        updateRoutePointError('pickup', 'Partenza e destinazione devono essere due punti diversi.');
 
         return;
       }
 
-      setDestination(point);
+      setPickup(point);
+      setPickupAddress(address);
 
-      if (pickup !== null) {
-        setShowRoutePicker(false);
-      } else {
-        setActiveRoutePoint('pickup');
+      // Se la destinazione era già stata scelta, entrambi i punti sono validi:
+      // passa alla scelta del servizio.
+      if (destination !== null) {
+        setKind('IMMEDIATE');
+        setActiveRoutePoint(null);
+        return;
       }
 
+      // Altrimenti passa automaticamente alla destinazione.
+      setKind(null);
+      setActiveRoutePoint('destination');
       return;
     }
 
-    if (pickup === null) {
-      setPickup(point);
+    // Se la partenza è già presente, controlla che sia diversa.
+    if (pickup !== null && haversineKm(pickup, point) <= MIN_ROUTE_DISTANCE_KM) {
+      setDestination(null);
+      setDestinationAddress(null);
+      setKind(null);
+      setActiveRoutePoint('destination');
+
+      updateRoutePointError(
+        'destination',
+        'Partenza e destinazione devono essere due punti diversi.',
+      );
+
       return;
     }
 
     setDestination(point);
+    setDestinationAddress(address);
+
+    // Se la partenza era già stata scelta, entrambi i punti sono validi:
+    // passa alla scelta del servizio.
+    if (pickup !== null) {
+      setKind('IMMEDIATE');
+      setActiveRoutePoint(null);
+      return;
+    }
+
+    // Altrimenti passa automaticamente alla partenza.
+    setKind(null);
+    setActiveRoutePoint('pickup');
   }
 
+  function returnToInitialView(): void {
+    setShowRoutePicker(false);
+    setActiveRoutePoint(null);
+
+    setPickup(null);
+    setDestination(null);
+    setPickupAddress(null);
+    setDestinationAddress(null);
+
+    setKind(null);
+    setScheduledPickup('');
+    setError(null);
+    setRoutePointWarnings({
+      pickup: null,
+      destination: null,
+    });
+
+    setMapResetKey((current) => current + 1);
+    setRoutePointErrors({
+      pickup: null,
+      destination: null,
+    });
+  }
+
+  function clearRoutePoint(pointType: 'pickup' | 'destination'): void {
+    setError(null);
+    updateRoutePointError(pointType, null);
+    setKind(null);
+    setScheduledPickup('');
+    setActiveRoutePoint(pointType);
+
+    if (pointType === 'pickup') {
+      setPickup(null);
+      setPickupAddress(null);
+      return;
+    }
+
+    setDestination(null);
+    setDestinationAddress(null);
+    updateRoutePointWarning(pointType, null);
+  }
+
+  async function selectRoutePointFromMap(point: GeoPoint): Promise<void> {
+    if (activeRoutePoint === null) {
+      return;
+    }
+
+    const pointType = activeRoutePoint;
+
+    setError(null);
+    updateRoutePointError(pointType, null);
+    updateRoutePointWarning(pointType, null);
+
+    let snappedPoint;
+
+    try {
+      snappedPoint = await snapToNearestDrivableRoad(point);
+    } catch {
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare una strada raggiungibile. Riprova tra poco.',
+      );
+      return;
+    }
+
+    if (snappedPoint === null) {
+      updateRoutePointError(
+        pointType,
+        'Il punto selezionato è troppo lontano da una strada raggiungibile. Scegli un altro punto.',
+      );
+      return;
+    }
+
+    const insideLinateAirport = isInsideLinateAirportArea(snappedPoint.point);
+
+    if (!isInsideMilanServiceArea(snappedPoint.point) && !insideLinateAirport) {
+      updateRoutePointError(
+        pointType,
+        'Il punto selezionato non si trova nell’area coperta dal servizio: Comune di Milano e Aeroporto di Linate.',
+      );
+      return;
+    }
+
+    let result;
+
+    try {
+      result = await reverseGeocodeMilanPoint(snappedPoint.point);
+    } catch {
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare se il punto si trova nel Comune di Milano. Riprova tra poco.',
+      );
+      return;
+    }
+
+    const linateAirport = insideLinateAirport || isLinateAirportAddress(result.address);
+
+    if (result.municipality === 'outside' && !linateAirport) {
+      updateRoutePointError(
+        pointType,
+        'Il punto selezionato non si trova nel Comune di Milano o nell’area dell’aeroporto di Linate.',
+      );
+      return;
+    }
+
+    if (result.municipality === 'unknown' && !linateAirport) {
+      updateRoutePointError(
+        pointType,
+        'Non è stato possibile verificare l’area del punto selezionato. Scegli un altro punto.',
+      );
+      return;
+    }
+
+    const selectedPoint = linateAirport ? LINATE_TERMINAL_POINT : snappedPoint.point;
+
+    const selectedAddress = linateAirport
+      ? (result.address ?? 'Aeroporto di Milano Linate')
+      : result.address;
+
+    selectRoutePoint(pointType, selectedPoint, selectedAddress);
+
+    if (selectedAddress === null) {
+      updateRoutePointWarning(
+        pointType,
+        'Punto valido: non è stato trovato un indirizzo leggibile, quindi vengono mostrate le coordinate.',
+      );
+    }
+  }
+
+  async function useCurrentLocation(): Promise<void> {
+    if (!('geolocation' in navigator)) {
+      updateRoutePointError(
+        'pickup',
+        'La geolocalizzazione non è supportata da questo dispositivo.',
+      );
+      return;
+    }
+
+    setIsLocating(true);
+    setError(null);
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10_000,
+          maximumAge: 30_000,
+        });
+      });
+
+      const point: GeoPoint = {
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+      };
+
+      const insideLinateAirport = isInsideLinateAirportArea(point);
+
+      if (!isInsideMilanServiceArea(point) && !insideLinateAirport) {
+        updateRoutePointError(
+          'pickup',
+          'Il servizio ROAd è disponibile nell’area di Milano e presso l’aeroporto di Linate.',
+        );
+        return;
+      }
+
+      let address: string | null = null;
+
+      try {
+        const result = await reverseGeocodeMilanPoint(point);
+        const linateAirport = insideLinateAirport || isLinateAirportAddress(result.address);
+
+        if (result.municipality === 'outside' && !linateAirport) {
+          updateRoutePointError(
+            'pickup',
+            'La posizione attuale non si trova nell’area di servizio: Comune di Milano e Aeroporto di Linate.',
+          );
+          return;
+        }
+
+        address = result.address;
+      } catch {
+        // La posizione GPS rimane comunque utilizzabile.
+      }
+      const linateAirport = insideLinateAirport || isLinateAirportAddress(address);
+
+      selectRoutePoint(
+        'pickup',
+        linateAirport ? LINATE_TERMINAL_POINT : point,
+        address ?? (linateAirport ? 'Aeroporto di Milano Linate' : 'Posizione attuale'),
+      );
+    } catch (cause: unknown) {
+      let message = 'Non è stato possibile recuperare la posizione attuale.';
+
+      if (typeof cause === 'object' && cause !== null && 'code' in cause) {
+        const code = (cause as { code?: number }).code;
+
+        if (code === 1) {
+          message = 'Accesso alla posizione negato. Abilitalo nelle impostazioni del browser.';
+        } else if (code === 2) {
+          message = 'La posizione del dispositivo non è disponibile.';
+        } else if (code === 3) {
+          message = 'Tempo scaduto durante la ricerca della posizione.';
+        }
+      }
+
+      updateRoutePointError('pickup', message);
+    } finally {
+      setIsLocating(false);
+    }
+  }
+
+  /** Il tocco sulla mappa riempie il primo posto libero: prima il ritiro, poi la destinazione. */
+  /** La mappa accetta un punto solo quando un campo è attivo. */
+  function onPick(point: GeoPoint): void {
+    void selectRoutePointFromMap(point);
+  }
   async function submit(): Promise<void> {
-    if (session === null || pickup === null || destination === null) return;
+    if (session === null || pickup === null || destination === null || kind === null) {
+      return;
+    }
+
+    if (haversineKm(pickup, destination) <= MIN_ROUTE_DISTANCE_KM) {
+      setKind(null);
+      setShowRoutePicker(true);
+      setActiveRoutePoint('destination');
+
+      updateRoutePointError(
+        'destination',
+        'Partenza e destinazione devono essere due punti diversi.',
+      );
+
+      return;
+    }
 
     setBusy(true);
     setError(null);
-    try {
-      const submitted =
-        kind === 'IMMEDIATE'
-          ? await requestImmediateRide(session.accessToken, { pickup, destination })
-          : await requestAdvanceBooking(session.accessToken, {
-              pickup,
-              destination,
-              // `datetime-local` produce un orario locale senza fuso; il contratto ne vuole uno con
-              // fuso, e la conversione la fa il browser, che il fuso dell'utente lo conosce.
-              scheduledPickup: new Date(scheduledPickup).toISOString(),
-            });
 
+    try {
+      if (kind === 'IMMEDIATE') {
+        const submitted = await requestImmediateRide(session.accessToken, {
+          pickup,
+          pickupAddress,
+          destination,
+          destinationAddress,
+        });
+
+        setRequest(submitted);
+        return;
+      }
+
+      const submitted = await requestAdvanceBooking(session.accessToken, {
+        pickup,
+        pickupAddress,
+        destination,
+        destinationAddress,
+        scheduledPickup: new Date(scheduledPickup).toISOString(),
+      });
+
+      if (submitted.status === 'ACCEPTED') {
+        /*
+         * Una prenotazione accettata non è ancora una corsa live:
+         * non viene assegnata a `request`.
+         */
+        resetRequest();
+        setBookingConfirmation(submitted);
+
+        await queryClient.invalidateQueries({
+          queryKey: ['passenger-bookings', session.user.id],
+        });
+
+        return;
+      }
+
+      /*
+       * Una prenotazione rifiutata può invece utilizzare la normale
+       * vista conclusiva, che mostra l'indisponibilità del servizio.
+       */
       setRequest(submitted);
     } catch (failure) {
       if (signOutIfExpired(failure)) return;
+
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setBusy(false);
@@ -309,6 +717,46 @@ function PassengerApp(): React.JSX.Element {
     }
   }
 
+  async function cancelBooking(rideRequestId: string): Promise<void> {
+    if (session === null) return;
+
+    setCancellingBookingId(rideRequestId);
+    setBookingsError(null);
+
+    try {
+      await cancelRide(session.accessToken, rideRequestId);
+
+      if (bookingConfirmation?.id === rideRequestId) {
+        setBookingConfirmation(null);
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ['passenger-bookings', session.user.id],
+      });
+    } catch (failure) {
+      if (signOutIfExpired(failure)) return;
+
+      setBookingsError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCancellingBookingId(null);
+    }
+  }
+
+  function openBookings(): void {
+    setShowMenu(false);
+    setShowProfile(false);
+    setShowRoutePicker(false);
+    setBookingsError(null);
+    setShowBookings(true);
+  }
+
+  function startNewRequest(): void {
+    resetRequest();
+    setShowProfile(false);
+    setShowMenu(false);
+    setShowRoutePicker(true);
+  }
+
   return (
     <main
       className={`passenger-app ${
@@ -316,23 +764,7 @@ function PassengerApp(): React.JSX.Element {
       }`}
     >
       {session === null ? (
-        <header className="app-header">
-          <div className="header-slot header-start">
-            <button
-              type="button"
-              className="theme-toggle"
-              data-testid="theme-toggle"
-              data-theme={theme}
-              aria-label={
-                theme === 'dark' ? 'Attiva la modalità giorno' : 'Attiva la modalità notte'
-              }
-              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-            >
-              <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
-              <span className="theme-label">{theme === 'dark' ? 'Giorno' : 'Notte'}</span>
-            </button>
-          </div>
-
+        <header className="app-header guest-header">
           <div className="brand-lockup">
             <div className="brand-logo-frame">
               <img
@@ -343,40 +775,20 @@ function PassengerApp(): React.JSX.Element {
             </div>
           </div>
 
-          <div className="header-slot header-end" />
+          {/*
+           * Il titolo della pagina, per chi non lo vede.
+           *
+           * Il logo lo dice a chi guarda, ma un `alt` su un'immagine **non è un'intestazione**: chi
+           * naviga saltando da un titolo all'altro — il modo in cui si esplora una schermata con
+           * uno screen reader — su una pagina senza `h1` non trova da dove cominciare. Il testo è
+           * quello del `<title>` in `index.html`, così la scheda del browser e la pagina dicono la
+           * stessa cosa.
+           */}
+          <h1 className="visually-hidden">ROAd — App passeggero</h1>
         </header>
-      ) : (
+      ) : request === null ? (
         <header className={`mobile-topbar ${showRoutePicker ? 'mobile-topbar--expanded' : ''}`}>
-          {showRoutePicker ? (
-            <div
-              className="route-search-preview route-search-preview--expanded"
-              data-testid="route-search-preview"
-            >
-              <button
-                type="button"
-                className="route-back-button"
-                data-testid="close-route-picker"
-                aria-label="Torna alla scelta del servizio"
-                onClick={() => setShowRoutePicker(false)}
-              >
-                <svg
-                  className="search-icon"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M19 12H5" />
-                  <path d="m11 18-6-6 6-6" />
-                </svg>
-              </button>
-
-              <span>Imposta il percorso</span>
-            </div>
-          ) : (
+          {!showRoutePicker && (
             <button
               type="button"
               className="route-search-preview"
@@ -388,8 +800,10 @@ function PassengerApp(): React.JSX.Element {
               onClick={() => {
                 setShowMenu(false);
                 setShowProfile(false);
-                setActiveRoutePoint(pickup === null ? 'pickup' : 'destination');
+                setActiveRoutePoint('pickup');
                 setShowRoutePicker(true);
+                setShowBookings(false);
+                setBookingConfirmation(null);
               }}
             >
               <svg
@@ -405,13 +819,7 @@ function PassengerApp(): React.JSX.Element {
                 <path d="m20 20-4-4" />
               </svg>
 
-              <span>
-                {pickup === null
-                  ? 'Dove si va?'
-                  : destination === null
-                    ? 'Scegli la destinazione'
-                    : 'Percorso impostato'}
-              </span>
+              <span>Dove si va?</span>
             </button>
           )}
 
@@ -435,15 +843,30 @@ function PassengerApp(): React.JSX.Element {
             <RoutePickerPanel
               pickup={pickup}
               destination={destination}
+              pickupAddress={pickupAddress}
+              destinationAddress={destinationAddress}
               activePoint={activeRoutePoint}
-              onActivePointChange={setActiveRoutePoint}
+              onActivePointChange={activateRoutePoint}
+              pickupError={routePointErrors.pickup}
+              destinationError={routePointErrors.destination}
+              pickupWarning={routePointWarnings.pickup}
+              destinationWarning={routePointWarnings.destination}
+              onBack={returnToInitialView}
+              onPointSelected={selectRoutePoint}
+              onPointCleared={clearRoutePoint}
+              isLocating={isLocating}
+              onUseCurrentLocation={() => {
+                void useCurrentLocation();
+              }}
             />
           )}
-          {/* Mantiene disponibile il dato usato dai test automatici. */}
-          <span className="visually-hidden" data-testid="passenger-name">
-            {session.user.name}
-          </span>
         </header>
+      ) : null}
+
+      {session !== null && (
+        <span className="visually-hidden" data-testid="passenger-name">
+          {session.user.name}
+        </span>
       )}
 
       {session !== null && showMenu && (
@@ -466,11 +889,22 @@ function PassengerApp(): React.JSX.Element {
 
               <button
                 type="button"
-                className="menu-close"
+                className="route-back-button route-clear-button menu-close"
                 aria-label="Chiudi menu"
                 onClick={() => setShowMenu(false)}
               >
-                ×
+                <svg
+                  className="search-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6 6 18" />
+                </svg>
               </button>
             </div>
 
@@ -505,6 +939,24 @@ function PassengerApp(): React.JSX.Element {
                 </button>
               )}
 
+              {request === null && (
+                <button
+                  type="button"
+                  className="menu-action"
+                  data-testid="open-bookings"
+                  onClick={openBookings}
+                >
+                  <span>Le mie prenotazioni</span>
+
+                  <span
+                    className="menu-action-count"
+                    aria-label={`${passengerBookings.data?.bookings.length ?? 0} prenotazioni`}
+                  >
+                    {passengerBookings.data?.bookings.length ?? 0}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 className="menu-action"
@@ -534,11 +986,15 @@ function PassengerApp(): React.JSX.Element {
       ) : (
         <>
           <RideMap
-            pickup={pickup}
+            key={mapResetKey}
+            pickup={hidePickupOnMap ? null : pickup}
             destination={destination}
+            focusDestination={rideCompleted}
             robotaxi={followingVehicle ? (vehicle.data?.vehicle?.position ?? null) : null}
             robotaxiHeadingTo={onBoard ? 'destination' : 'pickup'}
-            onPick={request === null ? onPick : null}
+            onPick={
+              request === null && showRoutePicker && activeRoutePoint !== null ? onPick : null
+            }
           />
 
           {showProfile && request === null ? (
@@ -546,16 +1002,49 @@ function PassengerApp(): React.JSX.Element {
               profile={session.user}
               token={session.accessToken}
               onUpdated={(profile) => {
-                // Il profilo aggiornato si riscrive nella sessione: il token resta quello, ma il
-                // nome mostrato nell'intestazione è quello nuovo.
-                const next: Session = { accessToken: session.accessToken, user: profile };
+                const next: Session = {
+                  accessToken: session.accessToken,
+                  user: profile,
+                };
+
                 saveSession(next);
                 setSession(next);
               }}
               onClose={() => setShowProfile(false)}
               onSessionExpired={signOutIfExpired}
             />
-          ) : showRoutePicker && request === null ? null : request === null || view === null ? (
+          ) : request !== null && view !== null ? (
+            <StatusPanel
+              request={request}
+              view={view}
+              connected={connection === 'connected'}
+              cancelling={cancelling}
+              cancellationError={cancellationError}
+              onCancel={() => void cancelCurrentRide()}
+              onNewRequest={resetRequest}
+              nowMs={vehicle.dataUpdatedAt}
+            />
+          ) : showBookings ? (
+            <BookingsPanel
+              bookings={passengerBookings.data?.bookings ?? []}
+              loading={passengerBookings.isPending}
+              error={
+                bookingsError ??
+                (passengerBookings.error instanceof Error ? passengerBookings.error.message : null)
+              }
+              confirmedBookingId={bookingConfirmation?.id ?? null}
+              cancellingBookingId={cancellingBookingId}
+              onCancel={(rideRequestId) => void cancelBooking(rideRequestId)}
+              onNewRequest={startNewRequest}
+              onClose={() => setShowBookings(false)}
+            />
+          ) : bookingConfirmation !== null ? (
+            <BookingConfirmationPanel
+              booking={bookingConfirmation}
+              onViewBookings={openBookings}
+              onNewRequest={startNewRequest}
+            />
+          ) : pickup !== null && destination !== null ? (
             <RequestPanel
               pickup={pickup}
               destination={destination}
@@ -565,23 +1054,9 @@ function PassengerApp(): React.JSX.Element {
               error={error}
               onKindChange={setKind}
               onScheduledPickupChange={setScheduledPickup}
-              onReset={() => {
-                setPickup(null);
-                setDestination(null);
-              }}
               onSubmit={() => void submit()}
             />
-          ) : (
-            <StatusPanel
-              request={request}
-              view={view}
-              connected={connection === 'connected'}
-              cancelling={cancelling}
-              cancellationError={cancellationError}
-              onCancel={() => void cancelCurrentRide()}
-              onNewRequest={resetRequest}
-            />
-          )}
+          ) : null}
         </>
       )}
 
@@ -601,6 +1076,7 @@ function PassengerApp(): React.JSX.Element {
  * aggiornamenti è una flotta ferma o un backend spento, e distinguere le due cose è la prima
  * domanda di chiunque apra un'app che non si muove.
  */
+
 function useApiHealth(): string {
   const [status, setStatus] = useState('…');
 

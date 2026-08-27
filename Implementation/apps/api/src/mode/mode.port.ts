@@ -124,7 +124,7 @@ export abstract class ModePort {
    * una copia in memoria: due repliche che tenessero il modo ciascuna per sé mostrerebbero
    * all'operatore un Auto/Manual diverso a seconda di quale ha risposto (NFR3).
    *
-   * **Perché il livello di traffico esce da qui e non da una quinta operazione** (decisione D74).
+   * **Perché il livello di traffico esce da qui e non da una quinta operazione** (decisione D75).
    * Il RASD §2.3 lo vuole sulla dashboard e `onTrafficLevel()` lo persiste a ogni osservazione
    * (decisione D20), ma nessuna via di lettura lo restituiva: il valore stava nel database e non
    * raggiungeva lo schermo. Allargare questo lettore invece di aggiungerne uno tiene la porta alle

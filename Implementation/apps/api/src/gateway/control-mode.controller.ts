@@ -26,7 +26,7 @@ import { ZodValidationPipe } from './zod-validation.pipe';
  * strategia attiva al primo caricamento: per questo la risposta porta i due valori insieme, letti
  * dalle rispettive porte.
  *
- * Con loro viaggia il **livello di traffico** (decisione D74), che il RASD §2.3 mette fra i bisogni
+ * Con loro viaggia il **livello di traffico** (decisione D75), che il RASD §2.3 mette fra i bisogni
  * dell'operatore accanto al modo operativo. Non aggiunge una lettura: esce dalla stessa chiamata del
  * modo, perché sono due colonne dello stesso record e lo stesso componente le possiede.
  *
@@ -66,7 +66,7 @@ export class ControlModeController {
       'NFR10: il modo corrente è sempre visibile sulla dashboard. I tre valori vengono dal ' +
       'record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier ' +
       'applicativo rispondono la stessa cosa (NFR3). Il livello di traffico esce dalla stessa ' +
-      'lettura del modo (decisione D74) ed è `null` finché nessuna osservazione è arrivata.',
+      'lettura del modo (decisione D75) ed è `null` finché nessuna osservazione è arrivata.',
   })
   @ApiOkResponse({ type: ModeResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token assente, scaduto o non valido.' })
@@ -128,7 +128,7 @@ export class ControlModeController {
    * nessuno dei due componenti a cui il DD affida le due letture ha titolo per esporla.
    *
    * **Le letture restano due anche col livello di traffico**, ed è il motivo per cui la decisione
-   * D74 l'ha aggiunto a `getMode()` invece di dargli un lettore proprio: una terza `SELECT` avrebbe
+   * D75 l'ha aggiunto a `getMode()` invece di dargli un lettore proprio: una terza `SELECT` avrebbe
    * allungato questa stessa analisi di un caso in più — un livello letto prima di un cambio di modo
    * e mostrato accanto a quello dopo — mentre così livello e modo provengono dalla stessa riga letta
    * nello stesso istante. Il disallineamento residuo resta quello di sopra, e riguarda la strategia.

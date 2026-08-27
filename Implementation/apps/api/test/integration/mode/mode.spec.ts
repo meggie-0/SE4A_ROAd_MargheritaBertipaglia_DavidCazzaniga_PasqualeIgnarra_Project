@@ -41,7 +41,7 @@ async function control(): Promise<{ mode: string; strategy: StrategyName }> {
   return { mode: reading.mode, strategy };
 }
 
-/** L'ultimo livello di traffico noto, che `getMode()` restituisce col modo (decisione D74). */
+/** L'ultimo livello di traffico noto, che `getMode()` restituisce col modo (decisione D75). */
 async function trafficLevel(): Promise<TrafficLevel | null> {
   return (await harness.mode.getMode()).lastTrafficLevel;
 }
@@ -107,7 +107,7 @@ describe('[R12][NFR9] Auto Mode: isteresi sui livelli di traffico', () => {
 });
 
 /**
- * La **via di lettura** del livello di traffico (RASD §2.3, decisione D74).
+ * La **via di lettura** del livello di traffico (RASD §2.3, decisione D75).
  *
  * Il caso di sopra verifica che il livello venga *scritto*, interrogando la persistenza. Questi
  * verificano che si possa *leggere* dal dominio, che è la cosa che mancava: il valore era nel

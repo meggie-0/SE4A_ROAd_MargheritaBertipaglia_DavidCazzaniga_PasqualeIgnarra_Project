@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@maptiler/client": "^3.0.2",
     "@road/shared": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "leaflet": "^1.9.4",

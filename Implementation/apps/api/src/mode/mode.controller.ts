@@ -137,7 +137,7 @@ export class ModeController extends ModePort {
 
   async getMode(): Promise<ModeReading> {
     // Una sola lettura per entrambi i valori, che è la ragione per cui viaggiano insieme (decisione
-    // D74): sono due colonne dello stesso record, e prenderle separatamente permetterebbe di
+    // D75): sono due colonne dello stesso record, e prenderle separatamente permetterebbe di
     // mostrare all'operatore un livello che non è quello che valeva per il modo mostrato accanto.
     const { mode, lastTrafficLevel } = await this.systemMode();
     return { mode, lastTrafficLevel };

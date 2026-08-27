@@ -45,9 +45,14 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps): React.JSX.El
   }
 
   return (
-    <section className="panel login-panel">
-      <h1>ROAd — Dashboard operatore</h1>
-      <p className="muted">Accedi con il tuo account operatore di flotta.</p>
+    <section className="panel login-panel operator-login-panel">
+      {/*
+       * `h2` e non `h1`: il titolo della pagina è il prodotto — «ROAd — Dashboard operatore», che
+       * l'intestazione dichiara sopra — e questo è il titolo di *un pannello dentro* quella pagina.
+       * Con due `h1` la gerarchia direbbe che la schermata parla di due cose allo stesso livello, e
+       * chi naviga per intestazioni non troverebbe più quale delle due è la pagina.
+       */}
+      <h2>Accedi con il tuo account operatore di flotta</h2>
 
       <form onSubmit={(event) => void submit(event)}>
         <label>

@@ -196,7 +196,7 @@ export abstract class FleetMonitorPort {
    * `IllegalTransitionError` se il veicolo non è in `REBALANCING`, `ConcurrentTransitionError` se la
    * riga è cambiata fra lettura e scrittura, `UnknownRobotaxiError` se non esiste.
    */
-  abstract completeRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot>;
+  abstract completeRebalancing(robotaxiId: string, targetZoneId: string): Promise<RobotaxiSnapshot>;
 
   /**
    * Scrive dove i veicoli sono stati osservati, e restituisce quanti ne ha aggiornati (M7).

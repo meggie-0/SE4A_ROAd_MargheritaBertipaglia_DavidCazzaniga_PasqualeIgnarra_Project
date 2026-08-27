@@ -103,7 +103,16 @@ export interface RideCancellation {
   /** La prenotazione annullata, se la richiesta era anticipata: la riga resta, per lo storico. */
   readonly booking: BookingRecord | null;
 }
-
+/**
+ * Prenotazione anticipata ancora in attesa di attivazione.
+ *
+ * `request` contiene partenza, destinazione e stato pubblico;
+ * `booking` contiene l'orario programmato.
+ */
+export interface PassengerBooking {
+  readonly request: RideRequestRecord;
+  readonly booking: BookingRecord;
+}
 // ---------------------------------------------------------------------------------------------
 // Gli errori
 // ---------------------------------------------------------------------------------------------
@@ -212,7 +221,13 @@ export abstract class RideRequestPort {
    * Solleva `ScheduledPickupNotInFutureError` se l'orario richiesto non è successivo ad adesso.
    */
   abstract submitAdvance(draft: AdvanceBookingDraft): Promise<RideRequestOutcome>;
-
+  /**
+   * Restituisce le prenotazioni anticipate ancora aperte del passeggero,
+   * ordinate per orario di partenza.
+   *
+   * Le prenotazioni annullate o già attivate non vengono incluse.
+   */
+  abstract listBookings(passengerId: string): Promise<readonly PassengerBooking[]>;
   /**
    * Annullamento (R14): la richiesta passa a `CANCELLED`, la riserva viene rilasciata e la
    * finestra torna prenotabile; se un veicolo era già stato assegnato, torna ad `AVAILABLE`.

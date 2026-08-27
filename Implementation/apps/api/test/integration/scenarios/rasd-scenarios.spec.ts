@@ -553,7 +553,7 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
     });
 
     // «the system detects a High traffic level and automatically switches the active strategy»:
-    // causa ed effetto nella stessa risposta, che è il motivo per cui viaggiano insieme (D74).
+    // causa ed effetto nella stessa risposta, che è il motivo per cui viaggiano insieme (D75).
     await mode.onTrafficLevel('HIGH');
     expect(await pannelloDiControllo(mark)).toEqual({
       mode: 'AUTO',

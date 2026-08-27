@@ -121,9 +121,9 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
     }
 
     // I marker dei **veicoli** sono sulla mappa: la flotta si *vede*, che è ciò che R7 chiede.
-    // Il selettore nomina la classe dei robotaxi e non `path.leaflet-interactive`, che sarebbe
-    // soddisfatto anche dai soli cerchi delle sedici zone — cioè passerebbe con la flotta vuota.
-    const markers = page.locator('.fleet-map path.robotaxi-marker');
+    // Il selettore nomina `data-robotaxi-id`, che solo i veicoli portano: le sedici zone hanno i
+    // propri marker sulla stessa mappa, e un selettore più generico passerebbe a flotta vuota.
+    const markers = page.locator('.fleet-map [data-robotaxi-id]');
     await expect(markers.first()).toBeVisible();
     expect(await markers.count()).toBe(Number.parseInt((await total.innerText()).trim(), 10));
 
@@ -140,12 +140,19 @@ test.describe('[R7][R8][R13][G5][G8][NFR10] La dashboard mostra la flotta e gove
 
     const maintenancePanel = page.getByTestId('maintenance-panel');
     /*
-     * Il riempimento verde identifica i veicoli AVAILABLE.
+     * `data-state` identifica i veicoli AVAILABLE.
+     *
+     * Prima si selezionava sul riempimento verde del cerchio, cioè su una **scelta di palette**: il
+     * test si è rotto quando i marker sono passati da cerchio SVG a badge HTML, e si sarebbe rotto
+     * ugualmente al primo cambio di tinta, che non ha niente a che vedere con ciò che il caso
+     * verifica. Lo stato del dominio nell'attributo è la stessa convenzione di `data-mode`,
+     * `data-strategy` e `data-traffic`.
+     *
      * `dispatchEvent` invia il click direttamente al marker scelto:
      * un click fisico potrebbe essere intercettato da un altro marker
      * sovrapposto sulla stessa zona.
      */
-    const availableMarker = page.locator('.fleet-map path.robotaxi-marker[fill="#4ade80"]').first();
+    const availableMarker = page.locator('.fleet-map [data-state="AVAILABLE"]').first();
 
     await expect(availableMarker).toBeVisible();
     await availableMarker.dispatchEvent('click');
@@ -202,20 +209,36 @@ test.describe('[R2][G1] L operatore aggiorna il proprio profilo', () => {
   }) => {
     await signIn(page);
 
+    /*
+     * Il profilo si raggiunge in **due** passi: prima il menu, poi la voce.
+     *
+     * È un cambiamento voluto del redesign, e non intacca NFR6: quel requisito pretende che modo e
+     * strategia si vedano al primo render senza navigare, e il profilo non è fra quelli — non è
+     * superficie di comando e controllo, è l'account di chi guarda. Ciò che resta verificato qui
+     * sotto è la parte che conta, cioè che aprendolo la console non sparisca.
+     */
+    await page.getByTestId('open-menu').click();
     await page.getByTestId('open-profile').click();
 
-    // La mappa e la status bar restano visibili: il profilo prende il posto dei pannelli
-    // laterali, non della console. È ciò che R7 e NFR10 pretendono resti sempre sott'occhio.
+    /*
+     * La superficie di monitoraggio resta: mappa, status bar **e pannello strategia**.
+     *
+     * Prima il profilo prendeva il posto di tutti i pannelli laterali, e questo caso asseriva che il
+     * toggle di modo sparisse. Il redesign gli fa prendere il posto del solo pannello manutenzione,
+     * e il modo resta a schermo: è un miglioramento rispetto a NFR10, che lo vuole «always visible»,
+     * non un cambiamento da assecondare in silenzio. L'asserzione è quindi rovesciata di proposito.
+     */
     await expect(page.locator('.fleet-map')).toBeVisible();
     await expect(page.getByTestId('fleet-status-bar')).toBeVisible();
-    await expect(page.getByTestId('control-mode')).toHaveCount(0);
+    await expect(page.getByTestId('control-mode')).toBeVisible();
+    await expect(page.getByTestId('maintenance-panel')).toHaveCount(0);
 
     await page.getByTestId('profile-phone').fill('+39 02 1234567');
     await page.getByTestId('save-profile').click();
     await expect(page.getByTestId('profile-saved')).toBeVisible();
 
-    // Chiuso il pannello, il pannello strategia torna al suo posto.
+    // Chiuso il pannello, la manutenzione torna al suo posto.
     await page.getByTestId('close-profile').click();
-    await expect(page.getByTestId('control-mode')).toBeVisible();
+    await expect(page.getByTestId('maintenance-panel')).toBeVisible();
   });
 });

@@ -9,6 +9,7 @@ import {
   type RideRequestStatus,
   type SubmitAdvanceBookingRequest,
   type SubmitImmediateRideRequest,
+  type PassengerBookingsResponse,
 } from '@road/shared';
 
 /**
@@ -111,6 +112,18 @@ export class RideRequestResponseDto implements RideRequestResponse {
 
   @ApiProperty({ format: 'date-time' })
   createdAt!: string;
+}
+
+/**
+ * Elenco delle prenotazioni anticipate ancora in attesa di attivazione
+ * appartenenti al passeggero autenticato.
+ */
+export class PassengerBookingsResponseDto implements PassengerBookingsResponse {
+  @ApiProperty({
+    type: RideRequestResponseDto,
+    isArray: true,
+  })
+  bookings!: RideRequestResponseDto[];
 }
 
 /**

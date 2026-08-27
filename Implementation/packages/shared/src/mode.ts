@@ -27,7 +27,7 @@ import { CONTROL_MODES, STRATEGY_NAMES, TRAFFIC_LEVELS } from './domain.js';
  * successiva.
  *
  * Il livello di traffico **non aggiunge una terza interrogazione**: viaggia con il modo, perché sono
- * due colonne dello stesso record e lo stesso componente le possiede (decisione D74). Le letture
+ * due colonne dello stesso record e lo stesso componente le possiede (decisione D75). Le letture
  * restano due e il livello è quindi sempre coerente con il modo accanto a cui viene mostrato — la
  * coppia che l'operatore usa per capire se il sistema sta ancora decidendo da solo.
  */

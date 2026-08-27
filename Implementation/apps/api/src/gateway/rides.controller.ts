@@ -53,6 +53,7 @@ import {
   RideRequestResponseDto,
   SubmitAdvanceBookingRequestDto,
   SubmitImmediateRideRequestDto,
+  PassengerBookingsResponseDto,
 } from './dto/rides.dto';
 import { ZodValidationPipe } from './zod-validation.pipe';
 
@@ -147,6 +148,29 @@ export class RidesController {
       }
       throw error;
     }
+  }
+
+  @Get(API_ROUTES.rideBookings)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('PASSENGER')
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Elenca le prenotazioni future del passeggero',
+    description:
+      'Restituisce le prenotazioni anticipate accettate che non sono ancora state annullate o ' +
+      'attivate. Ogni passeggero può possedere più prenotazioni contemporaneamente.',
+  })
+  @ApiOkResponse({ type: PassengerBookingsResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Token assente, scaduto o non valido.' })
+  @ApiForbiddenResponse({ description: 'Serve un account passeggero.' })
+  async listBookings(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PassengerBookingsResponseDto> {
+    const bookings = await this.rides.listBookings(user.id);
+
+    return {
+      bookings: bookings.map(({ request, booking }) => rideRequestResponseOf(request, booking)),
+    };
   }
 
   @Post(API_ROUTES.rideCancel)

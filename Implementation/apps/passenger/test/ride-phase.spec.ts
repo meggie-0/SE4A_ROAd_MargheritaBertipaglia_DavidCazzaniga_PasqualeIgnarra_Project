@@ -85,6 +85,33 @@ describe('[R3][R6][G2][G7] La vista di stato della corsa', () => {
     expect(initialView(booking).phase).toBe('searching');
   });
 
+  it('passa ad assegnato quando una prenotazione viene attivata', () => {
+    const booking: RideRequestResponse = {
+      ...REQUEST,
+      kind: 'ADVANCE',
+      assignedRobotaxiId: null,
+      scheduledPickup: '2026-05-04T18:00:00.000Z',
+    };
+
+    const assigned: NotificationPush = {
+      ...NOTHING,
+      type: 'VEHICLE_ASSIGNED',
+      message: 'Il robotaxi è stato assegnato alla corsa programmata.',
+      rideRequestId: booking.id,
+      robotaxiId: 'rt-09',
+      robotaxiState: 'ASSIGNED',
+    };
+
+    const initial = initialView(booking);
+    const activated = applyNotification(initial, assigned);
+
+    expect(initial.phase).toBe('searching');
+    expect(activated).toMatchObject({
+      phase: 'assigned',
+      robotaxiId: 'rt-09',
+    });
+  });
+
   it('[R14] mostra immediatamente una richiesta cancellata', () => {
     const cancelled: RideRequestResponse = {
       ...REQUEST,

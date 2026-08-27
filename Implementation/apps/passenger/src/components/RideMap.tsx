@@ -1,18 +1,21 @@
 import { MILAN_ZONES, type GeoPoint } from '@road/shared';
 import {
-  CircleMarker,
   MapContainer,
   Polyline,
   Popup,
   TileLayer,
   Tooltip,
   useMapEvents,
+  useMap,
+  Marker,
 } from 'react-leaflet';
 
-import { MILAN_SERVICE_BOUNDS } from '../service-area';
+import { LINATE_TERMINAL_POINT, MILAN_SERVICE_BOUNDS } from '../service-area';
 
 import 'leaflet/dist/leaflet.css';
-
+import { useEffect, useRef, useState } from 'react';
+import { divIcon } from 'leaflet';
+import { fetchRoadRoute } from '../address-search';
 /**
  * La mappa su cui l'app passeggero è centrata (DD §3.1).
  *
@@ -21,15 +24,94 @@ import 'leaflet/dist/leaflet.css';
  * campi di indirizzo ne costerebbe molte di più e obbligherebbe a una geocodifica che nessun
  * requisito prevede.
  *
- * I marker sono `CircleMarker` e non `Marker`: l'icona di default di Leaflet è un'immagine
- * risolta a runtime rispetto al foglio di stile, e sotto un bundler finisce quasi sempre in un 404
- * silenzioso — un marker invisibile è il modo peggiore di sbagliare una mappa. Un cerchio è
- * disegnato dal browser e non ha assets.
  */
 
 /** Il centro di Milano: Duomo. La mappa parte da lì perché è lì che il prototipo opera. */
 const MILAN_CENTER: GeoPoint = { lat: 45.4642, lon: 9.19 };
 const INITIAL_ZOOM = 13;
+const PICKUP_MAP_ICON = divIcon({
+  className: 'route-map-icon',
+  html: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 22s7-6.1 7-13a7 7 0 1 0-14 0c0 6.9 7 13 7 13Z"
+        fill="currentColor"
+        stroke="white"
+        stroke-width="1.2"
+      />
+      <circle cx="12" cy="9" r="2.5" fill="white" />
+    </svg>
+  `,
+  iconSize: [34, 34],
+  iconAnchor: [17, 34],
+  popupAnchor: [0, -32],
+});
+
+const DESTINATION_MAP_ICON = divIcon({
+  className: 'route-map-icon',
+  html: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+  d="M6 22V3"
+  fill="none"
+  stroke="white"
+  stroke-width="4.3"
+  stroke-linecap="round"
+/>
+<path
+  d="M6 22V3"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2.5"
+  stroke-linecap="round"
+/>
+      <path
+        d="M7 4h11l-2.5 4L18 12H7Z"
+        fill="currentColor"
+        stroke="white"
+        stroke-width="1.1"
+        stroke-linejoin="round"
+      />
+    </svg>
+  `,
+  iconSize: [34, 34],
+  iconAnchor: [7, 32],
+  popupAnchor: [5, -30],
+});
+
+const ROBOTAXI_MAP_ICON = divIcon({
+  className: 'robotaxi-map-icon',
+  html: `
+    <span
+      class="road-taxi-icon robotaxi-map-symbol"
+      aria-hidden="true"
+    ></span>
+  `,
+  iconSize: [42, 42],
+  iconAnchor: [21, 21],
+  popupAnchor: [0, -21],
+});
+
+function createServiceZoneMapIcon(zoneId: string) {
+  return divIcon({
+    className: 'service-zone-map-icon',
+    html: `
+<span
+  class="service-zone-map-symbol service-zone-map-symbol--${zoneId}"
+  style="--zone-icon: url('/zone-icons/${zoneId}.svg')"
+  aria-hidden="true"
+></span>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    tooltipAnchor: [0, -18],
+  });
+}
+
+const SERVICE_ZONE_MARKERS = MILAN_ZONES.map((zone) => ({
+  zone,
+  icon: createServiceZoneMapIcon(zone.id),
+}));
 
 export interface RideMapProps {
   readonly pickup: GeoPoint | null;
@@ -50,6 +132,8 @@ export interface RideMapProps {
   readonly robotaxiHeadingTo?: 'pickup' | 'destination';
   /** Riceve il punto toccato. `null` quando la schermata non accetta più scelte (corsa in corso). */
   readonly onPick: ((point: GeoPoint) => void) | null;
+  /** Sposta e ingrandisce la mappa sulla destinazione al termine della corsa. */
+  readonly focusDestination?: boolean;
 }
 
 /**
@@ -66,6 +150,7 @@ export function RideMap({
   destination,
   robotaxi,
   robotaxiHeadingTo = 'pickup',
+  focusDestination = false,
   onPick,
 }: RideMapProps): React.JSX.Element {
   const heading = robotaxiHeadingTo === 'destination' ? destination : pickup;
@@ -87,61 +172,123 @@ export function RideMap({
       />
 
       <MapClickHandler onPick={onPick} />
+      <FitRouteBounds pickup={pickup} destination={destination} />
+
+      <FocusRobotaxiBounds robotaxi={robotaxi} target={heading} mode={robotaxiHeadingTo} />
+
+      <FocusDestination destination={destination} enabled={focusDestination} />
 
       {/* Le zone di Milano, dalla partizione di Voronoi condivisa (decisione D10): danno un
           riferimento a chi tocca la mappa senza conoscere la città. */}
-      {MILAN_ZONES.map((zone) => (
-        <CircleMarker
-          key={zone.id}
-          center={[zone.lat, zone.lon]}
-          radius={4}
-          pathOptions={{ color: '#475569', weight: 1, fillOpacity: 0.35 }}
-        >
-          <Tooltip>{zone.name}</Tooltip>
-        </CircleMarker>
-      ))}
+      {SERVICE_ZONE_MARKERS.map(({ zone, icon }) => {
+        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
+
+        return (
+          <Marker
+            key={zone.id}
+            position={[position.lat, position.lon]}
+            icon={icon}
+            alt={`Zona servita: ${zone.name}`}
+            bubblingMouseEvents
+            riseOnHover
+          >
+            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -18]}>
+              <strong>{zone.name}</strong>
+              <br />
+              {zone.id === 'linate' ? 'Terminal / Kiss&Ride raggiungibile' : 'Zona servita'}
+            </Tooltip>
+          </Marker>
+        );
+      })}
 
       {pickup !== null && (
-        <CircleMarker
-          center={[pickup.lat, pickup.lon]}
-          radius={10}
-          pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.9 }}
-        >
-          <Popup>Punto di ritiro</Popup>
-        </CircleMarker>
+        <Marker position={[pickup.lat, pickup.lon]} icon={PICKUP_MAP_ICON}>
+          <Popup>Punto di partenza</Popup>
+        </Marker>
       )}
 
       {destination !== null && (
-        <CircleMarker
-          center={[destination.lat, destination.lon]}
-          radius={10}
-          pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.9 }}
-        >
+        <Marker position={[destination.lat, destination.lon]} icon={DESTINATION_MAP_ICON}>
           <Popup>Destinazione</Popup>
-        </CircleMarker>
+        </Marker>
       )}
       {robotaxi !== null && robotaxi !== undefined && (
         <>
-          {heading !== null && (
-            <Polyline
-              positions={[
-                [robotaxi.lat, robotaxi.lon],
-                [heading.lat, heading.lon],
-              ]}
-              pathOptions={{ color: '#38bdf8', weight: 2, opacity: 0.6, dashArray: '6 8' }}
-            />
-          )}
-          <CircleMarker
-            center={[robotaxi.lat, robotaxi.lon]}
-            radius={9}
-            className="robotaxi-marker"
-            pathOptions={{ color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.95, weight: 3 }}
-          >
+          {heading !== null && <RobotaxiRoadRoute origin={robotaxi} destination={heading} />}
+          <Marker position={[robotaxi.lat, robotaxi.lon]} icon={ROBOTAXI_MAP_ICON}>
             <Popup>Il tuo robotaxi</Popup>
-          </CircleMarker>
+          </Marker>
         </>
       )}
     </MapContainer>
+  );
+}
+
+const ROUTE_REFRESH_CELL_DEGREES = 0.00025;
+
+function RobotaxiRoadRoute({
+  origin,
+  destination,
+}: {
+  readonly origin: GeoPoint;
+  readonly destination: GeoPoint;
+}): React.JSX.Element | null {
+  const [route, setRoute] = useState<readonly GeoPoint[]>([]);
+  const latestOrigin = useRef(origin);
+
+  latestOrigin.current = origin;
+
+  /*
+   * La cella cambia dopo uno spostamento di circa 20–30 metri.
+   * Il marker continua invece ad aggiornarsi a ogni rilevazione.
+   */
+  const originCellLat = Math.round(origin.lat / ROUTE_REFRESH_CELL_DEGREES);
+  const originCellLon = Math.round(origin.lon / ROUTE_REFRESH_CELL_DEGREES);
+
+  const destinationLat = destination.lat;
+  const destinationLon = destination.lon;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const currentOrigin = latestOrigin.current;
+
+    void fetchRoadRoute(
+      currentOrigin,
+      {
+        lat: destinationLat,
+        lon: destinationLon,
+      },
+      controller.signal,
+    )
+      .then((points) => {
+        setRoute(points);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setRoute([]);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [originCellLat, originCellLon, destinationLat, destinationLon]);
+
+  if (route.length < 2) {
+    return null;
+  }
+
+  return (
+    <Polyline
+      positions={route.map((point): [number, number] => [point.lat, point.lon])}
+      pathOptions={{
+        color: '#2136ca',
+        weight: 5,
+        opacity: 0.85,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }}
+    />
   );
 }
 
@@ -158,5 +305,115 @@ function MapClickHandler({ onPick }: { onPick: ((point: GeoPoint) => void) | nul
       onPick({ lat: event.latlng.lat, lon: event.latlng.lng });
     },
   });
+  return null;
+}
+
+function FitRouteBounds({
+  pickup,
+  destination,
+}: {
+  readonly pickup: GeoPoint | null;
+  readonly destination: GeoPoint | null;
+}): null {
+  const map = useMap();
+
+  useEffect(() => {
+    if (pickup === null || destination === null) {
+      return;
+    }
+
+    map.fitBounds(
+      [
+        [pickup.lat, pickup.lon],
+        [destination.lat, destination.lon],
+      ],
+      {
+        animate: true,
+        duration: 0.7,
+        maxZoom: 15,
+        paddingTopLeft: [35, 220],
+        paddingBottomRight: [35, 280],
+      },
+    );
+  }, [map, pickup?.lat, pickup?.lon, destination?.lat, destination?.lon]);
+
+  return null;
+}
+
+function FocusRobotaxiBounds({
+  robotaxi,
+  target,
+  mode,
+}: {
+  readonly robotaxi: GeoPoint | null | undefined;
+  readonly target: GeoPoint | null;
+  readonly mode: 'pickup' | 'destination';
+}): null {
+  const map = useMap();
+  const lastFocusedMode = useRef<'pickup' | 'destination' | null>(null);
+
+  useEffect(() => {
+    if (robotaxi === null || robotaxi === undefined) {
+      lastFocusedMode.current = null;
+      return;
+    }
+
+    if (target === null) {
+      return;
+    }
+
+    if (lastFocusedMode.current === mode) {
+      return;
+    }
+
+    lastFocusedMode.current = mode;
+
+    map.flyToBounds(
+      [
+        [robotaxi.lat, robotaxi.lon],
+        [target.lat, target.lon],
+      ],
+      {
+        animate: true,
+        duration: 0.7,
+        maxZoom: 16,
+        paddingTopLeft: [35, 220],
+        paddingBottomRight: [35, 280],
+      },
+    );
+  }, [map, mode, robotaxi?.lat, robotaxi?.lon, target?.lat, target?.lon]);
+
+  return null;
+}
+
+function FocusDestination({
+  destination,
+  enabled,
+}: {
+  readonly destination: GeoPoint | null;
+  readonly enabled: boolean;
+}): null {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled || destination === null) {
+      return;
+    }
+
+    map.flyToBounds(
+      [
+        [destination.lat, destination.lon],
+        [destination.lat, destination.lon],
+      ],
+      {
+        animate: true,
+        duration: 1,
+        maxZoom: 16,
+        paddingTopLeft: [35, 220],
+        paddingBottomRight: [35, 280],
+      },
+    );
+  }, [map, enabled, destination?.lat, destination?.lon]);
+
   return null;
 }

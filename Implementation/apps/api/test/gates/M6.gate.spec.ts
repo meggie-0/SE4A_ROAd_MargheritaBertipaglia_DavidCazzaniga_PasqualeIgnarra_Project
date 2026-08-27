@@ -272,7 +272,7 @@ describe('[M6] Cancello: ModeController e RebalancingManager', () => {
         .set('Authorization', `Bearer ${operatorToken}`)
         .expect(200);
       // `trafficLevel` nullo: nessuna osservazione è ancora arrivata in questo caso, e il campo lo
-      // dice invece di far finta che il traffico sia basso (decisione D74).
+      // dice invece di far finta che il traffico sia basso (decisione D75).
       expect(before.body).toEqual({
         mode: 'AUTO',
         activeStrategy: 'NEAREST_AVAILABLE',
