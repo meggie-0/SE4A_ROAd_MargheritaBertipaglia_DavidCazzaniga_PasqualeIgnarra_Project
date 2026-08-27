@@ -284,11 +284,47 @@ body {
 
 .operator-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 3.25rem;
+  grid-template-columns: minmax(0, 1fr) auto 3.25rem;
   align-items: center;
   gap: 0.75rem;
   position: relative;
   z-index: 1000;
+}
+
+/*
+ * L'indicatore del canale push, nella barra superiore accanto al riepilogo della flotta.
+ *
+ * Il pallino segue lo stesso vocabolario dei marker della mappa e delle pastiglie della status bar —
+ * cerchio pieno, colore del significato — ma non resta mai solo: l'etichetta lo accompagna, perché
+ * uno stato leggibile solo da chi distingue verde e giallo non è uno stato leggibile.
+ */
+.push-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.push-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentcolor;
+}
+
+.push-on {
+  color: var(--ok);
+}
+
+/*
+ * Il canale caduto è un **avviso**, non un errore: la dashboard continua a leggere la flotta a
+ * intervalli e resta utilizzabile: ciò che si perde è la prontezza, non il dato. `--error` sarebbe
+ * la tinta di una schermata rotta, e questa non lo è.
+ */
+.push-off {
+  color: var(--warn);
 }
 
 .operator-menu-toggle {

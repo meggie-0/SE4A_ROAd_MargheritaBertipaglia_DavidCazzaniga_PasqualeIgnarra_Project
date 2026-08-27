@@ -76,11 +76,21 @@ export class RebalancingManager extends RebalancingPort {
   async rebalance(): Promise<RebalancingPlan> {
     const analyzedAt = this.clock.now();
 
-    // Prima si chiude ciò che è finito, poi si decide cosa cominciare: un veicolo arrivato a
-    // destinazione torna `AVAILABLE` e rientra fra quelli che questo stesso ciclo può contare come
-    // copertura della zona in cui si trova. Nell'ordine opposto resterebbe invisibile per un giro,
-    // e il ciclo manderebbe un secondo veicolo dove uno è appena arrivato.
-
+    /**
+     * Qui si decide soltanto **cosa cominciare**: chiudere ciò che è finito non è più affare di
+     * questo ciclo.
+     *
+     * `completeArrivedRebalancing()` gira per conto suo alla cadenza della telemetria, quindi un
+     * veicolo che raggiunge la propria zona torna `AVAILABLE` entro mezzo secondo — non entro dieci
+     * minuti — e quando l'analisi qui sotto conta i veicoli per zona lo trova già fra gli inattivi
+     * della zona in cui è arrivato, contato come copertura.
+     *
+     * Il difetto che l'ordinamento dentro il ciclo serviva a evitare — mandare un secondo veicolo
+     * dove uno è appena arrivato, perché per un giro restava invisibile — non si dà più, ma per una
+     * ragione diversa da prima: non è che si chiuda *prima* di analizzare, è che la chiusura non
+     * dipende affatto da questo ciclo. Il caso peggiore non è più un giro intero di ritardo, è la
+     * distanza fra due esecuzioni della telemetria.
+     */
     const { zones, idleByZone, zoneById } = await this.analyse(analyzedAt);
 
     /**

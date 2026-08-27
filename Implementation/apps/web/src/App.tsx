@@ -87,7 +87,7 @@ function Dashboard(): React.JSX.Element {
   const health = useApiHealth();
   const queries = useQueryClient();
   const token = session?.accessToken ?? null;
-  const { notifications } = useNotifications(token);
+  const { notifications, connection } = useNotifications(token);
 
   /** L'ultimo evento già applicato a ciascuno dei due pannelli, per non riapplicarlo a ogni render. */
   const lastModeEventRef = useRef<string | null>(null);
@@ -331,6 +331,27 @@ function Dashboard(): React.JSX.Element {
           selectedRobotaxiId={selectedRobotaxiId}
           onFocusRobotaxi={focusRobotaxiFromStatus}
         />
+
+        {/*
+         * Lo stato del **canale push**, accanto al riepilogo della flotta e non dentro un menù.
+         *
+         * Distingue le due letture di una dashboard immobile: una flotta ferma e una socket caduta.
+         * Sono la stessa immagine e due guasti opposti, e senza questo indicatore l'unico modo di
+         * separarli è ricaricare la pagina — cioè fare a mano ciò che NFR2 promette non serva. È la
+         * stessa ragione per cui il piede della schermata mostra l'esito di `GET /health`: quello
+         * dice se il backend risponde, questo se ciò che il backend manda sta arrivando.
+         *
+         * Il colore non porta il significato da solo: la parola accanto lo dice, come per il badge
+         * del traffico e per i marker di stato.
+         */}
+        <span
+          className={connection === 'connected' ? 'push-status push-on' : 'push-status push-off'}
+          data-testid="push-connection"
+          data-connection={connection}
+        >
+          <span className="push-dot" aria-hidden="true" />
+          {connection === 'connected' ? 'canale attivo' : 'canale non connesso'}
+        </span>
 
         <button
           type="button"

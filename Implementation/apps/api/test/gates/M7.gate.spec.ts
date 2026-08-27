@@ -476,10 +476,10 @@ describe('[M7] Cancello: servizi esterni reali e simulatore di flotta', () => {
       simulation.tick(ticksBetween(DUOMO, SAN_SIRO));
 
       /**
-       * Il giro di telemetria **prima** del ciclo di riposizionamento, ed è un ordine che ha una
-       * ragione osservabile: è lui a scrivere in tabella dove i veicoli sono arrivati. Senza,
-       * `RT-01` risulterebbe ancora in centro — la sua zona si calcola dalle coordinate, decisione
-       * D53 — e il ciclo successivo lo rimanderebbe fuori un istante dopo averlo richiamato.
+       * Nessun giro di telemetria da fare prima: la posizione la registra
+       * `completeArrivedRebalancing()` al proprio interno, sulla lettura da cui ha appena dedotto
+       * chi è arrivato. È ciò che rende vera l'asserzione sulla zona qui sotto — che si calcola
+       * dalle coordinate (decisione D53) — senza dipendere dall'ordine di due scheduler indipendenti.
        */
       const completed = await rebalancing.completeArrivedRebalancing();
 

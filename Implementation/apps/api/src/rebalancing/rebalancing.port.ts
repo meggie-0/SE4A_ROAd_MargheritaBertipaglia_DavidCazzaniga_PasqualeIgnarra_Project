@@ -52,18 +52,9 @@ export interface DemandAnalysis {
   readonly zones: readonly ZoneDemand[];
 }
 
-/** L'esito di un ciclo: la stessa analisi, più i veicoli mandati e quelli arrivati. */
+/** L'esito di un ciclo: la stessa analisi, più i veicoli mandati. */
 export interface RebalancingPlan extends DemandAnalysis {
   readonly dispatched: readonly RebalancingDispatch[];
-  /**
-   * I veicoli che hanno **raggiunto** la zona verso cui erano stati mandati, e che questo ciclo ha
-   * riportato ad `AVAILABLE` (transizione 9, M7).
-   *
-   * Un ciclo chiude prima di aprire: senza questa metà, un veicolo mandato a riposizionarsi
-   * resterebbe in `REBALANCING` per sempre — allocabile, ma mai più contato fra gli inattivi e
-   * quindi mai più spostabile (decisione D60). È vuota finché nessuno è arrivato, che è lo stato
-   * normale di una flotta ferma.
-   */
 }
 
 export abstract class RebalancingPort {
@@ -82,10 +73,17 @@ export abstract class RebalancingPort {
   abstract analyzeDemand(): Promise<DemandAnalysis>;
 
   /**
-   * Chiude i riposizionamenti dei robotaxi che hanno raggiunto la zona di destinazione.
+   * Chiude i riposizionamenti dei robotaxi che hanno raggiunto la zona di destinazione, e
+   * restituisce gli identificatori di quelli riportati ad `AVAILABLE` (transizione 9, M7).
    *
    * È separata da `rebalance()` perché l'arrivo di un veicolo è un evento della telemetria e non deve
-   * attendere il successivo ciclo di previsione della domanda.
+   * attendere il successivo ciclo di previsione della domanda. Legarla a quel ciclo significherebbe
+   * lasciare in `REBALANCING` fino a dieci minuti un veicolo che è già fermo a destinazione.
+   *
+   * **Che qualcuno chiuda è la condizione perché il riposizionamento resti utile.** Un veicolo mai
+   * chiuso resterebbe in `REBALANCING` a tempo indeterminato — allocabile, perché la transizione 10
+   * lo interrompe, ma mai più contato fra gli inattivi e quindi mai più spostabile (decisione D60).
+   * La lista esce vuota finché nessuno è arrivato, che è lo stato normale di una flotta ferma.
    */
   abstract completeArrivedRebalancing(): Promise<readonly string[]>;
 
