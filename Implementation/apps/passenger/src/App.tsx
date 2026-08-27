@@ -774,6 +774,17 @@ function PassengerApp(): React.JSX.Element {
               />
             </div>
           </div>
+
+          {/*
+           * Il titolo della pagina, per chi non lo vede.
+           *
+           * Il logo lo dice a chi guarda, ma un `alt` su un'immagine **non è un'intestazione**: chi
+           * naviga saltando da un titolo all'altro — il modo in cui si esplora una schermata con
+           * uno screen reader — su una pagina senza `h1` non trova da dove cominciare. Il testo è
+           * quello del `<title>` in `index.html`, così la scheda del browser e la pagina dicono la
+           * stessa cosa.
+           */}
+          <h1 className="visually-hidden">ROAd — App passeggero</h1>
         </header>
       ) : request === null ? (
         <header className={`mobile-topbar ${showRoutePicker ? 'mobile-topbar--expanded' : ''}`}>

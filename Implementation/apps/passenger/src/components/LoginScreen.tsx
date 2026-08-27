@@ -46,9 +46,14 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps): React.JSX.El
 
   return (
     <section className="panel login-panel">
-      <h1 className="login-heading">
+      {/*
+       * `h2` e non `h1`: il titolo della pagina è il prodotto — «ROAd — App passeggero», che
+       * l'intestazione dichiara sopra — e questo è il titolo di *un pannello dentro* quella pagina.
+       * Con due `h1` la gerarchia direbbe che la schermata parla di due cose allo stesso livello.
+       */}
+      <h2 className="login-heading">
         {mode === 'login' ? 'Accedi per richiedere una corsa' : 'Crea un account'}
-      </h1>
+      </h2>
       <form onSubmit={(event) => void submit(event)}>
         {mode === 'register' && (
           <>

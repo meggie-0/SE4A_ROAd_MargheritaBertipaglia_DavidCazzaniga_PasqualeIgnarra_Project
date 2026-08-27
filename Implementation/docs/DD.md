@@ -132,6 +132,7 @@ The design explicitly addresses these goals in terms of design patterns:
 | 1.6 | August 13, 2026 | **[v1.6]** Decisions taken while building the two clients (M8): the fleet overview endpoint the operator dashboard needs — the arc Figure 2.1 drew and no route realised — the passenger session kept in the browser, without which the interaction budget of NFR6 is unreachable, the position of the assigned vehicle shown to the passenger without letting a polled route carry the state that NFR2 reserves to the push channel, and the operator's own profile, which R2 grants to users and no screen offered. See decisions D67–D70 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.7 | August 13, 2026 | **[v1.7]** Decisions taken while writing the system tests and the demo dataset (M9): the passenger's map keeps the vehicle marker for the whole ride and turns the segment towards the destination once the passenger boards, and the cadence at which positions are produced and read becomes one shared constant of half a second instead of two numbers that could drift apart (D71). Both are defects that only show on screen — a map that empties at the moment the ride starts, and a vehicle that jumps rather than moves. The faster cadence also forced the amendment of D63: the wait at the pickup point is now **ten seconds** rather than "the next telemetry cycle", because a cycle and the time a person takes to board are not the same quantity, and tying them made `arrived` last half a second. Two more decisions belong to the same release and were taken by the team when the review surfaced them: the periodic work runs on a **single instance**, which is what NFR3 never said either way (D72), and the seed is **recalibrated** — 64 vehicles, demand brought to the scale of the fleet, and zones deliberately far apart — because with twenty vehicles and city-scale demand no zone ever had a vehicle to spare, so R11 could not fire in the running system at all between 07:00 and 23:00 (D73). See decisions D63, D71, D72 and D73 in [Appendice A](#appendice-a--registro-delle-decisioni). |
 | 1.8 | August 22, 2026 | **[v1.8]** Corrective design decision after live validation of fleet rebalancing: the ten-minute cycle remains responsible for demand analysis and the dispatch of new repositionings, while completion of vehicles that have reached their target is checked independently at the shared fleet-telemetry cadence. Transition 9 now also updates the robotaxi `zoneId` to the persisted target zone together with `REBALANCING → AVAILABLE`. Decision D74 supersedes only the trigger timing introduced by D60, while preserving the ownership boundaries and the State pattern. |
+| 1.9 | August 27, 2026 | **[v1.9]** No design decision: a declaration of something the document did not say. Section 3.1 presented the passenger app as a consumer of the system's public contract alone, while the client in fact contacts **two external providers on its own** — a geocoding provider for addresses, and a public demonstration instance of OSRM for snapping a tapped point to a road — and **neither has a fallback**, so either one being unavailable makes R3 unreachable. Recorded as a declared limitation of the prototype, alongside the simulated demand data and the hourly traffic model, and deliberately contrasted with the backend, where `OsrmRouteGateway` does degrade and the M7 gate proves it. No entry in [Appendice A](#appendice-a--registro-delle-decisioni): nothing was decided here, and hardening the client remains open work. |
 
 ## 1.4 Document Structure
 
@@ -1414,6 +1415,28 @@ endpoint answers *where the vehicle is*, and says nothing about *what state it i
 what R6 promises and it travels on the push channel; letting a polled route carry it as well would
 give the client a second way of learning the same fact, and the property NFR2 asks for — that a
 state change reaches a connected client without the client asking — would stop being observable.
+
+**[v1.9] Two external providers the client contacts on its own, and neither has a fallback.** This
+section described the passenger app as a consumer of the system's public HTTP contract and nothing
+else. That is not the whole truth, and the omission is recorded here rather than left to be
+discovered from the code:
+
+- **address search and reverse geocoding** are served by a third-party geocoding provider, reached
+  directly from the browser with an API key supplied as a build-time variable. It turns a tapped map
+  point into a street address and decides whether that point lies inside the Comune di Milano;
+- **snapping a tapped point to the nearest drivable road** is served by a **public demonstration
+  instance** of OSRM, reached without credentials and subject to its rate limits.
+
+Neither degrades. If the geocoder is unavailable the pickup point cannot be selected at all, so R3
+becomes unreachable for a reason no requirement admits; if the OSRM instance is unavailable the same
+happens one step earlier. This is a **declared limitation of the prototype**, in the same sense as
+the simulated demand data and the hourly traffic model: the system is a course prototype and its
+external dependencies are stated rather than hardened. It is worth contrasting with the backend,
+which does the opposite — `OsrmRouteGateway` falls back to a straight-line estimate when its provider
+does not answer, and the M7 gate verifies it by shutting the provider down — so the asymmetry between
+the two sides is known and deliberate, not an oversight. Giving the client the same treatment is
+recorded work, not a design question: what it would degrade to is the zone of decision D10, which
+`packages/shared` already computes.
 
 **[v1.1] Delivery form.** The passenger app is delivered as a **responsive progressive web
 application** rather than a native mobile build. Nothing in the RASD or in this document depends on

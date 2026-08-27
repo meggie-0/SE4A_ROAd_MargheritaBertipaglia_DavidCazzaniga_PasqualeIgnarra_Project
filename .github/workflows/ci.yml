@@ -25,7 +25,16 @@ env:
   SEED_PASSENGER_EMAIL: passeggero@road.example
   SEED_PASSENGER_PASSWORD: passeggero-di-sviluppo
   DATABASE_URL: postgres://road:road@localhost:5432/road
-  
+  # La chiave del fornitore di geocodifica dell'app passeggero, senza la quale
+  # `reverseGeocodeMilanPoint()` solleva e la selezione del punto di ritiro non si completa: gli
+  # scenari del passeggero falliscono prima di arrivare alla richiesta di corsa.
+  #
+  # Sta qui in chiaro come le righe qui sopra, e non fra i secret, perché **non è un segreto**: è una
+  # variabile `VITE_`, e Vite le inlina nel bundle servito al browser — chiunque apra l'app la legge
+  # comunque. Un secret ne gestirebbe la distribuzione, non la riservatezza; una chiave di frontend
+  # si protegge con la restrizione per dominio presso il fornitore.
+  VITE_MAPTILER_API_KEY: JqIXdIzLethxDYgKEtlr
+
 defaults:
   run:
     # Il monorepo vive in Implementation/; la radice del repository ospita RASD, DD e diagrammi.
