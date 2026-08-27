@@ -192,6 +192,16 @@ const FLEET_OFFSETS: readonly { readonly lat: number; readonly lon: number }[] =
   { lat: -0.001, lon: -0.001 },
 ];
 
+const LINATE_FLEET_POSITIONS: readonly {
+  readonly lat: number;
+  readonly lon: number;
+}[] = [
+  { lat: 45.4615, lon: 9.2782 },
+  { lat: 45.4617, lon: 9.2785 },
+  { lat: 45.4619, lon: 9.2788 },
+  { lat: 45.4621, lon: 9.2791 },
+];
+
 /** I 64 robotaxi, tutti `AVAILABLE`, quattro attorno al centroide di ciascuna zona. */
 export function fleetRecords(): readonly NewRecord<'robotaxi'>[] {
   const records: NewRecord<'robotaxi'>[] = [];
@@ -203,11 +213,17 @@ export function fleetRecords(): readonly NewRecord<'robotaxi'>[] {
     for (let index = 0; index < ROBOTAXIS_PER_ZONE; index += 1) {
       // `FLEET_OFFSETS` ha `ROBOTAXIS_PER_ZONE` elementi: l'indice è sempre dentro.
       const offset = FLEET_OFFSETS[index] as (typeof FLEET_OFFSETS)[number];
+
+      const linatePosition =
+        zone.id === 'linate'
+          ? (LINATE_FLEET_POSITIONS[index] as (typeof LINATE_FLEET_POSITIONS)[number])
+          : null;
+
       records.push({
         id: `RT-${String(records.length + 1).padStart(2, '0')}`,
         state: 'AVAILABLE',
-        lat: roundCoordinate(home.lat + offset.lat),
-        lon: roundCoordinate(home.lon + offset.lon),
+        lat: linatePosition !== null ? linatePosition.lat : roundCoordinate(home.lat + offset.lat),
+        lon: linatePosition !== null ? linatePosition.lon : roundCoordinate(home.lon + offset.lon),
         zoneId: zone.id,
       });
     }

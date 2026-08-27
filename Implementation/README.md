@@ -144,6 +144,10 @@ veicolo per zona scoperta, quindi il primo movimento arriva entro dieci minuti d
 successivi uno ogni dieci: è la cadenza scelta in M6, e una dimostrazione dal vivo conviene
 avviarla in anticipo. Quando parte, un veicolo inattivo si mette in viaggio verso lo stadio — il suo
 marker passa al colore di `REBALANCING` e nel pannello alert compare la riga corrispondente.
+I dieci minuti governano soltanto la **decisione di nuovi riposizionamenti**. Un robotaxi che
+raggiunge la zona target non attende il ciclo successivo: la telemetria ne chiude il
+riposizionamento alla cadenza `FLEET_POSITION_REFRESH_MS`, lo riporta ad `AVAILABLE` e aggiorna la
+sua `zoneId` alla zona raggiunta (decisione D74).
 
 > `pnpm db:migrate` applica le migrazioni TypeORM (compila prima l'API, perché lo schema vive dentro
 > il modulo `persistence`). `pnpm db:seed` è **ripetibile**: svuota le tabelle di dominio e ricarica

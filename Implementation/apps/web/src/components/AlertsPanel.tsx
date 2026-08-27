@@ -22,7 +22,7 @@ export interface AlertsPanelProps {
 }
 
 /** Quanti alert mostrare: oltre, l'elenco smette di essere leggibile a colpo d'occhio. */
-const VISIBLE_ALERTS = 12;
+const VISIBLE_ALERTS = 8;
 
 export function AlertsPanel({ notifications }: AlertsPanelProps): React.JSX.Element {
   // Gli alert dal più recente: chi guarda una console vuole sapere cos'è appena successo.

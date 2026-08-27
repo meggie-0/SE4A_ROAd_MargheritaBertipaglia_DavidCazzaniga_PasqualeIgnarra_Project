@@ -89,7 +89,7 @@ confine, stai sbagliando qualcosa.
 | `allocation` | `AllocationPort` | `allocate`, `setActiveStrategy`, `getActiveStrategy` |
 | `mode` | `ModePort`, `traffic-monitor.port.ts` (`TrafficMonitorPort`) | `onTrafficLevel`, `setManual`, `enableAuto`, `getMode`; `runOnce` |
 | `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`, `releaseAssignment`, `requestRebalancing`, `completeRebalancing`, `recordPositions` |
-| `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance` |
+| `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance`, `completeArrivedRebalancing` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
 | `notifications` | `NotificationPort`, `session.port.ts` (`NotificationSessionPort`) | `update`; `registerSession`, `removeSession`, `registeredSessions` |
 | `persistence` | `PersistencePort` | `create`, `update`, `find`, `filterAvailable`, `reserve` |
@@ -140,6 +140,10 @@ Nel codice di dominio **non esistono** `new Date()`, `Date.now()`, `Math.random(
 - I numeri casuali sempre da `RandomPort.next()`.
 - Le esecuzioni periodiche sono un metodo pubblico chiamato dallo scheduler in produzione e
   direttamente dai test.
+  - Il controllo degli arrivi dei robotaxi in `REBALANCING` è separato dal ciclo decennale:
+  `RebalancingScheduler` invoca `RebalancingPort.completeArrivedRebalancing()` a
+  `FLEET_POSITION_REFRESH_MS`; nei test la stessa operazione viene chiamata direttamente attraverso
+  la porta (DD, decisione D74).
 - Il simulatore di flotta avanza per `tick()` espliciti, mai su orologio di sistema, quando è sotto
   test.
 

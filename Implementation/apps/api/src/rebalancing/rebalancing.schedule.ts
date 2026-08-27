@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
-
+import { Cron, CronExpression, Interval } from '@nestjs/schedule';
+import { FLEET_POSITION_REFRESH_MS } from '@road/shared';
 import { RebalancingPort } from './rebalancing.port';
 
 /**
@@ -26,12 +26,31 @@ import { RebalancingPort } from './rebalancing.port';
 @Injectable()
 export class RebalancingScheduler {
   private readonly logger = new Logger(RebalancingScheduler.name);
+  private completing = false;
 
   constructor(private readonly rebalancing: RebalancingPort) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async triggerRebalancingCycle(): Promise<void> {
     await this.runOnce();
+  }
+
+  @Interval(FLEET_POSITION_REFRESH_MS)
+  async completeArrivedVehicles(): Promise<void> {
+    if (this.completing) return;
+    this.completing = true;
+
+    try {
+      const completed = await this.rebalancing.completeArrivedRebalancing();
+
+      if (completed.length > 0) {
+        this.logger.log(`Riposizionamento completato: ${completed.join(', ')} disponibili.`);
+      }
+    } catch (error) {
+      this.logger.error('Il controllo dei riposizionamenti completati è fallito.', error);
+    } finally {
+      this.completing = false;
+    }
   }
 
   /** Un ciclo di riposizionamento. Non solleva: un'esecuzione periodica non ha a chi riferire. */

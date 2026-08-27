@@ -6,6 +6,7 @@ import {
   PersistencePort,
   RecordNotFoundError,
   StaleRecordError,
+  type RecordPatch,
 } from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
 
@@ -141,9 +142,14 @@ export class FleetMonitor extends FleetMonitorPort {
     );
   }
 
-  async completeRebalancing(robotaxiId: string): Promise<RobotaxiSnapshot> {
-    return this.applyTransition(robotaxiId, 'completeRebalancing', (robotaxi) =>
-      robotaxi.completeRebalancing(),
+  async completeRebalancing(robotaxiId: string, targetZoneId: string): Promise<RobotaxiSnapshot> {
+    return this.applyTransition(
+      robotaxiId,
+      'completeRebalancing',
+      (robotaxi) => robotaxi.completeRebalancing(),
+      undefined,
+      null,
+      { zoneId: targetZoneId },
     );
   }
 
@@ -198,6 +204,7 @@ export class FleetMonitor extends FleetMonitorPort {
     knownRideRequestId?: string,
     /** Solo la transizione 4 lo porta: è il tempo di attesa che il passeggero vedrà (R6, D66). */
     etaToPickupMinutes: number | null = null,
+    extraPatch: RecordPatch<'robotaxi'> = {},
   ): Promise<RobotaxiSnapshot> {
     const [record] = await this.persistence.find('robotaxi', {
       where: { id: robotaxiId },
@@ -221,7 +228,7 @@ export class FleetMonitor extends FleetMonitorPort {
       updated = await this.persistence.update(
         'robotaxi',
         robotaxiId,
-        { state: robotaxi.currentState, updatedAt: observedAt },
+        { state: robotaxi.currentState, updatedAt: observedAt, ...extraPatch },
         { state: record.state },
       );
     } catch (error) {
