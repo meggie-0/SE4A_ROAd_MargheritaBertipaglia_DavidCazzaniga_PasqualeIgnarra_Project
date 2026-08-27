@@ -313,6 +313,8 @@ function Dashboard(): React.JSX.Element {
               alt="ROAd"
             />
           </div>
+
+          <h1 className="visually-hidden">ROAd — Dashboard operatore</h1>
         </header>
 
         <LoginScreen onAuthenticated={onAuthenticated} />
@@ -324,6 +326,17 @@ function Dashboard(): React.JSX.Element {
 
   return (
     <main className="dashboard">
+      {/*
+       * Il titolo della pagina, letto dagli assistenti vocali e non dagli occhi.
+       *
+       * Il logo lo dice già a chi guarda, ma un `alt` su un'immagine **non è un'intestazione**: chi
+       * naviga saltando da un titolo all'altro — che è il modo in cui si esplora una schermata con
+       * uno screen reader — su una pagina senza `h1` non trova da dove cominciare. La classe lo
+       * toglie dal flusso visivo senza toglierlo dall'albero di accessibilità, che è la differenza
+       * fra nasconderlo e cancellarlo (`display: none` farebbe la seconda).
+       */}
+      <h1 className="visually-hidden">ROAd — Dashboard operatore</h1>
+
       <div className="operator-toolbar">
         <StatusBar
           status={fleet.data ?? null}

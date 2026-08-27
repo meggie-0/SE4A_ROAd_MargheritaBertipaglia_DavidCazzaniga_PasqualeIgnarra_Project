@@ -100,6 +100,26 @@
   box-sizing: border-box;
 }
 
+/*
+ * Visibile agli assistenti vocali, invisibile allo schermo.
+ *
+ * `display: none` e `visibility: hidden` tolgono l'elemento **anche** dall'albero di accessibilità:
+ * servirebbero a nascondere, non a questo. Qui l'elemento resta nel documento e resta annunciabile —
+ * è il titolo che il logo dice già a chi guarda, e che chi naviga per intestazioni non troverebbe
+ * altrimenti.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -1149,7 +1169,7 @@ button:disabled {
     var(--panel-shadow);
 }
 
-.dashboard--guest .operator-login-panel h1 {
+.dashboard--guest .operator-login-panel h2 {
   margin: 0 0 1.15rem;
   color: var(--ink);
   font-size: 1.15rem;

@@ -1,4 +1,4 @@
-import { MILAN_ZONES, type FleetVehicle } from '@road/shared';
+import { MILAN_ZONES, type FleetVehicle, type RobotaxiState } from '@road/shared';
 import {
   MapContainer,
   Marker,
@@ -19,9 +19,21 @@ import 'leaflet/dist/leaflet.css';
  * «Mappa Leaflet con marker colorati per stato»: il colore viene da `STATE_APPEARANCE`, che è la
  * stessa sorgente che colora la status bar — così la legenda e la barra non possono contraddirsi.
  *
- * I marker sono `CircleMarker` e non `Marker` per la stessa ragione della mappa del passeggero:
- * l'icona di default di Leaflet è un'immagine risolta a runtime, e sotto un bundler diventa un 404
- * silenzioso. Un marker invisibile su una mappa di monitoraggio è il difetto peggiore possibile.
+ * **L'icona di default di Leaflet non si usa mai**, ed è l'invariante da non perdere di vista: è
+ * un'immagine risolta a runtime, e sotto un bundler diventa un 404 silenzioso. Un marker invisibile
+ * su una mappa di monitoraggio è il difetto peggiore possibile — la flotta *sembra* vuota, e niente
+ * segnala che non lo è.
+ *
+ * I marker sono quindi `Marker` con un `divIcon`, cioè **markup, non un'immagine**: la stessa
+ * garanzia di prima ottenuta per un'altra via — prima era un cerchio SVG disegnato da Leaflet, ora è
+ * HTML nostro — con in più il fatto che dentro ci sta un badge con l'icona di marca e un contorno
+ * del colore dello stato. Se un giorno qualcuno tornasse a `new Marker()` senza `icon`, il difetto
+ * di cui sopra tornerebbe con lui.
+ *
+ * Lo stato e l'identificatore del veicolo viaggiano sul badge come `data-state` e
+ * `data-robotaxi-id`, nella stessa convenzione di `data-mode`, `data-strategy` e `data-traffic`: è
+ * ciò su cui gli end-to-end asseriscono. Il colore da solo non basterebbe a nominarli — legarli alla
+ * tinta rende un test verde o rosso a seconda di una scelta di palette.
  *
  * **Le posizioni arrivano per interrogazione periodica, non dal canale push**, e non è una
  * violazione di NFR2: le *transizioni* di stato arrivano push e ridipingono il marker subito; a
@@ -41,13 +53,20 @@ const LINATE_TERMINAL_POINT = {
   lat: 45.4618,
   lon: 9.2786,
 };
-function createRobotaxiIcon(color: string, selected: boolean) {
+function createRobotaxiIcon(
+  robotaxiId: string,
+  state: RobotaxiState,
+  color: string,
+  selected: boolean,
+) {
   return divIcon({
     className: 'robotaxi-marker',
     html: `
       <span
         class="robotaxi-marker-badge${selected ? ' robotaxi-marker-badge--selected' : ''}"
         style="--robotaxi-color: ${color}"
+        data-robotaxi-id="${robotaxiId}"
+        data-state="${state}"
       >
         <span class="robotaxi-marker-glyph"></span>
       </span>
@@ -192,7 +211,7 @@ export function FleetMap({
           <Marker
             key={vehicle.id}
             position={[vehicle.position.lat, vehicle.position.lon]}
-            icon={createRobotaxiIcon(appearance.color, selected)}
+            icon={createRobotaxiIcon(vehicle.id, vehicle.state, appearance.color, selected)}
             eventHandlers={{
               click: () => onSelectRobotaxi(vehicle.id),
             }}
