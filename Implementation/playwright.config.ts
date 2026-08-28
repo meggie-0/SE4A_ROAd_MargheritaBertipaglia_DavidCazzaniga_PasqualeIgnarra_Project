@@ -41,7 +41,17 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // SPIKE: gli scenari di dimostrazione. `testMatch` diverso, quindi `--project=chromium` non li
+    // raccoglie e `pnpm verify:e2e` non rallenta.
+    {
+      name: 'demo',
+      testDir: './e2e/demo',
+      testMatch: '**/*.demo.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 
   // Un solo comando alza tutti e tre i servizi. L'attesa è sull'API e non sui client di
   // proposito: è il servizio più lento a partire, quindi quando risponde lui i due dev server
