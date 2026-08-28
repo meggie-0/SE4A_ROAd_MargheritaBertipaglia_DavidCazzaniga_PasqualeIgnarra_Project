@@ -160,6 +160,11 @@ ciò che fa scoprire una demo rotta **prima** di trovarsela davanti. Richiede i 
 pnpm exec playwright install chromium
 ```
 
+**Il comando aspetta che l'API risponda prima di dirti cosa aprire**, e non è una cortesia: i due
+server Vite rispondono in un paio di secondi mentre l'API compila, quindi aprire la pagina appena
+il comando parte significa leggere «Impossibile contattare l'API» e, per gli scenari brevi,
+perdersi l'inizio.
+
 Oggi ha uno script il solo scenario 1. Gli altri partono dal vivo; scriverli è il passo successivo.
 Gli screenshot coprono i **passaggi salienti**, non ogni fase: alcune transizioni durano meno del
 giro di campionamento, quindi quante immagini escano varia da un'esecuzione all'altra.
@@ -178,6 +183,15 @@ minuti**: qui l'anticipo di attivazione è di un minuto invece di quindici, e il
 dieci secondi invece che ogni minuto. La prenotazione resta in elenco, separata dalla corsa live.
 Quando manca un minuto all'orario il veicolo viene assegnato **da solo** e la corsa comincia: nessuno
 ha premuto niente, ed è il punto dello scenario.
+
+Misurato su una prenotazione fatta per le 22:01:10 — i tempi sono quelli veri di un'esecuzione:
+
+| | |
+|---|---|
+| 22:00:10 | l'attivazione diventa dovuta, un minuto prima dell'orario |
+| 22:00:20 | il ciclo la raccoglie e assegna `RT-14`, **senza che nessuno prema niente** |
+| 22:00:30 | il veicolo è al ritiro, la corsa comincia |
+| 22:00:38 | la corsa si conclude |
 
 **`pnpm demo:traffic` — traffico e isteresi (R12, R13, NFR9, NFR10).** Basta la dashboard. Il
 livello segue una tabella di due minuti dall'avvio del processo:
@@ -199,6 +213,13 @@ dieci minuti. Sulla mappa un veicolo inattivo per volta si mette in viaggio vers
 marker nel colore di «In riposizionamento». Quando arriva torna «Disponibile» **nella zona
 raggiunta**, senza attendere il ciclo successivo: a chiudere il riposizionamento è la telemetria
 (decisione D74).
+
+> **Guardalo dall'inizio.** Lo stadio ha bisogno di **sei** veicoli e ne parte uno ogni quindici
+> secondi: misurato, il primo si muove a **t+10s** e il sesto arriva a **t+107s**, dopodiché la zona
+> è coperta e non parte più nessuno. Chi apre la pagina dopo
+> trova la flotta ferma e non vede niente — e il pannello alert **non conserva** ciò che è già
+> passato, perché oggi vive nella memoria della scheda. Per questo il comando aspetta che l'API
+> risponda prima di dirti di aprire il browser: quando lo dice, la finestra buona sta cominciando.
 
 ### Che cosa rende una dimostrazione pilotabile
 

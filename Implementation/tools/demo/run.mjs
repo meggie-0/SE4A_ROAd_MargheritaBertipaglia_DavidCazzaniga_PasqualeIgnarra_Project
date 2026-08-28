@@ -9,9 +9,10 @@
 // l'ambiente. Playwright fonde `process.env` nell'ambiente del figlio, quindi le variabili
 // impostate qui raggiungono l'API senza altro cablaggio.
 
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 
-import { run, runOrExit, buildPackages, colors } from '../lib/run.mjs';
+import { run, runOrExit, buildPackages, colors, repoRoot } from '../lib/run.mjs';
 
 /**
  * Gli scenari, e le sole cose che li distinguono.
@@ -27,6 +28,7 @@ import { run, runOrExit, buildPackages, colors } from '../lib/run.mjs';
  */
 const SCENARIOS = {
   immediate: {
+    durata: 'la corsa si completa in un paio di minuti dall’avvio.',
     guida: {
       apri: ['App passeggero  http://localhost:5174', 'Dashboard operatore  http://localhost:5173'],
       guarda: [
@@ -43,6 +45,7 @@ const SCENARIOS = {
     env: { SIMULATOR_TICK_SECONDS: '45' },
   },
   advance: {
+    durata: 'dipende da quando prenoti: l’attivazione scatta un minuto prima dell’orario scelto.',
     guida: {
       apri: ['App passeggero  http://localhost:5174', 'Dashboard operatore  http://localhost:5173'],
       guarda: [
@@ -59,7 +62,10 @@ const SCENARIOS = {
     grep: 'Scenario 2',
     dataset: 'seed',
     env: {
-      SIMULATOR_TICK_SECONDS: '45',
+      // Rallentato come lo scenario 4, e per la stessa ragione misurata: a 45 la corsa che segue
+      // l'attivazione dura **sette secondi** — il veicolo è assegnato, arriva e ha finito prima che
+      // si faccia in tempo a guardare la mappa. A 15 il tragitto dura una cinquantina di secondi.
+      SIMULATOR_TICK_SECONDS: '15',
       // L'anticipo di attivazione scende da quindici minuti a uno, e il controllo passa da ogni
       // minuto a ogni dieci secondi: senza entrambi, lo scenario si guarderebbe per un quarto d'ora.
       RESERVATION_ACTIVATION_LEAD_MINUTES: '1',
@@ -67,6 +73,7 @@ const SCENARIOS = {
     },
   },
   traffic: {
+    durata: 'due minuti esatti dall’avvio dell’API, poi il livello resta su LOW.',
     guida: {
       apri: ['Dashboard operatore  http://localhost:5173'],
       guarda: [
@@ -93,6 +100,9 @@ const SCENARIOS = {
     },
   },
   rebalancing: {
+    durata:
+      'circa due minuti: sei veicoli, uno ogni quindici secondi. Finiti quelli lo stadio è ' +
+      'coperto e non parte più nessuno — se apri la pagina dopo, trovi la flotta già ferma.',
     guida: {
       apri: ['Dashboard operatore  http://localhost:5173'],
       guarda: [
@@ -111,7 +121,10 @@ const SCENARIOS = {
     // La serata con la partita: il seed costruisce la città, `db:demo` ci mette sopra l'evento.
     dataset: 'demo',
     env: {
-      SIMULATOR_TICK_SECONDS: '45',
+      // Più lento degli altri scenari, di proposito: a 45 un veicolo copre mezza Milano in cinque
+      // secondi, cioè lampeggia. Qui il movimento **è** ciò che si deve vedere, quindi vale la pena
+      // che duri quanto l'intervallo fra due partenze.
+      SIMULATOR_TICK_SECONDS: '15',
       REBALANCING_CRON: '*/15 * * * * *',
     },
   },
@@ -210,22 +223,67 @@ if (scenario.scripted === true && !live) {
   );
 }
 
-console.log(colors.bold('Da aprire nel browser:'));
-for (const riga of scenario.guida.apri) console.log(`  ${riga}`);
+/**
+ * Lo stack parte **prima** che si dica cosa aprire, e la differenza non è cosmetica.
+ *
+ * I due server Vite rispondono in un paio di secondi, l'API ci mette molto di più: `nest start`
+ * compila in watch mode. Stampando le istruzioni subito, chi le segue apre la dashboard mentre
+ * l'API non c'è ancora e legge «Impossibile contattare l'API» — poi aspetta, ricarica, e nel
+ * frattempo lo scenario è cominciato senza di lui. Su San Siro, che si esaurisce in un minuto e
+ * mezzo, questo significa aprire la pagina e non vedere **niente**.
+ *
+ * Quindi: si avvia, si aspetta che `GET /health` risponda, e solo allora si parla.
+ */
+const dev = spawn('pnpm dev', {
+  cwd: repoRoot,
+  shell: true,
+  stdio: 'inherit',
+  env: { ...process.env, ...scenario.env },
+});
 
-console.log(colors.bold('\nChe cosa guardare:'));
-for (const riga of scenario.guida.guarda) console.log(`  ${riga}`);
+dev.on('exit', (code) => process.exit(code ?? 0));
 
-if (scenario.scripted !== true) {
-  console.log(
-    colors.dim(
-      '\nQuesto scenario non ha ancora uno script Playwright: si guarda, non si rigioca da solo.',
-    ),
-  );
+/** Aspetta che l'API risponda, o si arrende dopo tre minuti dicendo perché. */
+async function waitForApi() {
+  const deadline = Date.now() + 180_000;
+  while (Date.now() < deadline) {
+    try {
+      const probe = await fetch('http://localhost:3000/health');
+      if (probe.ok) return true;
+    } catch {
+      // Non è ancora in ascolto: è lo stato normale dei primi secondi.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return false;
 }
 
-console.log(colors.bold('\nLo stack resta acceso. Ctrl-C per fermarlo.\n'));
+console.log(colors.dim('\nAvvio dello stack… (l’API compila, può volerci un minuto)\n'));
 
-// `pnpm dev` alza i tre servizi e resta in primo piano: l'interruzione arriva al figlio, che spegne
-// i propri. Non c'è un secondo runner, ed è la stessa catena degli scenari end-to-end.
-process.exit(run('pnpm', ['dev'], { env: scenario.env }));
+if (!(await waitForApi())) {
+  console.error(
+    "L'API non ha risposto entro tre minuti. Lo stack resta acceso: guarda i log qui sopra.",
+  );
+} else {
+  console.log(colors.bold('\n' + '─'.repeat(78)));
+  console.log(colors.bold('Tutto pronto. Da aprire adesso:'));
+  for (const riga of scenario.guida.apri) console.log(`  ${riga}`);
+
+  console.log(colors.bold('\nChe cosa guardare:'));
+  for (const riga of scenario.guida.guarda) console.log(`  ${riga}`);
+
+  if (scenario.durata !== undefined) {
+    console.log(colors.bold(`\nQuanto dura: ${scenario.durata}`));
+  }
+
+  if (scenario.scripted !== true) {
+    console.log(
+      colors.dim(
+        '\nQuesto scenario non ha ancora uno script Playwright: si guarda, non si rigioca da solo.',
+      ),
+    );
+  }
+
+  console.log(colors.bold('\nLo stack resta acceso. Ctrl-C per fermarlo.'));
+  console.log(colors.bold('─'.repeat(78) + '\n'));
+}
