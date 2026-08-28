@@ -507,12 +507,13 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
   async function pannelloDiControllo(mark: Account): Promise<{
     mode: string;
     activeStrategy: string;
+    trafficLevel: string | null;
   }> {
     const response = await request(api.getHttpServer())
       .get(API_ROUTES.mode)
       .set('Authorization', `Bearer ${mark.token}`)
       .expect(200);
-    return response.body as { mode: string; activeStrategy: string };
+    return response.body as { mode: string; activeStrategy: string; trafficLevel: string | null };
   }
 
   it('la giornata di Mark, dalla pioggia al ritorno in Auto', async () => {
@@ -520,9 +521,12 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
     const suaDashboard = recordOperator(sessions);
 
     // «while the system is in Auto Mode»: il default del RASD §2.4, letto dove Mark lo legge.
+    // Nessuna osservazione è ancora arrivata, e il pannello lo dice invece di mostrare un livello
+    // che nessuno ha misurato.
     expect(await pannelloDiControllo(mark)).toEqual({
       mode: 'AUTO',
       activeStrategy: 'NEAREST_AVAILABLE',
+      trafficLevel: null,
     });
 
     // «The system detects the traffic level as Medium and displays a notification on Mark's
@@ -534,17 +538,27 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
     );
     expect(alertDiTraffico).toHaveLength(1);
     expect(alertDiTraffico[0]?.strategy).toBe('MINIMUM_ETA');
-    // «Mark observes the situation but decides to remain in Auto Mode»: la strategia non si è mossa.
+    /**
+     * «Mark observes the situation» — e ora ha qualcosa da osservare.
+     *
+     * La strategia non si è mossa, ma il livello sì: è la banda morta di NFR9 vista dal pannello, il
+     * caso in cui il sistema **ha** valutato e ha deciso di non commutare. Senza il livello a
+     * schermo, questo stato sarebbe indistinguibile da «non ha ancora valutato», e la frase del RASD
+     * «observes the situation» non avrebbe un referente nell'interfaccia.
+     */
     expect(await pannelloDiControllo(mark)).toEqual({
       mode: 'AUTO',
       activeStrategy: 'NEAREST_AVAILABLE',
+      trafficLevel: 'MEDIUM',
     });
 
-    // «the system detects a High traffic level and automatically switches the active strategy»
+    // «the system detects a High traffic level and automatically switches the active strategy»:
+    // causa ed effetto nella stessa risposta, che è il motivo per cui viaggiano insieme (D75).
     await mode.onTrafficLevel('HIGH');
     expect(await pannelloDiControllo(mark)).toEqual({
       mode: 'AUTO',
       activeStrategy: 'MINIMUM_ETA',
+      trafficLevel: 'HIGH',
     });
 
     // «Later, Mark […] manually selects the Nearest Available strategy.» Dalla dashboard, cioè da
@@ -556,10 +570,12 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
       .send({ strategy: 'NEAREST_AVAILABLE' })
       .expect(200);
 
-    // «The system immediately transitions to Manual Mode»
+    // «The system immediately transitions to Manual Mode». Il livello non cambia perché non è
+    // arrivata una nuova osservazione: descrive il traffico, non la scelta di Mark.
     expect(await pannelloDiControllo(mark)).toEqual({
       mode: 'MANUAL',
       activeStrategy: 'NEAREST_AVAILABLE',
+      trafficLevel: 'HIGH',
     });
 
     // «suspending all automated strategy changes»: il traffico continua a salire e non succede
@@ -568,9 +584,18 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
     await mode.onTrafficLevel('HIGH');
     await mode.onTrafficLevel('MEDIUM');
     await mode.onTrafficLevel('HIGH');
+    /**
+     * Le tre osservazioni **si vedono** nel pannello pur non avendo commutato nulla.
+     *
+     * È la decisione D20 arrivata fino allo schermo, ed è ciò che rende l'indicatore utile invece
+     * che decorativo: Mark ha scelto «più vicino disponibile» quando il traffico era alto, il
+     * traffico è ancora alto, e lui può vederlo. Senza il livello leggerebbe soltanto la propria
+     * scelta riflessa indietro, e non avrebbe alcun elemento per decidere se rientrare in Auto.
+     */
     expect(await pannelloDiControllo(mark)).toEqual({
       mode: 'MANUAL',
       activeStrategy: 'NEAREST_AVAILABLE',
+      trafficLevel: 'HIGH',
     });
 
     // «until Mark explicitly re-enables Auto Mode via the dashboard interface»: e il rientro
@@ -581,7 +606,11 @@ describe('[R8][R12][R13][G5][NFR9][NFR10] Scenario 3 — Gestione automatica e m
       .send({ mode: 'AUTO' })
       .expect(200);
 
-    expect(rientro.body).toEqual({ mode: 'AUTO', activeStrategy: 'MINIMUM_ETA' });
+    expect(rientro.body).toEqual({
+      mode: 'AUTO',
+      activeStrategy: 'MINIMUM_ETA',
+      trafficLevel: 'HIGH',
+    });
   });
 
   it('la scelta di Mark è riservata a Mark', async () => {

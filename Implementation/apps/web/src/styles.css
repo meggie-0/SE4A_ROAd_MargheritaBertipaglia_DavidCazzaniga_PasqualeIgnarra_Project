@@ -880,6 +880,39 @@ body {
   font-weight: 600;
 }
 
+/*
+ * Il badge del livello di traffico (RASD §2.3; R12).
+ *
+ * La pastiglia colorata **accompagna** l'etichetta, non la sostituisce: il colore fa scorrere
+ * l'occhio, la parola porta il significato. Su un pannello da cui si decide se prendere il controllo
+ * della flotta, un indicatore leggibile solo da chi distingue verde e rosso non è un indicatore.
+ */
+.traffic-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.traffic-badge .swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/*
+ * La riga che dice **chi sta decidendo**, distinta dal livello di sopra.
+ *
+ * Ha lo stesso trattamento di `.mode-explanation` perché svolge lo stesso ruolo — prosa che spiega
+ * un valore mostrato sopra — e il margine superiore negativo la riavvicina al `readout` da cui
+ * dipende, separandola dai pulsanti che vengono dopo.
+ */
+.traffic-explanation {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  margin: -0.4rem 0 0.8rem;
+}
+
 .strategy-buttons {
   display: flex;
   gap: 0.6rem;

@@ -11,7 +11,7 @@ import {
 } from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
 
-import { ModePort, STRATEGY_BY_TRAFFIC, SUGGESTED_ON_MEDIUM } from './mode.port';
+import { ModePort, STRATEGY_BY_TRAFFIC, SUGGESTED_ON_MEDIUM, type ModeReading } from './mode.port';
 
 /**
  * Il `ModeController` (DD §2.2, §2.4 Figura 2.6): l'isteresi e la precedenza dell'intervento umano.
@@ -135,8 +135,12 @@ export class ModeController extends ModePort {
     }
   }
 
-  async getMode(): Promise<ControlMode> {
-    return (await this.systemMode()).mode;
+  async getMode(): Promise<ModeReading> {
+    // Una sola lettura per entrambi i valori, che è la ragione per cui viaggiano insieme (decisione
+    // D75): sono due colonne dello stesso record, e prenderle separatamente permetterebbe di
+    // mostrare all'operatore un livello che non è quello che valeva per il modo mostrato accanto.
+    const { mode, lastTrafficLevel } = await this.systemMode();
+    return { mode, lastTrafficLevel };
   }
 
   /**

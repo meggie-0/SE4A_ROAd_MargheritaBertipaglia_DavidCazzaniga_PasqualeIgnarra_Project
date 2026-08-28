@@ -26,6 +26,10 @@ import { ZodValidationPipe } from './zod-validation.pipe';
  * strategia attiva al primo caricamento: per questo la risposta porta i due valori insieme, letti
  * dalle rispettive porte.
  *
+ * Con loro viaggia il **livello di traffico** (decisione D75), che il RASD §2.3 mette fra i bisogni
+ * dell'operatore accanto al modo operativo. Non aggiunge una lettura: esce dalla stessa chiamata del
+ * modo, perché sono due colonne dello stesso record e lo stesso componente le possiede.
+ *
  * **Non c'è una rotta per entrare in modo Manual**, e non è una dimenticanza: R13 lega il modo
  * Manual alla scelta di una politica — «if the Operator manually selects a specific allocation
  * strategy […] the system immediately transitions to Manual Mode» — quindi ci si entra da
@@ -57,11 +61,12 @@ export class ControlModeController {
   @Roles('OPERATOR')
   @ApiBearerAuth('bearer')
   @ApiOperation({
-    summary: 'Legge il modo di controllo e la strategia attiva',
+    summary: 'Legge il modo di controllo, la strategia attiva e il livello di traffico',
     description:
-      'NFR10: il modo corrente è sempre visibile sulla dashboard. I due valori vengono dal ' +
+      'NFR10: il modo corrente è sempre visibile sulla dashboard. I tre valori vengono dal ' +
       'record `system_mode`, la loro unica sede autorevole, quindi due repliche del tier ' +
-      'applicativo rispondono la stessa cosa (NFR3).',
+      'applicativo rispondono la stessa cosa (NFR3). Il livello di traffico esce dalla stessa ' +
+      'lettura del modo (decisione D75) ed è `null` finché nessuna osservazione è arrivata.',
   })
   @ApiOkResponse({ type: ModeResponseDto })
   @ApiUnauthorizedResponse({ description: 'Token assente, scaduto o non valido.' })
@@ -121,10 +126,16 @@ export class ControlModeController {
    * Fra i due errori possibili si sceglie quello che non nega mai un intervento umano già avvenuto.
    * L'alternativa esatta sarebbe una singola operazione che restituisce entrambi i valori, ma
    * nessuno dei due componenti a cui il DD affida le due letture ha titolo per esporla.
+   *
+   * **Le letture restano due anche col livello di traffico**, ed è il motivo per cui la decisione
+   * D75 l'ha aggiunto a `getMode()` invece di dargli un lettore proprio: una terza `SELECT` avrebbe
+   * allungato questa stessa analisi di un caso in più — un livello letto prima di un cambio di modo
+   * e mostrato accanto a quello dopo — mentre così livello e modo provengono dalla stessa riga letta
+   * nello stesso istante. Il disallineamento residuo resta quello di sopra, e riguarda la strategia.
    */
   private async currentMode(): Promise<ModeResponseDto> {
     const activeStrategy = await this.allocation.getActiveStrategy();
-    const mode = await this.mode.getMode();
-    return { mode, activeStrategy };
+    const { mode, lastTrafficLevel } = await this.mode.getMode();
+    return { mode, activeStrategy, trafficLevel: lastTrafficLevel };
   }
 }
