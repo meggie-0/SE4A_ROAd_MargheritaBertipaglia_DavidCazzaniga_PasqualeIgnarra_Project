@@ -41,7 +41,26 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    /**
+     * Gli **scenari di dimostrazione** (decisione D76), in un progetto a sé.
+     *
+     * `testMatch` diverso perché siano file diversi, e `tools/e2e/run.mjs` passa
+     * `--project=chromium` perché `pnpm verify:e2e` non li raccolga: il progetto separato **non
+     * basta da solo**, `playwright test` senza filtro esegue tutti i progetti. Li si guida con
+     * `pnpm demo:<scenario>`.
+     *
+     * `workers: 1` e `fullyParallel: false` valgono anche qui, e per la stessa ragione: gli scenari
+     * condividono database, record `system_mode` e il mondo del simulatore.
+     */
+    {
+      name: 'demo',
+      testDir: './e2e/demo',
+      testMatch: '**/*.demo.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 
   // Un solo comando alza tutti e tre i servizi. L'attesa è sull'API e non sui client di
   // proposito: è il servizio più lento a partire, quindi quando risponde lui i due dev server
@@ -74,7 +93,13 @@ export default defineConfig({
      * passano lo stesso — i limiti qui sopra assorbono la differenza — ma la corsa impiega un minuto
      * invece di dieci secondi. In CI non si dà: lì `reuseExistingServer` è falso e il server lo
      * avvia Playwright.
+     *
+     * **Il valore cede all'ambiente, e non è un dettaglio.** Playwright applica `webServer.env`
+     * *dopo* `process.env`, quindi un `'45'` scritto qui vincerebbe su qualunque cosa il chiamante
+     * imposti: uno scenario di dimostrazione che chiedesse un passo diverso se lo vedrebbe
+     * sovrascritto **in silenzio**, che è il modo peggiore. Con il ripiego, chi non imposta niente
+     * ottiene esattamente il comportamento di prima.
      */
-    env: { SIMULATOR_TICK_SECONDS: '45' },
+    env: { SIMULATOR_TICK_SECONDS: process.env.SIMULATOR_TICK_SECONDS ?? '45' },
   },
 });

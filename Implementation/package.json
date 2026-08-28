@@ -4,7 +4,7 @@
   "private": true,
   "description": "ROAd — Robotaxi Optimized Allocation. Monorepo del prototipo.",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=20.12"
   },
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -22,10 +22,14 @@
     "gate": "pnpm build:packages && node tools/gate/gate.mjs",
     "trace": "node tools/trace/trace.mjs",
     "verify:e2e": "node tools/e2e/run.mjs",
-    "dev": "node tools/dev/dev.mjs",
+    "dev": "node --env-file-if-exists=.env tools/dev/dev.mjs",
     "db:migrate": "node tools/db/migrate.mjs",
     "db:seed": "node tools/db/seed.mjs",
-    "db:demo": "node tools/db/demo.mjs"
+    "db:demo": "node tools/db/demo.mjs",
+    "demo:immediate": "node tools/demo/run.mjs immediate",
+    "demo:advance": "node tools/demo/run.mjs advance",
+    "demo:traffic": "node tools/demo/run.mjs traffic",
+    "demo:rebalancing": "node tools/demo/run.mjs rebalancing"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

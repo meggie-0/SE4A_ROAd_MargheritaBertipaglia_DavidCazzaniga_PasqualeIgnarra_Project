@@ -17,6 +17,12 @@ import { TrafficMonitorPort } from './traffic-monitor.port';
  * le richieste successive — e il traffico urbano non passa da scorrevole a congestionato in un
  * minuto. Leggerlo più spesso interrogherebbe il fornitore senza cambiare nessuna decisione, e da
  * M7 quel fornitore è una chiamata di rete a pagamento.
+ *
+ * **La cadenza si può accorciare da configurazione** (decisione D76), e il valore qui sopra resta il
+ * default: una dimostrazione ha bisogno di vedere la sequenza del traffico in due minuti, non in
+ * mezz'ora. Si legge da `process.env` e non da `ConfigService` perché `@Cron` valuta il proprio
+ * argomento **all'import**, prima che `ConfigModule` esista; `pnpm dev` carica il file d'ambiente
+ * con `--env-file-if-exists`, quindi ciò che sta nel `.env` è già una variabile vera a quel punto.
  */
 @Injectable()
 export class TrafficSchedule {
@@ -24,7 +30,7 @@ export class TrafficSchedule {
 
   constructor(private readonly monitor: TrafficMonitorPort) {}
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(process.env.TRAFFIC_CRON ?? CronExpression.EVERY_5_MINUTES)
   async readTrafficLevel(): Promise<void> {
     try {
       await this.monitor.runOnce();

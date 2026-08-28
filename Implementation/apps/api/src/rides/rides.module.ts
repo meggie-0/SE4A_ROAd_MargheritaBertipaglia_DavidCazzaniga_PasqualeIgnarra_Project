@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
 import { AllocationModule } from '../allocation/allocation.module';
 import { ExternalModule } from '../external/external.module';
@@ -42,6 +43,8 @@ import { RideRequestPort } from './rides.port';
  */
 @Module({
   imports: [
+    // `rides` legge dall'ambiente l'anticipo di attivazione delle prenotazioni (decisione D76).
+    ConfigModule,
     PersistenceModule,
     PlatformModule,
     ExternalModule,

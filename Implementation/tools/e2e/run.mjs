@@ -32,4 +32,12 @@ console.log(
   ),
 );
 
-process.exit(run('npx', ['playwright', 'test', '--pass-with-no-tests']));
+/*
+ * `--project=chromium`, e non è ridondante con il `testMatch` della configurazione.
+ *
+ * Da quando esiste un secondo progetto per gli scenari di dimostrazione, `playwright test` senza
+ * filtro raccoglie **entrambi**: il `testMatch` distingue quali file appartengono a quale progetto,
+ * non quale progetto eseguire. Senza questa riga `pnpm verify:e2e` eseguirebbe anche le demo, che
+ * durano minuti e non verificano nessun requisito.
+ */
+process.exit(run('npx', ['playwright', 'test', '--project=chromium', '--pass-with-no-tests']));

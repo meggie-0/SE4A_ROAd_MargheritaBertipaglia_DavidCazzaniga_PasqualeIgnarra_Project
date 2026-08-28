@@ -9,7 +9,7 @@ import {
   type EtaOrigin,
   type VehicleTelemetry,
 } from './external-services.port';
-import { HourlyTrafficGateway } from './hourly-traffic.gateway';
+import { TrafficSource } from './traffic-source';
 import { OsrmRouteGateway } from './osrm-route.gateway';
 import { SimulatorFleetGateway } from './simulator-fleet.gateway';
 
@@ -17,7 +17,7 @@ import { SimulatorFleetGateway } from './simulator-fleet.gateway';
  * L'`ExternalServicesGateway` del DD §2.2: **un facade, un adapter per fornitore**.
  *
  * I fornitori sono tre, e ciascuno ha la sua classe: le mappe (`OsrmRouteGateway`, con la stima
- * lineare come via d'uscita), la sorgente di traffico (`HourlyTrafficGateway`) e la flotta
+ * lineare come via d'uscita), la sorgente di traffico (`TrafficSource`, in due varianti dalla D76) e la flotta
  * (`SimulatorFleetGateway`). Tenerli in una classe sola significherebbe che l'adapter delle mappe
  * risponde anche di quanto traffico c'è e di dove si trovano i veicoli, cioè esattamente la
  * confusione con cui il DD §4.3 falsifica NFR8.
@@ -33,7 +33,7 @@ import { SimulatorFleetGateway } from './simulator-fleet.gateway';
 export class ExternalServicesGateway extends ExternalServicesPort {
   constructor(
     private readonly maps: OsrmRouteGateway,
-    private readonly traffic: HourlyTrafficGateway,
+    private readonly traffic: TrafficSource,
     private readonly fleet: SimulatorFleetGateway,
   ) {
     super();

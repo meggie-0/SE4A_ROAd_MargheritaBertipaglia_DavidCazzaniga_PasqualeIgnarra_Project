@@ -3,6 +3,8 @@ import { isWeekend, milanWeekdayHourSlot, type TrafficLevel } from '@road/shared
 
 import { ClockPort } from '../platform/clock.port';
 
+import { TrafficSource } from './traffic-source';
+
 /**
  * L'adapter della sorgente di traffico di M6: il livello **dedotto dall'ora locale di Milano**.
  *
@@ -16,6 +18,10 @@ import { ClockPort } from '../platform/clock.port';
  * il servizio di mappe come dipendenza esterna, e finché M7 non collega un fornitore vero questa
  * classe lo sostituisce. Quando arriverà, sostituirla non toccherà una riga di `mode`, che conosce
  * solo `ExternalServicesPort` (NFR8).
+ *
+ * **[D76]** Da qui in avanti è uno dei **due** adapter dietro `TrafficSource`, e resta il default:
+ * l'altro segue una tabella oraria e serve a rendere dimostrabile lo scenario 3. Questa classe non
+ * cambia comportamento.
  *
  * Determinismo (CLAUDE.md Regola 3): l'unico ingresso è `ClockPort.now()`. Non c'è `new Date()`,
  * non c'è casualità, non c'è rete — due letture nello stesso istante simulato danno lo stesso
@@ -43,8 +49,10 @@ const WEEKDAY_BUSY_HOURS: readonly number[] = [6, 9, 10, 16, 20];
 const WEEKEND_BUSY_HOURS: readonly number[] = [19, 20, 21, 22];
 
 @Injectable()
-export class HourlyTrafficGateway {
-  constructor(private readonly clock: ClockPort) {}
+export class HourlyTrafficGateway extends TrafficSource {
+  constructor(private readonly clock: ClockPort) {
+    super();
+  }
 
   getTraffic(): Promise<TrafficLevel> {
     const slot = milanWeekdayHourSlot(this.clock.now());

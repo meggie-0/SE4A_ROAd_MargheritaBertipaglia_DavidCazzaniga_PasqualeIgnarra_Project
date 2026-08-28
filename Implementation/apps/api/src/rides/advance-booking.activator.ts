@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { FleetMonitorPort } from '../fleet/fleet-monitor.port';
 import {
@@ -10,6 +11,7 @@ import {
   PersistencePort,
   advanceReservationWindow,
   type BookingRecord,
+  type ReservationTiming,
   type RideRequestRecord,
 } from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
@@ -22,6 +24,7 @@ import {
 import { destinationOf, pickupOf } from './ride-request-geo';
 import { RideAllocator } from './ride-allocator';
 import { RideJournal } from './ride-journal';
+import { readReservationTiming } from './rides.config';
 
 /**
  * L'attivatore delle prenotazioni anticipate (DD §2.4, decisione D9).
@@ -44,9 +47,22 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
     private readonly clock: ClockPort,
     /** La corsa esiste già dalla prenotazione: qui si scrive chi la farà (M5). */
     private readonly journal: RideJournal,
+    config: ConfigService,
   ) {
     super();
+    this.timing = readReservationTiming(config);
   }
+
+  /**
+   * Lo stesso anticipo con cui `RideRequestManager` ha accettato la prenotazione (decisione D76).
+   *
+   * Deve coincidere, e non per simmetria: `advanceReservationWindow()` fa **iniziare la riserva**
+   * all'istante `orario − anticipo`, cioè esattamente quello in cui questo componente la trasforma
+   * in assegnazione (D9). Due valori diversi aprirebbero una finestra che comincia prima o dopo
+   * l'attivazione, e nel secondo caso il veicolo risulterebbe libero nel momento in cui gli si
+   * comanda di partire.
+   */
+  private readonly timing: ReservationTiming;
 
   async runOnce(now: Date = this.clock.now()): Promise<ActivationReport> {
     /**
@@ -232,6 +248,7 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
       booking.scheduledPickup,
       0,
       estimatedRideMinutes,
+      this.timing,
     );
     const freeIds = new Set(
       await this.persistence.filterAvailable(
@@ -250,6 +267,7 @@ export class AdvanceBookingActivator extends AdvanceBookingActivatorPort {
           booking.scheduledPickup,
           travel.etaToPickupMinutes,
           travel.estimatedRideMinutes,
+          this.timing,
         ),
       // La riga di `booking` esiste già: qui si riscrive, non si crea. L'atomicità che M4 pretende
       // riguarda la *nascita* della prenotazione, ed è garantita da `submitAdvance`.

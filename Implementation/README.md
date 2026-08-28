@@ -120,7 +120,124 @@ eseguito. Se la schermata dell'operatore rifiuta le credenziali, quasi sempre ma
 In fondo a entrambe le schermate resta l'indicatore dello stato letto da `GET /health`: dice a colpo
 d'occhio se una schermata ferma è una flotta ferma o un backend spento.
 
-### La dimostrazione: una serata con la partita a San Siro
+## Le dimostrazioni
+
+Quattro comandi, uno per scenario del RASD. Ciascuno **ricostruisce i dati di partenza**, accorcia
+ciò che in esecuzione normale è lento, alza i tre servizi e dice cosa aprire e cosa guardare.
+
+```bash
+pnpm demo:immediate      # scenario 1 — corsa immediata
+pnpm demo:advance        # scenario 2 — prenotazione anticipata
+pnpm demo:traffic        # scenario 3 — traffico, isteresi, rientro in Auto
+pnpm demo:rebalancing    # scenario 4 — riposizionamento verso San Siro
+```
+
+Prerequisiti: gli stessi dell'installazione — Docker in esecuzione e `pnpm install` fatto.
+
+> **A stack fermo.** I comandi **rifiutano di partire** se le porte 3000, 5173 o 5174 sono occupate,
+> e lo fanno apposta. Un `pnpm dev` già avviato verrebbe riusato, e quei processi hanno letto le
+> variabili d'ambiente all'avvio: la demo girerebbe con la configurazione sbagliata senza dare un
+> solo segnale. Il messaggio d'errore riporta il comando per chiudere ciò che è rimasto aperto.
+
+### Due modi, e quando valgono
+
+Chi guarda una dimostrazione e chi la mantiene hanno bisogno di due cose diverse.
+
+**Dal vivo.** Il comando prepara il mondo, alza lo stack, stampa cosa aprire e cosa guardare, e
+**resta acceso** finché non lo si interrompe con Ctrl-C. È il modo predefinito degli scenari 3 e 4,
+dove non c'è niente da guidare — il traffico cambia da solo, il riposizionamento parte da solo — e
+si aggiunge a qualunque scenario con `--live`:
+
+```bash
+pnpm demo:immediate --live
+```
+
+**Rigiocata.** Se lo scenario ha uno script Playwright, il comando lo esegue: guida i due client da
+solo e lascia gli screenshot in `e2e/screenshots/demo/`. Serve a noi più che a chi guarda, perché è
+ciò che fa scoprire una demo rotta **prima** di trovarsela davanti. Richiede i browser di Playwright:
+
+```bash
+pnpm exec playwright install chromium
+```
+
+**Il comando aspetta che l'API risponda prima di dirti cosa aprire**, e non è una cortesia: i due
+server Vite rispondono in un paio di secondi mentre l'API compila, quindi aprire la pagina appena
+il comando parte significa leggere «Impossibile contattare l'API» e, per gli scenari brevi,
+perdersi l'inizio.
+
+Oggi ha uno script il solo scenario 1. Gli altri partono dal vivo; scriverli è il passo successivo.
+Gli screenshot coprono i **passaggi salienti**, non ogni fase: alcune transizioni durano meno del
+giro di campionamento, quindi quante immagini escano varia da un'esecuzione all'altra.
+
+### Che cosa si vede, scenario per scenario
+
+**`pnpm demo:immediate` — corsa immediata (R3, R5, R6).** Apri l'app passeggero su
+<http://localhost:5174> e la dashboard su <http://localhost:5173>. Nell'app: accedi, tocca la mappa
+per il ritiro e per la destinazione, chiedi la corsa. Il pannello diventa vista di stato e segue
+assegnazione, avvicinamento, arrivo al ritiro e corsa. Sulla dashboard, nello stesso momento, il
+conteggio «Disponibili» cala di uno, «In corsa» sale, e il log operativo mostra le transizioni del
+veicolo mentre accadono — senza che nessuno ricarichi niente, che è ciò che NFR2 chiede.
+
+**`pnpm demo:advance` — prenotazione anticipata (R4).** Prenota una corsa per **fra due o tre
+minuti**: qui l'anticipo di attivazione è di un minuto invece di quindici, e il controllo gira ogni
+dieci secondi invece che ogni minuto. La prenotazione resta in elenco, separata dalla corsa live.
+Quando manca un minuto all'orario il veicolo viene assegnato **da solo** e la corsa comincia: nessuno
+ha premuto niente, ed è il punto dello scenario.
+
+Misurato su una prenotazione fatta per le 22:01:10 — i tempi sono quelli veri di un'esecuzione:
+
+| | |
+|---|---|
+| 22:00:10 | l'attivazione diventa dovuta, un minuto prima dell'orario |
+| 22:00:20 | il ciclo la raccoglie e assegna `RT-14`, **senza che nessuno prema niente** |
+| 22:00:30 | il veicolo è al ritiro, la corsa comincia |
+| 22:00:38 | la corsa si conclude |
+
+**`pnpm demo:traffic` — traffico e isteresi (R12, R13, NFR9, NFR10).** Basta la dashboard. Il
+livello segue una tabella di due minuti dall'avvio del processo:
+
+| dall'avvio | livello | che cosa fa il sistema |
+|---|---|---|
+| 0s | `LOW` | strategia «Più vicino disponibile» |
+| 20s | `MEDIUM` | un alert **suggerisce** ETA minimo, e la strategia **non** cambia |
+| 50s | `HIGH` | commuta da solo a «ETA minimo» |
+| 80s | `MEDIUM` | **resta** su ETA minimo: è l'isteresi, non si torna indietro a metà |
+| 110s | `LOW` | solo ora rientra su «Più vicino disponibile» |
+
+Poi premi «ETA minimo» a mano: il modo passa a Manual e ogni cambio automatico si ferma finché non
+riabiliti Auto. «Riabilita il modo Auto» rivaluta subito l'ultimo livello letto.
+
+**`pnpm demo:rebalancing` — riposizionamento (R10, R11, G9).** Basta la dashboard. C'è una partita a
+San Siro *adesso* e i veicoli sono altrove; il ciclo gira ogni quindici secondi invece che ogni
+dieci minuti. Sulla mappa un veicolo inattivo per volta si mette in viaggio verso lo stadio, con il
+marker nel colore di «In riposizionamento». Quando arriva torna «Disponibile» **nella zona
+raggiunta**, senza attendere il ciclo successivo: a chiudere il riposizionamento è la telemetria
+(decisione D74).
+
+> **Guardalo dall'inizio.** Lo stadio ha bisogno di **sei** veicoli e ne parte uno ogni quindici
+> secondi: misurato, il primo si muove a **t+10s** e il sesto arriva a **t+107s**, dopodiché la zona
+> è coperta e non parte più nessuno. Chi apre la pagina dopo
+> trova la flotta ferma e non vede niente — e il pannello alert **non conserva** ciò che è già
+> passato, perché oggi vive nella memoria della scheda. Per questo il comando aspetta che l'API
+> risponda prima di dirti di aprire il browser: quando lo dice, la finestra buona sta cominciando.
+
+### Che cosa rende una dimostrazione pilotabile
+
+In esecuzione normale il lavoro periodico ha le cadenze che le decisioni del DD giustificano nel
+merito — traffico ogni cinque minuti, riposizionamento ogni dieci, prenotazioni ogni minuto — e il
+livello di traffico si deduce dall'ora locale di Milano. Sono i valori giusti per un sistema acceso e
+i valori sbagliati per qualcuno che guarda: la sequenza dell'isteresi si vedrebbe solo alle 17:00 di
+un giorno feriale, e una prenotazione si attiverebbe un quarto d'ora dopo.
+
+I comandi qui sopra accorciano quelle cadenze e sostituiscono la sorgente di traffico con una che
+segue una **tabella relativa all'avvio del processo**, passando variabili d'ambiente documentate in
+`.env.example`. **I default non cambiano**: un'installazione che ignora quelle variabili si comporta
+esattamente come prima. Ed è il *mondo* a essere diverso in dimostrazione, non il sistema — non
+esiste nessuna rotta che imposta il traffico, perché il traffico è un fenomeno osservato e non
+comandato (DD, decisione D76).
+
+### Lo scenario 4 a mano, senza il comando
+
 
 ```bash
 # a `pnpm dev` fermo, e dopo `pnpm db:seed`
