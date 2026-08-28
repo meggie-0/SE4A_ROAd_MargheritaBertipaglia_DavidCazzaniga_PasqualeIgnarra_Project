@@ -120,7 +120,54 @@ eseguito. Se la schermata dell'operatore rifiuta le credenziali, quasi sempre ma
 In fondo a entrambe le schermate resta l'indicatore dello stato letto da `GET /health`: dice a colpo
 d'occhio se una schermata ferma è una flotta ferma o un backend spento.
 
-### La dimostrazione: una serata con la partita a San Siro
+## Le dimostrazioni
+
+Quattro comandi, uno per scenario del RASD. Ciascuno **ricostruisce i dati di partenza**, alza i tre
+servizi e guida un browser vero, lasciando gli screenshot in `e2e/screenshots/demo/`.
+
+```bash
+pnpm demo:immediate      # scenario 1 — corsa immediata
+pnpm demo:advance        # scenario 2 — prenotazione anticipata
+pnpm demo:traffic        # scenario 3 — traffico, isteresi, rientro in Auto
+pnpm demo:rebalancing    # scenario 4 — riposizionamento verso San Siro
+```
+
+Prerequisiti: gli stessi dell'installazione — Docker in esecuzione e `pnpm install` fatto — più i
+browser di Playwright, che si installano una volta sola:
+
+```bash
+pnpm exec playwright install chromium
+```
+
+> **A stack fermo.** I comandi **rifiutano di partire** se le porte 3000, 5173 o 5174 sono occupate,
+> e lo fanno apposta. Un `pnpm dev` già avviato verrebbe riusato, e quei processi hanno letto le
+> variabili d'ambiente all'avvio: la demo girerebbe con la configurazione sbagliata senza dare un
+> solo segnale. Il messaggio d'errore riporta il comando per chiudere ciò che è rimasto aperto.
+
+**Stato: solo `demo:immediate` ha il proprio script.** Gli altri tre hanno già la configurazione —
+è ciò che questo lavoro ha aggiunto — e si fermano con un messaggio esplicito finché lo script non
+c'è. Scriverli è il passo successivo.
+
+Gli screenshot coprono i **passaggi salienti**, non ogni fase: alcune transizioni durano meno del
+giro di campionamento, quindi quante immagini escano varia da un'esecuzione all'altra.
+
+### Che cosa rende una dimostrazione pilotabile
+
+In esecuzione normale il lavoro periodico ha le cadenze che le decisioni del DD giustificano nel
+merito — traffico ogni cinque minuti, riposizionamento ogni dieci, prenotazioni ogni minuto — e il
+livello di traffico si deduce dall'ora locale di Milano. Sono i valori giusti per un sistema acceso e
+i valori sbagliati per qualcuno che guarda: la sequenza dell'isteresi si vedrebbe solo alle 17:00 di
+un giorno feriale, e una prenotazione si attiverebbe un quarto d'ora dopo.
+
+I comandi qui sopra accorciano quelle cadenze e sostituiscono la sorgente di traffico con una che
+segue una **tabella relativa all'avvio del processo**, passando variabili d'ambiente documentate in
+`.env.example`. **I default non cambiano**: un'installazione che ignora quelle variabili si comporta
+esattamente come prima. Ed è il *mondo* a essere diverso in dimostrazione, non il sistema — non
+esiste nessuna rotta che imposta il traffico, perché il traffico è un fenomeno osservato e non
+comandato (DD, decisione D76).
+
+### Lo scenario 4 a mano, senza il comando
+
 
 ```bash
 # a `pnpm dev` fermo, e dopo `pnpm db:seed`

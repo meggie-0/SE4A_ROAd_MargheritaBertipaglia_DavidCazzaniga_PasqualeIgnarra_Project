@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { ExternalServicesPort } from '../external/external-services.port';
 import { FleetMonitorPort } from '../fleet/fleet-monitor.port';
@@ -13,12 +14,14 @@ import {
   advanceReservationWindow,
   immediateReservationWindow,
   type NewRecord,
+  type ReservationTiming,
   type RideRequestRecord,
 } from '../persistence/persistence.port';
 import { ClockPort } from '../platform/clock.port';
 
 import { RideAllocator } from './ride-allocator';
 import { RideJournal } from './ride-journal';
+import { readReservationTiming } from './rides.config';
 import {
   RideNotCancellableError,
   RideRequestNotFoundError,
@@ -67,9 +70,20 @@ export class RideRequestManager extends RideRequestPort {
      * percorre.
      */
     private readonly external: ExternalServicesPort,
+    config: ConfigService,
   ) {
     super();
+    this.timing = readReservationTiming(config);
   }
+
+  /**
+   * L'anticipo con cui una prenotazione diventa assegnazione, e il buffer delle riserve.
+   *
+   * Si legge una volta sola, alla composizione: cambiarlo a metà sessione produrrebbe prenotazioni
+   * accettate con anticipi diversi, e `activationDueAt` è persistito proprio per congelare
+   * l'anticipo con cui **quella** prenotazione è stata accettata.
+   */
+  private readonly timing: ReservationTiming;
 
   async submitImmediate(draft: RideRequestDraft): Promise<RideRequestOutcome> {
     const now = this.clock.now();
@@ -91,7 +105,12 @@ export class RideRequestManager extends RideRequestPort {
       candidates,
       estimatedRideMinutes,
       windowFor: (travel) =>
-        immediateReservationWindow(now, travel.etaToPickupMinutes, travel.estimatedRideMinutes),
+        immediateReservationWindow(
+          now,
+          travel.etaToPickupMinutes,
+          travel.estimatedRideMinutes,
+          this.timing,
+        ),
       // La corsa immediata assegna subito: è la differenza fra le Figure 2.5 e 2.8.
       assign: true,
     });
@@ -154,7 +173,12 @@ export class RideRequestManager extends RideRequestPort {
      * candidato che sarebbe stato idoneo. Se poi la finestra reale collide, a rifiutarla è il
      * vincolo di esclusione dentro `reserve()`, che è dove D8 e C1 vogliono che si decida.
      */
-    const nominalWindow = advanceReservationWindow(draft.scheduledPickup, 0, estimatedRideMinutes);
+    const nominalWindow = advanceReservationWindow(
+      draft.scheduledPickup,
+      0,
+      estimatedRideMinutes,
+      this.timing,
+    );
     const freeIds = new Set(
       await this.persistence.filterAvailable(
         candidates.map((candidate) => candidate.id),
@@ -172,12 +196,13 @@ export class RideRequestManager extends RideRequestPort {
           draft.scheduledPickup,
           travel.etaToPickupMinutes,
           travel.estimatedRideMinutes,
+          this.timing,
         ),
       // Prenotazione e riserva nella **stessa transazione**: o entrambe le righe o nessuna.
       bookingFor: (robotaxiId) => ({
         robotaxiId,
         scheduledPickup: draft.scheduledPickup,
-        activationDueAt: activationDueAt(draft.scheduledPickup),
+        activationDueAt: activationDueAt(draft.scheduledPickup, this.timing),
         activatedAt: null,
         closedAt: null,
       }),

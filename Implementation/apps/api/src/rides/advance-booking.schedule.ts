@@ -28,7 +28,14 @@ export class AdvanceBookingSchedule {
 
   constructor(private readonly activator: AdvanceBookingActivatorPort) {}
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  /**
+   * La cadenza si accorcia da configurazione (decisione D76), con il minuto come default. Va tenuta
+   * coerente con `RESERVATION_ACTIVATION_LEAD_MINUTES`: controllare ogni minuto un anticipo di
+   * trenta secondi significherebbe attivare in ritardo quanto l'anticipo stesso.
+   *
+   * `process.env` e non `ConfigService`, perché `@Cron` valuta l'argomento all'import.
+   */
+  @Cron(process.env.ADVANCE_BOOKING_CRON ?? CronExpression.EVERY_MINUTE)
   async activateDueBookings(): Promise<void> {
     try {
       await this.activator.runOnce();
