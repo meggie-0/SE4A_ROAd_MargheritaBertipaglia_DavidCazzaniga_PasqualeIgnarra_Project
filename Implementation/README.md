@@ -122,8 +122,8 @@ d'occhio se una schermata ferma è una flotta ferma o un backend spento.
 
 ## Le dimostrazioni
 
-Quattro comandi, uno per scenario del RASD. Ciascuno **ricostruisce i dati di partenza**, alza i tre
-servizi e guida un browser vero, lasciando gli screenshot in `e2e/screenshots/demo/`.
+Quattro comandi, uno per scenario del RASD. Ciascuno **ricostruisce i dati di partenza**, accorcia
+ciò che in esecuzione normale è lento, alza i tre servizi e dice cosa aprire e cosa guardare.
 
 ```bash
 pnpm demo:immediate      # scenario 1 — corsa immediata
@@ -132,24 +132,73 @@ pnpm demo:traffic        # scenario 3 — traffico, isteresi, rientro in Auto
 pnpm demo:rebalancing    # scenario 4 — riposizionamento verso San Siro
 ```
 
-Prerequisiti: gli stessi dell'installazione — Docker in esecuzione e `pnpm install` fatto — più i
-browser di Playwright, che si installano una volta sola:
-
-```bash
-pnpm exec playwright install chromium
-```
+Prerequisiti: gli stessi dell'installazione — Docker in esecuzione e `pnpm install` fatto.
 
 > **A stack fermo.** I comandi **rifiutano di partire** se le porte 3000, 5173 o 5174 sono occupate,
 > e lo fanno apposta. Un `pnpm dev` già avviato verrebbe riusato, e quei processi hanno letto le
 > variabili d'ambiente all'avvio: la demo girerebbe con la configurazione sbagliata senza dare un
 > solo segnale. Il messaggio d'errore riporta il comando per chiudere ciò che è rimasto aperto.
 
-**Stato: solo `demo:immediate` ha il proprio script.** Gli altri tre hanno già la configurazione —
-è ciò che questo lavoro ha aggiunto — e si fermano con un messaggio esplicito finché lo script non
-c'è. Scriverli è il passo successivo.
+### Due modi, e quando valgono
 
+Chi guarda una dimostrazione e chi la mantiene hanno bisogno di due cose diverse.
+
+**Dal vivo.** Il comando prepara il mondo, alza lo stack, stampa cosa aprire e cosa guardare, e
+**resta acceso** finché non lo si interrompe con Ctrl-C. È il modo predefinito degli scenari 3 e 4,
+dove non c'è niente da guidare — il traffico cambia da solo, il riposizionamento parte da solo — e
+si aggiunge a qualunque scenario con `--live`:
+
+```bash
+pnpm demo:immediate --live
+```
+
+**Rigiocata.** Se lo scenario ha uno script Playwright, il comando lo esegue: guida i due client da
+solo e lascia gli screenshot in `e2e/screenshots/demo/`. Serve a noi più che a chi guarda, perché è
+ciò che fa scoprire una demo rotta **prima** di trovarsela davanti. Richiede i browser di Playwright:
+
+```bash
+pnpm exec playwright install chromium
+```
+
+Oggi ha uno script il solo scenario 1. Gli altri partono dal vivo; scriverli è il passo successivo.
 Gli screenshot coprono i **passaggi salienti**, non ogni fase: alcune transizioni durano meno del
 giro di campionamento, quindi quante immagini escano varia da un'esecuzione all'altra.
+
+### Che cosa si vede, scenario per scenario
+
+**`pnpm demo:immediate` — corsa immediata (R3, R5, R6).** Apri l'app passeggero su
+<http://localhost:5174> e la dashboard su <http://localhost:5173>. Nell'app: accedi, tocca la mappa
+per il ritiro e per la destinazione, chiedi la corsa. Il pannello diventa vista di stato e segue
+assegnazione, avvicinamento, arrivo al ritiro e corsa. Sulla dashboard, nello stesso momento, il
+conteggio «Disponibili» cala di uno, «In corsa» sale, e il log operativo mostra le transizioni del
+veicolo mentre accadono — senza che nessuno ricarichi niente, che è ciò che NFR2 chiede.
+
+**`pnpm demo:advance` — prenotazione anticipata (R4).** Prenota una corsa per **fra due o tre
+minuti**: qui l'anticipo di attivazione è di un minuto invece di quindici, e il controllo gira ogni
+dieci secondi invece che ogni minuto. La prenotazione resta in elenco, separata dalla corsa live.
+Quando manca un minuto all'orario il veicolo viene assegnato **da solo** e la corsa comincia: nessuno
+ha premuto niente, ed è il punto dello scenario.
+
+**`pnpm demo:traffic` — traffico e isteresi (R12, R13, NFR9, NFR10).** Basta la dashboard. Il
+livello segue una tabella di due minuti dall'avvio del processo:
+
+| dall'avvio | livello | che cosa fa il sistema |
+|---|---|---|
+| 0s | `LOW` | strategia «Più vicino disponibile» |
+| 20s | `MEDIUM` | un alert **suggerisce** ETA minimo, e la strategia **non** cambia |
+| 50s | `HIGH` | commuta da solo a «ETA minimo» |
+| 80s | `MEDIUM` | **resta** su ETA minimo: è l'isteresi, non si torna indietro a metà |
+| 110s | `LOW` | solo ora rientra su «Più vicino disponibile» |
+
+Poi premi «ETA minimo» a mano: il modo passa a Manual e ogni cambio automatico si ferma finché non
+riabiliti Auto. «Riabilita il modo Auto» rivaluta subito l'ultimo livello letto.
+
+**`pnpm demo:rebalancing` — riposizionamento (R10, R11, G9).** Basta la dashboard. C'è una partita a
+San Siro *adesso* e i veicoli sono altrove; il ciclo gira ogni quindici secondi invece che ogni
+dieci minuti. Sulla mappa un veicolo inattivo per volta si mette in viaggio verso lo stadio, con il
+marker nel colore di «In riposizionamento». Quando arriva torna «Disponibile» **nella zona
+raggiunta**, senza attendere il ciclo successivo: a chiudere il riposizionamento è la telemetria
+(decisione D74).
 
 ### Che cosa rende una dimostrazione pilotabile
 

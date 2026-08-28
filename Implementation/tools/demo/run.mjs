@@ -27,6 +27,15 @@ import { run, runOrExit, buildPackages, colors } from '../lib/run.mjs';
  */
 const SCENARIOS = {
   immediate: {
+    guida: {
+      apri: ['App passeggero  http://localhost:5174', 'Dashboard operatore  http://localhost:5173'],
+      guarda: [
+        'Nell’app passeggero: accedi, tocca la mappa per il ritiro e per la destinazione, chiedi la corsa.',
+        'Il pannello passa a vista di stato e segue assegnazione, avvicinamento, ritiro e corsa.',
+        'Sulla dashboard: il conteggio «Disponibili» cala di uno, «In corsa» sale, e il log operativo',
+        'mostra le transizioni del veicolo mentre accadono — senza ricaricare niente (NFR2).',
+      ],
+    },
     scripted: true,
     title: 'Scenario 1 — corsa immediata',
     grep: 'Scenario 1',
@@ -34,6 +43,16 @@ const SCENARIOS = {
     env: { SIMULATOR_TICK_SECONDS: '45' },
   },
   advance: {
+    guida: {
+      apri: ['App passeggero  http://localhost:5174', 'Dashboard operatore  http://localhost:5173'],
+      guarda: [
+        'Prenota una corsa per **fra due o tre minuti**: l’anticipo di attivazione qui è di un minuto',
+        'invece di quindici, e il controllo gira ogni dieci secondi invece che ogni minuto.',
+        'La prenotazione resta in elenco, separata dalla corsa live, finché non scatta l’attivazione.',
+        'Quando manca un minuto all’orario il veicolo viene assegnato da solo e la corsa comincia:',
+        'nessuno ha premuto niente, ed è il punto dello scenario.',
+      ],
+    },
     // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
     title: 'Scenario 2 — prenotazione anticipata',
@@ -48,6 +67,19 @@ const SCENARIOS = {
     },
   },
   traffic: {
+    guida: {
+      apri: ['Dashboard operatore  http://localhost:5173'],
+      guarda: [
+        'Guarda il pannello «Strategia di allocazione». La sequenza dura due minuti dall’avvio:',
+        '  0s  LOW     — strategia «Più vicino disponibile»',
+        '  20s MEDIUM  — compare un alert che **suggerisce** ETA minimo, e la strategia NON cambia',
+        '  50s HIGH    — il sistema commuta da solo a «ETA minimo»',
+        '  80s MEDIUM  — resta su ETA minimo: è l’isteresi, non si torna indietro a metà (NFR9)',
+        ' 110s LOW     — solo ora rientra su «Più vicino disponibile»',
+        'Poi premi «ETA minimo» a mano: il modo passa a Manual e ogni cambio automatico si ferma',
+        '(R13). «Riabilita il modo Auto» rivaluta subito l’ultimo livello letto.',
+      ],
+    },
     // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
     title: 'Scenario 3 — traffico, isteresi e rientro in Auto',
@@ -61,6 +93,17 @@ const SCENARIOS = {
     },
   },
   rebalancing: {
+    guida: {
+      apri: ['Dashboard operatore  http://localhost:5173'],
+      guarda: [
+        'C’è una partita a San Siro adesso, e i veicoli sono altrove. Il ciclo gira ogni quindici',
+        'secondi invece che ogni dieci minuti.',
+        'Guarda la mappa: un veicolo inattivo per volta si mette in viaggio verso lo stadio, con il',
+        'marker nel colore di «In riposizionamento», e il log operativo ne dà conto.',
+        'Quando arriva torna «Disponibile» **nella zona raggiunta**, senza attendere il ciclo',
+        'successivo — è la telemetria a chiudere il riposizionamento (decisione D74).',
+      ],
+    },
     // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
     title: 'Scenario 4 — riposizionamento verso San Siro',
@@ -122,14 +165,6 @@ if (scenario === undefined) {
   process.exit(1);
 }
 
-if (scenario.scripted !== true) {
-  console.error(
-    `${scenario.title}: la configurazione c'è, lo script Playwright no.
-` + 'Gli scenari 2, 3 e 4 appartengono al task successivo; per ora è scrivibile solo `immediate`.',
-  );
-  process.exit(1);
-}
-
 await refuseIfRunning();
 
 console.log(colors.bold(`\n${scenario.title}\n`));
@@ -149,10 +184,48 @@ runOrExit('node', ['tools/db/migrate.mjs']);
 runOrExit('node', ['tools/db/seed.mjs']);
 if (scenario.dataset === 'demo') runOrExit('node', ['tools/db/demo.mjs']);
 
-console.log(colors.dim('Avvio dello stack e dello scenario…\n'));
+/**
+ * Due modi di dimostrare, e il secondo non è un ripiego povero.
+ *
+ * Se lo scenario ha uno script Playwright lo si esegue: rigioca la storia da solo e lascia gli
+ * screenshot, che è ciò che serve **a noi** per accorgerci che una demo si è rotta prima di
+ * scoprirlo davanti a chi guarda.
+ *
+ * Altrimenti si alza lo stack e si dice cosa aprire e cosa guardare, lasciandolo acceso. È ciò che
+ * serve **a chi guarda**, ed è la forma giusta per gli scenari 3 e 4: lì non c'è niente da guidare —
+ * il traffico cambia da solo, il riposizionamento parte da solo — e uno script sarebbe «aspetta e
+ * asserisci», cioè un test travestito da dimostrazione.
+ *
+ * `--live` forza il secondo modo anche dove il primo esiste: `pnpm demo:immediate --live` prepara la
+ * corsa immediata e lascia che sia una persona a richiederla.
+ */
+const live = process.argv.includes('--live');
 
-process.exit(
-  run('npx', ['playwright', 'test', '--project=demo', '--grep', scenario.grep], {
-    env: scenario.env,
-  }),
-);
+if (scenario.scripted === true && !live) {
+  console.log(colors.dim('Avvio dello stack e dello scenario…\n'));
+  process.exit(
+    run('npx', ['playwright', 'test', '--project=demo', '--grep', scenario.grep], {
+      env: scenario.env,
+    }),
+  );
+}
+
+console.log(colors.bold('Da aprire nel browser:'));
+for (const riga of scenario.guida.apri) console.log(`  ${riga}`);
+
+console.log(colors.bold('\nChe cosa guardare:'));
+for (const riga of scenario.guida.guarda) console.log(`  ${riga}`);
+
+if (scenario.scripted !== true) {
+  console.log(
+    colors.dim(
+      '\nQuesto scenario non ha ancora uno script Playwright: si guarda, non si rigioca da solo.',
+    ),
+  );
+}
+
+console.log(colors.bold('\nLo stack resta acceso. Ctrl-C per fermarlo.\n'));
+
+// `pnpm dev` alza i tre servizi e resta in primo piano: l'interruzione arriva al figlio, che spegne
+// i propri. Non c'è un secondo runner, ed è la stessa catena degli scenari end-to-end.
+process.exit(run('pnpm', ['dev'], { env: scenario.env }));
