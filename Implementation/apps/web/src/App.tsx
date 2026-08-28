@@ -24,6 +24,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { ProfilePanel } from './components/ProfilePanel';
 import { StatusBar } from './components/StatusBar';
 import { StrategyPanel } from './components/StrategyPanel';
+import { applyModeEvent } from './mode-events';
 import { clearSession, loadSession, saveSession, type Session } from './session';
 import { useNotifications } from './use-notifications';
 import { MaintenancePanel } from './components/MaintenancePanel';
@@ -38,11 +39,19 @@ import { OperationalLog } from './components/OperationalLog';
  * Tutto su una schermata sola: NFR6 chiede che modo e strategia si vedano «on the dashboard's first
  * render, without navigating», e una dashboard con delle schede lo violerebbe per costruzione.
  *
- * **Due sorgenti, due nature.** Le posizioni si rileggono a intervalli, perché cambiano a ogni tick
- * e sul canale push inonderebbero tutto; modo, strategia e alert arrivano **push**, perché sono
- * eventi discreti e NFR2 pretende che raggiungano un client connesso senza che lo chieda. Non è un
- * compromesso: è la divisione che `FleetMonitorPort.recordPositions()` fissa nel backend, vista dal
- * lato di chi guarda.
+ * **Tre nature, non due.** Le posizioni si rileggono a intervalli, perché cambiano a ogni tick e sul
+ * canale push inonderebbero tutto: è la divisione che `FleetMonitorPort.recordPositions()` fissa nel
+ * backend, vista dal lato di chi guarda. Modo, strategia e alert arrivano **push**, perché sono
+ * eventi discreti e NFR2 pretende che raggiungano un client connesso senza che lo chieda.
+ *
+ * Il **livello di traffico** è il terzo caso, e fa entrambe le cose. Non ha un evento per ogni
+ * osservazione, di proposito: R12 parla di *raggiungere* una soglia — non di uno stato — quindi
+ * l'alert di `MEDIUM` si emette al passaggio e non a ogni lettura, e in modo Manual
+ * `onTrafficLevel()` non notifica affatto (R13, NFR10). Un client che si limitasse ad ascoltare
+ * resterebbe fermo all'ultimo evento per tutta la sessione, e dopo un `db:seed` mostrerebbe «Non
+ * rilevato» a tempo indeterminato. Quindi lo si **rilegge** a intervalli, oltre a riceverlo dagli
+ * eventi che lo portano: il push resta la via per i fatti discreti, la rilettura copre gli intervalli
+ * in cui — correttamente — non succede niente (decisione D75).
  */
 
 /**
@@ -56,6 +65,23 @@ import { OperationalLog } from './components/OperationalLog';
  * nel codice sorgente delle applicazioni.
  */
 const FLEET_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
+
+/**
+ * Ogni quanto rileggere modo, strategia e livello di traffico.
+ *
+ * **Quindici secondi è il limite superiore di quanto il badge può restare vecchio**, e il numero
+ * viene da lì: il `TrafficMonitor` legge il traffico ogni cinque minuti, quindi rileggere più spesso
+ * ripeterebbe la stessa risposta, e `GET /mode` è la lettura di una riga singleton indicizzata —
+ * costa poco abbastanza da non doverla centellinare.
+ *
+ * La costante sta **qui e non in `packages/shared`**, a differenza di `FLEET_POSITION_REFRESH_MS`.
+ * Quella ci sta perché il backend le posizioni le *produce* a quella cadenza e i due lati devono
+ * coincidere; qui non c'è nessun accoppiamento del genere — è una scelta di quanto spesso questo
+ * client vuole guardare, e appartiene al client che la fa.
+ *
+ * L'intervallo lo tiene `@tanstack/react-query`: un `setInterval` scritto qui violerebbe la Regola 3.
+ */
+const MODE_REFRESH_MS = 15_000;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -89,8 +115,9 @@ function Dashboard(): React.JSX.Element {
   const token = session?.accessToken ?? null;
   const { notifications, connection } = useNotifications(token);
 
-  /** L'ultimo evento già applicato a ciascuno dei due pannelli, per non riapplicarlo a ogni render. */
+  /** L'ultimo evento già applicato a ciascuna vista, per non riapplicarlo a ogni render. */
   const lastModeEventRef = useRef<string | null>(null);
+  const lastTrafficEventRef = useRef<string | null>(null);
   const lastFleetEventRef = useRef<string | null>(null);
 
   const fleet = useQuery({
@@ -122,6 +149,7 @@ function Dashboard(): React.JSX.Element {
   const mode = useQuery({
     queryKey: ['mode'],
     enabled: token !== null,
+    refetchInterval: MODE_REFRESH_MS,
     queryFn: () => fetchMode(token as string),
   });
 
@@ -141,32 +169,41 @@ function Dashboard(): React.JSX.Element {
    * strutturati (M6), quindi non serve nemmeno rileggere — si scrive ciò che è appena successo
    * nella cache della query, e il pannello si ridipinge.
    *
-   * **L'istante decide chi vince.** Fra una notifica e la risposta di una `PUT` può arrivare prima
-   * l'una o l'altra, e senza un confronto un evento vecchio di un secondo sovrascriverebbe il
-   * risultato di un comando appena eseguito. Si applica solo ciò che è più recente di quanto già
-   * mostrato: `occurredAt` è l'istante del cambiamento, non quello della consegna.
+   * La regola di fusione sta in `applyModeEvent()`, che è pura e provata a parte: qui resta solo la
+   * scelta di *quale* evento applicare.
    */
   useEffect(() => {
     const last = [...notifications].reverse().find((event) => event.mode !== null);
-    if (last === undefined || last.mode === null) return;
-    if (lastModeEventRef.current !== null && last.occurredAt <= lastModeEventRef.current) return;
+    if (last === undefined) return;
 
-    lastModeEventRef.current = last.occurredAt;
-    queries.setQueryData(['mode'], (previous: ModeResponse | undefined) => ({
-      mode: last.mode ?? previous?.mode ?? 'AUTO',
-      activeStrategy: last.strategy ?? previous?.activeStrategy ?? 'NEAREST_AVAILABLE',
-      /**
-       * Il livello va riportato come gli altri due, e per una ragione in più: questo oggetto
-       * **sostituisce** la risposta in cache, quindi un campo non elencato qui verrebbe perso al
-       * primo evento e l'indicatore si svuoterebbe da solo pochi secondi dopo il caricamento.
-       *
-       * `?? previous` non è una precauzione di stile: gli eventi che portano un modo non portano
-       * necessariamente un livello — `STRATEGY_CHANGED` con `source: 'manual'` nasce da una scelta
-       * umana e ha `trafficLevel` nullo quando nessuna osservazione è ancora arrivata — e senza il
-       * ripiego una scelta manuale cancellerebbe dallo schermo un livello perfettamente valido.
-       */
-      trafficLevel: last.trafficLevel ?? previous?.trafficLevel ?? null,
-    }));
+    queries.setQueryData(['mode'], (previous: ModeResponse | undefined) => {
+      const next = applyModeEvent(previous, last, lastModeEventRef.current);
+      if (next !== previous) lastModeEventRef.current = last.occurredAt;
+      return next;
+    });
+  }, [notifications, queries]);
+
+  /**
+   * Il **livello di traffico** segue gli eventi che lo portano, anche quando non portano un modo.
+   *
+   * Sta in un effetto suo, con un riferimento suo, e le due cose vanno insieme. `TRAFFIC_ALERT` ha
+   * `mode` nullo — nasce dalla costante `NOTHING` di `notification-copy.ts` — quindi l'effetto qui
+   * sopra lo scarta: senza questo, al passaggio `LOW → MEDIUM` il pannello alert annunciava la
+   * soglia e il badge accanto continuava a dire «Basso».
+   *
+   * Il riferimento è separato perché i due tipi di evento arrivano intrecciati: condividendone uno,
+   * un `MODE_CHANGED` appena applicato farebbe scartare come «vecchio» il `TRAFFIC_ALERT` che lo ha
+   * preceduto di un istante, e viceversa. Sono due letture indipendenti della stessa coda.
+   */
+  useEffect(() => {
+    const last = [...notifications].reverse().find((event) => event.trafficLevel !== null);
+    if (last === undefined) return;
+
+    queries.setQueryData(['mode'], (previous: ModeResponse | undefined) => {
+      const next = applyModeEvent(previous, last, lastTrafficEventRef.current);
+      if (next !== previous) lastTrafficEventRef.current = last.occurredAt;
+      return next;
+    });
   }, [notifications, queries]);
 
   /**

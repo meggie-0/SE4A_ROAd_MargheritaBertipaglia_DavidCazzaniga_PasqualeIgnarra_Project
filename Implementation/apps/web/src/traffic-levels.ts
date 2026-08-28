@@ -1,4 +1,4 @@
-import { TRAFFIC_LEVELS, type ControlMode, type TrafficLevel } from '@road/shared';
+import type { ControlMode, TrafficLevel } from '@road/shared';
 
 /**
  * Il vocabolario visivo del livello di traffico (RASD §2.3: «a clear overview of traffic levels»).
@@ -34,9 +34,6 @@ export const TRAFFIC_APPEARANCE: Record<TrafficLevel, TrafficAppearance> = {
  * noti, in `StatusBar` e nella strategia attiva di questo stesso pannello.
  */
 export const TRAFFIC_UNKNOWN: TrafficAppearance = { label: 'Non rilevato', color: '#64748b' };
-
-/** I tre livelli nell'ordine crescente di `@road/shared`, per la legenda. */
-export const ORDERED_TRAFFIC_LEVELS: readonly TrafficLevel[] = TRAFFIC_LEVELS;
 
 export function trafficAppearance(level: TrafficLevel | null): TrafficAppearance {
   return level === null ? TRAFFIC_UNKNOWN : TRAFFIC_APPEARANCE[level];
