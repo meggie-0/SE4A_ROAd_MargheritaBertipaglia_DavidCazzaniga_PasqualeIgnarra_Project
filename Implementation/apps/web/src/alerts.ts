@@ -1,4 +1,4 @@
-import type { NotificationPush } from '@road/shared';
+import type { NotificationPush, OperatorAlert } from '@road/shared';
 
 /**
  * Quali eventi del canale sono **alert per l'operatore**, e di che genere (DD §3.2; RASD R11, R12).
@@ -29,7 +29,15 @@ export type AlertCategory = (typeof ALERT_CATEGORIES)[number];
  * campi, e tenerle separate significava poterle far divergere — un evento riconosciuto come alert e
  * poi classificato con la categoria di un altro.
  */
-export function alertCategoryOf(event: NotificationPush): AlertCategory | null {
+/**
+ * Accetta **entrambe le sorgenti**, e la firma allargata è la ragione per cui esiste una regola
+ * sola: la riga che arriva dalla socket e quella riletta dallo storico portano gli stessi quattro
+ * campi, e classificarle con due funzioni diverse significherebbe poterle far divergere — lo stesso
+ * fatto colorato in due modi a seconda di quando lo si è guardato (decisione D77).
+ */
+export function alertCategoryOf(
+  event: Pick<NotificationPush | OperatorAlert, 'zoneId' | 'trafficLevel' | 'mode' | 'strategy'>,
+): AlertCategory | null {
   // Il riposizionamento si riconosce da `zoneId`, che `REBALANCING_STARTED` porta e nessun altro
   // evento di flotta ha. Viene per primo perché è il più specifico.
   if (event.zoneId !== null) return 'rebalancing';

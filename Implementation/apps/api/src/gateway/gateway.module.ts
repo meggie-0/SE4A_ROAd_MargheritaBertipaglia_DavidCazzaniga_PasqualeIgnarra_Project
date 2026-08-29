@@ -15,6 +15,7 @@ import { AuthController } from './auth.controller';
 import { ControlModeController } from './control-mode.controller';
 import { FleetController } from './fleet.controller';
 import { HealthController } from './health.controller';
+import { NotificationsController } from './notifications.controller';
 import { NotificationsGateway } from './notifications.gateway';
 import { RebalancingController } from './rebalancing.controller';
 import { RidesController } from './rides.controller';
@@ -88,6 +89,7 @@ import { MaintenanceController } from './maintenance.controller';
     AllocationController,
     RidesController,
     ControlModeController,
+    NotificationsController,
     RebalancingController,
     FleetController,
     MaintenanceController,

@@ -29,6 +29,7 @@ import { DEMAND_EVENT_RECORDS, ZONE_RECORDS, demandSampleRecords, fleetRecords }
  * che nulla lo segnali.
  */
 const TABLES_TO_CLEAR = [
+  'operator_alert',
   'notification',
   'rebalancing_action',
   'ride',

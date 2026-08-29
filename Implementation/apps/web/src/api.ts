@@ -4,6 +4,7 @@ import {
   authResponseSchema,
   fleetStatusResponseSchema,
   modeResponseSchema,
+  operatorAlertsResponseSchema,
   userProfileSchema,
   maintenanceCompleteRoute,
   maintenanceCompletedResponseSchema,
@@ -15,6 +16,7 @@ import {
   type FleetStatusResponse,
   type LoginRequest,
   type ModeResponse,
+  type OperatorAlertsResponse,
   type StrategyName,
   type UpdateProfileRequest,
   type UserProfile,
@@ -144,5 +146,19 @@ export async function updateProfile(
     token,
     body: patch,
     schema: userProfileSchema,
+  });
+}
+
+/**
+ * `GET /notifications/operator` — lo storico degli alert (decisione D77).
+ *
+ * È la metà che mancava al canale push: quello consegna a chi è connesso, questa dice cosa è
+ * successo a chi arriva dopo. Senza, il pannello alert ripartiva vuoto a ogni ricaricamento e una
+ * dashboard che aveva appena riposizionato sei veicoli dichiarava di non aver fatto niente.
+ */
+export async function fetchOperatorAlerts(token: string): Promise<OperatorAlertsResponse> {
+  return apiRequest(apiBaseUrl, API_ROUTES.operatorAlerts, {
+    token,
+    schema: operatorAlertsResponseSchema,
   });
 }

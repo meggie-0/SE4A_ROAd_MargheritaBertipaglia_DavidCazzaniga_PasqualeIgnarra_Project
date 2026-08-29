@@ -520,6 +520,40 @@
         ]
       }
     },
+    "/notifications/operator": {
+      "get": {
+        "description": "Switch automatici di strategia, rientri in modo Auto, soglie di traffico raggiunte e riposizionamenti avviati. Non sono le notifiche del RASD §2.2.3, che sono indirizzate a un passeggero: questi non hanno destinatario e li vede chiunque apra la dashboard, anche chi si è collegato dopo che sono accaduti (decisione D77).",
+        "operationId": "NotificationsController_getOperatorAlerts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorAlertsResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token assente, scaduto o non valido."
+          },
+          "403": {
+            "description": "Serve un account operatore."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Gli ultimi alert sul governo del sistema, dal più recente",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/rebalancing/demand": {
       "get": {
         "description": "R10: combina la base storica della fascia oraria corrente — in ora locale di Milano — con i moltiplicatori degli eventi attivi in questo istante. Le zone escono per domanda attesa decrescente, pareggi sull identificatore crescente. Non muove nessun veicolo: è una stima.",
@@ -1230,6 +1264,97 @@
         },
         "required": [
           "mode"
+        ]
+      },
+      "OperatorAlertDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "STRATEGY_CHANGED",
+              "MODE_CHANGED",
+              "TRAFFIC_ALERT",
+              "REBALANCING_STARTED"
+            ],
+            "description": "La categoria dell'alert. Insieme distinto da `NotificationType`: quelli sono indirizzati a un passeggero, questi al governo del sistema e a nessuno in particolare (decisione D77)."
+          },
+          "message": {
+            "type": "string",
+            "example": "Traffico MEDIUM: valutare il passaggio alla strategia ETA minimo.",
+            "description": "Il testo già pronto, lo stesso che il canale push ha consegnato."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "L'istante del fatto, non quello della scrittura."
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "NEAREST_AVAILABLE",
+              "MINIMUM_ETA"
+            ],
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ],
+            "nullable": true
+          },
+          "trafficLevel": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ],
+            "nullable": true
+          },
+          "zoneId": {
+            "type": "object",
+            "nullable": true,
+            "example": "san-siro",
+            "description": "La zona verso cui un riposizionamento è partito. Copia, non riferimento."
+          },
+          "robotaxiId": {
+            "type": "object",
+            "nullable": true,
+            "example": "RT-07"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "message",
+          "occurredAt",
+          "strategy",
+          "mode",
+          "trafficLevel",
+          "zoneId",
+          "robotaxiId"
+        ]
+      },
+      "OperatorAlertsResponseDto": {
+        "type": "object",
+        "properties": {
+          "alerts": {
+            "description": "Dal più recente.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperatorAlertDto"
+            }
+          }
+        },
+        "required": [
+          "alerts"
         ]
       },
       "ZoneDemandDto": {
