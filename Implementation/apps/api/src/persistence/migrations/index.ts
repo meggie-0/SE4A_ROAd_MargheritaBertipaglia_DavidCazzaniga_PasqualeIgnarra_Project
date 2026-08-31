@@ -3,6 +3,7 @@ import { BookingClosedAt1786406400000 } from './1786406400000-booking-closed-at'
 import { Ride1786492800000 } from './1786492800000-ride';
 import { RebalancingAction1786579200000 } from './1786579200000-rebalancing-action';
 import { RidePickupReachedAt1786665600000 } from './1786665600000-ride-pickup-reached-at';
+import { OperatorAlert1786752000000 } from './1786752000000-operator-alert';
 
 /**
  * Le migrazioni, elencate esplicitamente e in ordine.
@@ -17,4 +18,5 @@ export const ALL_MIGRATIONS = [
   Ride1786492800000,
   RebalancingAction1786579200000,
   RidePickupReachedAt1786665600000,
+  OperatorAlert1786752000000,
 ];

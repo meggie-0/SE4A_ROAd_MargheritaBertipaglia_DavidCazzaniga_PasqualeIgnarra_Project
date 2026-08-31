@@ -236,3 +236,84 @@ describe('[R6][R4] Una prenotazione notifica quando diventa un assegnazione', ()
     expect(activated?.robotaxiId).toBe('RT-01');
   });
 });
+
+/**
+ * Lo storico dell'operatore su una tabella vera (decisione D77).
+ *
+ * È il livello in cui il difetto si vedeva davvero: i test unitari del manager non lo colgono
+ * perché la persistenza lì è un doppio, e nessuno guardava se una riga finisse mai in tabella. Il
+ * risultato è che dal M6 a oggi **nessun alert dell'operatore è mai stato scritto**, e il pannello
+ * riparte vuoto a ogni ricaricamento.
+ */
+describe('[R7][R11][R12][R13][G8][G9] Gli alert dell operatore sopravvivono alla disconnessione', () => {
+  it('un alert di traffico resta scritto anche senza nessuno connesso', async () => {
+    // Nessuna sessione registrata: è precisamente il caso che il canale non copre.
+    await harness.notifications.update({
+      kind: 'TRAFFIC_ALERT',
+      occurredAt: NOW,
+      trafficLevel: 'MEDIUM',
+      suggestedStrategy: 'MINIMUM_ETA',
+    });
+
+    const alerts = await harness.operatorAlerts.recentAlerts(50);
+
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.kind).toBe('TRAFFIC_ALERT');
+    expect(alerts[0]?.trafficLevel).toBe('MEDIUM');
+    // I campi strutturati sono ciò su cui il pannello classifica: un testo senza di loro si
+    // potrebbe mostrare ma non colorare.
+    expect(alerts[0]?.strategy).toBe('MINIMUM_ETA');
+    expect(alerts[0]?.message).toContain('MEDIUM');
+  });
+
+  it('un riposizionamento conserva zona e veicolo', async () => {
+    await harness.notifications.update({
+      kind: 'REBALANCING_STARTED',
+      occurredAt: NOW,
+      robotaxiId: 'RT-07',
+      targetZoneId: 'san-siro',
+      targetZoneName: 'San Siro',
+    });
+
+    const [alert] = await harness.operatorAlerts.recentAlerts(50);
+
+    expect(alert?.zoneId).toBe('san-siro');
+    expect(alert?.robotaxiId).toBe('RT-07');
+  });
+
+  it('le transizioni di flotta non finiscono nello storico degli alert', async () => {
+    /**
+     * La regola di consegna all'operatore è scritta per **esclusione**: gli arriva tutto ciò che non
+     * è un evento di corsa, comprese tutte le transizioni dei veicoli. Persistere anche quelle
+     * significherebbe migliaia di righe per rivedere ciò che si guarda sulla mappa mentre accade —
+     * e il pannello alert annegherebbe i quattro eventi di governo in mezzo ai movimenti.
+     */
+    await givenRobotaxi('RT-01', 0.01);
+    const outcome = await harness.rides.submitImmediate(draft());
+    await harness.rideLifecycle.startPickupNavigation(outcome.request.id);
+
+    expect(await harness.operatorAlerts.recentAlerts(50)).toHaveLength(0);
+  });
+
+  it('restituisce gli alert dal più recente', async () => {
+    await harness.notifications.update({
+      kind: 'TRAFFIC_ALERT',
+      occurredAt: NOW,
+      trafficLevel: 'MEDIUM',
+      suggestedStrategy: 'MINIMUM_ETA',
+    });
+
+    const dopo = new Date(NOW.getTime() + 60_000);
+    await harness.notifications.update({
+      kind: 'MODE_CHANGED',
+      occurredAt: dopo,
+      mode: 'AUTO',
+      strategy: 'NEAREST_AVAILABLE',
+      trafficLevel: 'LOW',
+    });
+
+    const alerts = await harness.operatorAlerts.recentAlerts(50);
+
+    expect(alerts.map((alert) => alert.kind)).toEqual(['MODE_CHANGED', 'TRAFFIC_ALERT']);
+  });
+});

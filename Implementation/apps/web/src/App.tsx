@@ -7,13 +7,14 @@ import {
   type StrategyName,
 } from '@road/shared';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyTheme, loadTheme, type Theme } from './theme';
 import {
   completeMaintenance,
   enableAutoMode,
   fetchFleetStatus,
   fetchMode,
+  fetchOperatorAlerts,
   setActiveStrategy,
   startMaintenance,
 } from './api';
@@ -25,6 +26,7 @@ import { ProfilePanel } from './components/ProfilePanel';
 import { StatusBar } from './components/StatusBar';
 import { StrategyPanel } from './components/StrategyPanel';
 import { applyModeEvent } from './mode-events';
+import { mergeOperatorAlerts } from './operator-alerts';
 import { clearSession, loadSession, saveSession, type Session } from './session';
 import { useNotifications } from './use-notifications';
 import { MaintenancePanel } from './components/MaintenancePanel';
@@ -82,6 +84,9 @@ const FLEET_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
  * L'intervallo lo tiene `@tanstack/react-query`: un `setInterval` scritto qui violerebbe la Regola 3.
  */
 const MODE_REFRESH_MS = 15_000;
+
+/** Quanti alert tenere a schermo: oltre, l'elenco smette di essere leggibile a colpo d'occhio. */
+const VISIBLE_ALERTS = 12;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -152,6 +157,35 @@ function Dashboard(): React.JSX.Element {
     refetchInterval: MODE_REFRESH_MS,
     queryFn: () => fetchMode(token as string),
   });
+
+  /**
+   * Lo **storico degli alert** (decisione D77).
+   *
+   * Si rilegge a intervalli come il modo, e per una ragione in più: gli alert nascono anche mentre
+   * questa scheda è aperta, e la socket li porta subito — ma una socket caduta e ripristinata
+   * lascerebbe un buco che nessuno colmerebbe. La rilettura è la rete sotto il canale, non il canale.
+   *
+   * Il costo è basso: una lettura indicizzata su `occurred_at` ogni quindici secondi, la stessa
+   * cadenza del modo.
+   */
+  const alertHistory = useQuery({
+    queryKey: ['operator-alerts'],
+    enabled: token !== null,
+    refetchInterval: MODE_REFRESH_MS,
+    queryFn: () => fetchOperatorAlerts(token as string),
+  });
+
+  /**
+   * Storico e diretta, fusi.
+   *
+   * `useMemo` perché `notifications` cambia a ogni evento del canale — comprese le transizioni di
+   * flotta, che qui vengono scartate — e rifondere l'elenco a ogni ridisegno della mappa sarebbe
+   * lavoro sprecato su una lista che non è cambiata.
+   */
+  const alerts = useMemo(
+    () => mergeOperatorAlerts(alertHistory.data?.alerts ?? [], notifications, VISIBLE_ALERTS),
+    [alertHistory.data, notifications],
+  );
 
   useEffect(() => {
     setMaintenanceError(null);
@@ -564,7 +598,7 @@ function Dashboard(): React.JSX.Element {
             />
           )}
 
-          <AlertsPanel notifications={notifications} />
+          <AlertsPanel alerts={alerts} loading={alertHistory.isPending} />
         </div>
       </div>
 

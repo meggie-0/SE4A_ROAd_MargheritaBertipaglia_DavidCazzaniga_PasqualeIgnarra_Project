@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { OPERATOR_ALERT_KINDS, type OperatorAlertKind } from '@road/shared';
 
-import { PersistencePort } from '../persistence/persistence.port';
+import { PersistencePort, type OperatorAlertRecord } from '../persistence/persistence.port';
 
 import { describeEvent } from './notification-copy';
 import {
@@ -9,6 +10,7 @@ import {
   type NotificationDelivery,
   type Observer,
 } from './notification.port';
+import { OperatorAlertPort } from './operator-alert.port';
 import {
   NotificationSessionPort,
   OperatorDashboardSession,
@@ -35,7 +37,7 @@ import {
 @Injectable()
 export class NotificationManager
   extends NotificationPort
-  implements Observer, NotificationSessionPort
+  implements Observer, NotificationSessionPort, OperatorAlertPort
 {
   private readonly logger = new Logger(NotificationManager.name);
 
@@ -77,6 +79,7 @@ export class NotificationManager
     const recipientId = await this.recipientOf(event);
 
     await this.record(delivery, recipientId);
+    await this.recordOperatorAlert(event, delivery);
     this.dispatch(event, delivery, recipientId);
   }
 
@@ -116,6 +119,58 @@ export class NotificationManager
       this.logger.error(`Destinatario non risolto per ${event.rideRequestId}: ${String(error)}`);
       return null;
     }
+  }
+
+  /**
+   * Lo storico **dell'operatore**, che fino alla D77 non esisteva.
+   *
+   * `record()` qui sopra esce quando manca il destinatario o il tipo, e i quattro eventi di governo
+   * non hanno né l'uno né l'altro — nascono dalla costante `NOTHING` di `notification-copy.ts`.
+   * L'effetto era che il pannello che il DD §3.2 descrive come «switch automatici e suggerimenti di
+   * riposizionamento» riparte vuoto a ogni ricaricamento: la dashboard di un sistema che ha appena
+   * riposizionato sei veicoli dichiara di non aver fatto niente.
+   *
+   * **Si persistono i quattro eventi di governo e non tutto il flusso dell'operatore.** La regola di
+   * consegna qui sotto è scritta per esclusione — all'operatore arriva tutto ciò che non è un evento
+   * di corsa — quindi comprende ogni transizione di ogni veicolo. Quelle si guardano sulla mappa
+   * mentre accadono e non hanno bisogno di uno storico; ciò che serve rivedere è **perché il sistema
+   * ha deciso qualcosa**, che sono questi quattro.
+   *
+   * Come `record()`, non solleva: l'evento è già accaduto.
+   */
+  private async recordOperatorAlert(
+    event: DomainEvent,
+    delivery: NotificationDelivery,
+  ): Promise<void> {
+    if (!(OPERATOR_ALERT_KINDS as readonly string[]).includes(event.kind)) return;
+
+    try {
+      await this.persistence.create('operator_alert', {
+        kind: event.kind as OperatorAlertKind,
+        message: delivery.message,
+        occurredAt: delivery.occurredAt,
+        // I campi strutturati vengono dalla **consegna** e non dall'evento: `describeEvent` li ha
+        // già normalizzati per i quattro tipi, e rileggerli dall'evento significherebbe scrivere
+        // una seconda volta la stessa traduzione, con la possibilità di farle divergere.
+        strategy: delivery.strategy,
+        mode: delivery.mode,
+        trafficLevel: delivery.trafficLevel,
+        zoneId: delivery.zoneId,
+        robotaxiId: delivery.robotaxiId,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Alert dell'operatore non scritto (${event.kind}): ${String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+  }
+
+  async recentAlerts(limit: number): Promise<readonly OperatorAlertRecord[]> {
+    return this.persistence.find('operator_alert', {
+      orderBy: [{ field: 'occurredAt', direction: 'desc' }, { field: 'id' }],
+      limit,
+    });
   }
 
   /**

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   CONTROL_MODES,
   NOTIFICATION_TYPES,
+  OPERATOR_ALERT_KINDS,
   RIDE_STATUSES,
   ROBOTAXI_STATES,
   STRATEGY_NAMES,
@@ -105,3 +106,44 @@ export const notificationPushSchema = z.object({
   etaMinutes: z.number().nullable(),
 });
 export type NotificationPush = z.infer<typeof notificationPushSchema>;
+
+/**
+ * Lo **storico degli alert dell'operatore** (decisione D77; RASD R7, R11, R12, R13; G8, G9).
+ *
+ * Il canale push consegna a chi c'è; questo è ciò che resta per chi arriva dopo. Erano l'unica metà
+ * del sistema a non averlo: la tabella `notification` esiste esattamente per «permettere a un client
+ * che si riconnette di non perdere ciò che è successo mentre era assente» — lo dice il commento
+ * della sua entità — ma nessun alert dell'operatore ci è mai finito, perché nessuno di loro ha un
+ * passeggero a cui essere indirizzato.
+ *
+ * **I campi strutturati ci sono tutti**, e non è ridondanza rispetto a `message`. Il pannello
+ * classifica gli alert su `zoneId`, `trafficLevel`, `mode` e `strategy` — non sul testo, che è prosa
+ * per un umano e cambierebbe significato alla prima riformulazione. Una riga riletta senza quei
+ * campi si potrebbe mostrare ma non colorare, e il pannello direbbe meno di quanto sa.
+ */
+export const operatorAlertSchema = z.object({
+  id: z.uuid(),
+  kind: z.enum(OPERATOR_ALERT_KINDS),
+  /** Il testo composto dal backend, lo stesso che il canale push ha consegnato. */
+  message: z.string(),
+  /** L'istante del fatto, non quello della scrittura: viene da `ClockPort`. */
+  occurredAt: z.iso.datetime(),
+  strategy: z.enum(STRATEGY_NAMES).nullable(),
+  mode: z.enum(CONTROL_MODES).nullable(),
+  trafficLevel: z.enum(TRAFFIC_LEVELS).nullable(),
+  /**
+   * Zona e veicolo sono **copie**, non riferimenti.
+   *
+   * Uno storico racconta com'era il mondo allora: legarlo con una chiave esterna significherebbe che
+   * rinominare una zona riscrive il passato, e che cancellarla lo perde. Sono i due modi in cui uno
+   * storico smette di essere tale.
+   */
+  zoneId: z.string().nullable(),
+  robotaxiId: z.string().nullable(),
+});
+export type OperatorAlert = z.infer<typeof operatorAlertSchema>;
+
+export const operatorAlertsResponseSchema = z.object({
+  alerts: z.array(operatorAlertSchema),
+});
+export type OperatorAlertsResponse = z.infer<typeof operatorAlertsResponseSchema>;

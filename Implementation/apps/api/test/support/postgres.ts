@@ -23,6 +23,8 @@ import { PersistencePort, type TimeWindow } from '../../src/persistence/persiste
 import { ClockPort } from '../../src/platform/clock.port';
 import { FakeClock } from '../../src/platform/fake-clock';
 import { NotificationsModule } from '../../src/notifications/notifications.module';
+import { NotificationPort } from '../../src/notifications/notification.port';
+import { OperatorAlertPort } from '../../src/notifications/operator-alert.port';
 import { NotificationSessionPort } from '../../src/notifications/session.port';
 import { AdvanceBookingActivatorPort } from '../../src/rides/advance-booking.port';
 import { FleetTelemetryPort } from '../../src/rides/fleet-telemetry.port';
@@ -69,7 +71,11 @@ export interface ApiHarness {
    */
   readonly rideLifecycle: RideLifecyclePort;
   /** Il registro delle sessioni push, per registrare e deregistrare subscriber nei test (M5). */
+  /** Il lato scrittura dell'Observer: serve a guidare un evento senza inscenarne la causa. */
+  readonly notifications: NotificationPort;
   readonly notificationSessions: NotificationSessionPort;
+  /** Lo storico degli alert dell'operatore (decisione D77). */
+  readonly operatorAlerts: OperatorAlertPort;
   /**
    * La telemetria che fa avanzare le corse (M7).
    *
@@ -123,6 +129,7 @@ export interface ApiHarness {
 
 /** L'ordine conta: le figlie prima delle madri, o le chiavi esterne si oppongono. */
 const DOMAIN_TABLES = [
+  'operator_alert',
   'notification',
   'rebalancing_action',
   'ride',
@@ -200,7 +207,9 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
   const rides = moduleRef.get(RideRequestPort);
   const advanceBooking = moduleRef.get(AdvanceBookingActivatorPort);
   const rideLifecycle = moduleRef.get(RideLifecyclePort);
+  const notifications = moduleRef.get(NotificationPort);
   const notificationSessions = moduleRef.get(NotificationSessionPort);
+  const operatorAlerts = moduleRef.get(OperatorAlertPort);
   const fleetTelemetry = moduleRef.get(FleetTelemetryPort);
   const external = moduleRef.get(ExternalServicesPort);
   const simulation = moduleRef.get(FleetSimulationPort);
@@ -232,7 +241,9 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     rides,
     advanceBooking,
     rideLifecycle,
+    notifications,
     notificationSessions,
+    operatorAlerts,
     fleetTelemetry,
     external,
     simulation,

@@ -44,6 +44,13 @@ export const API_ROUTES = {
   // scheduler e lo si osserva sul canale push, come ogni altro movimento di flotta.
   rebalancingDemand: '/rebalancing/demand',
 
+  // Storico degli alert dell'operatore (decisione D77; RASD R7, R11, R12, R13; G8, G9). Sola
+  // lettura, e sotto `/notifications` e non `/alerts` perché è la controparte persistita dello
+  // stesso canale: il push consegna a chi c'è, questa rotta racconta a chi arriva dopo. Non ha
+  // parametri di paginazione — l'unico consumatore è un pannello che mostra gli ultimi eventi, e
+  // una pagina che nessuno chiede è una rotta che nessuno prova.
+  operatorAlerts: '/notifications/operator',
+
   // Rotte per la manutezione programmata del taxi. Il taxi da available viene settato in manutenzione a mano dall'operatore e viene riabilitato alla fine della manutenzione.
   maintenanceStart: '/fleet/:robotaxiId/maintenance',
   maintenanceComplete: '/fleet/:robotaxiId/maintenance/complete',

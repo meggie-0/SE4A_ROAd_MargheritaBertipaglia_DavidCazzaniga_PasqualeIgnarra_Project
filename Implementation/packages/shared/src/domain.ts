@@ -108,6 +108,27 @@ export const NOTIFICATION_TYPES = [
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /**
+ * Le categorie di **alert dell'operatore** (decisione D77).
+ *
+ * Sono un insieme distinto da `NOTIFICATION_TYPES`, e la distinzione è la sostanza della D77. La
+ * `Notification` del RASD è indirizzata a un passeggero — Figura 2.2, `Notification "0..*" --> "1"
+ * Passenger : sent to` — mentre questi quattro eventi non hanno nessun passeggero a cui andare:
+ * riguardano il **governo del sistema**, e il loro pubblico è chiunque stia guardando la dashboard.
+ *
+ * Il RASD usa questo concetto senza modellarlo: fra i suoi `NotificationType` c'è
+ * `REBALANCING_ALERT`, che è un avviso all'operatore dentro un'entità che il documento dichiara
+ * indirizzata a un passeggero. Tenere i due insiemi separati è ciò che permette a entrambe le
+ * affermazioni di restare vere.
+ */
+export const OPERATOR_ALERT_KINDS = [
+  'STRATEGY_CHANGED',
+  'MODE_CHANGED',
+  'TRAFFIC_ALERT',
+  'REBALANCING_STARTED',
+] as const;
+export type OperatorAlertKind = (typeof OPERATOR_ALERT_KINDS)[number];
+
+/**
  * Le due strategie di allocazione (RASD §2.2.1). Il nome — e non l'oggetto strategia — è ciò che
  * attraversa i confini: `AllocationPort.setActiveStrategy(name, source)` (DD §2.2.1, decisione D4).
  */

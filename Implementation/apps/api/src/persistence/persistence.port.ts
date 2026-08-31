@@ -2,6 +2,7 @@ import type {
   ControlMode,
   MaintenanceStatus,
   NotificationType,
+  OperatorAlertKind,
   RebalancingStatus,
   RideRequestKind,
   RideRequestStatus,
@@ -381,6 +382,29 @@ export interface PersistedRecords {
   readonly rebalancing_action: RebalancingActionRecord;
   readonly system_mode: SystemModeRecord;
   readonly notification: NotificationRecord;
+  readonly operator_alert: OperatorAlertRecord;
+}
+
+/**
+ * Un alert sul **governo del sistema**, senza destinatario (decisione D77).
+ *
+ * È la controparte persistita di ciò che il canale push consegna all'operatore. Non ha
+ * `recipientId` perché non è indirizzato a nessuno: è una cosa che è successa, e la vede chiunque
+ * apra la dashboard — anche chi si è registrato dopo che è successa.
+ *
+ * I campi strutturati non sono una copia ridondante di `message`: sono ciò su cui il pannello
+ * classifica l'alert, mentre il messaggio è prosa per un umano.
+ */
+export interface OperatorAlertRecord {
+  readonly id: string;
+  readonly kind: OperatorAlertKind;
+  readonly message: string;
+  readonly occurredAt: Date;
+  readonly strategy: StrategyName | null;
+  readonly mode: ControlMode | null;
+  readonly trafficLevel: TrafficLevel | null;
+  readonly zoneId: string | null;
+  readonly robotaxiId: string | null;
 }
 
 export type EntityKind = keyof PersistedRecords;
@@ -406,7 +430,8 @@ export type GeneratedIdKind =
   | 'demand_event'
   | 'maintenance_record'
   | 'rebalancing_action'
-  | 'notification';
+  | 'notification'
+  | 'operator_alert';
 
 /** Le marche temporali che il manager riempie da `ClockPort` quando il chiamante non le indica. */
 type Timestamps = 'createdAt' | 'updatedAt';

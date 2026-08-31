@@ -1,0 +1,80 @@
+import type { NotificationPush, OperatorAlert } from '@road/shared';
+
+import { alertCategoryOf, type AlertCategory } from './alerts';
+
+/**
+ * La fusione di **storico persistito** e **canale push** in un elenco solo (decisione D77).
+ *
+ * Il pannello alert ha due sorgenti con due nature: `GET /notifications/operator` dice cosa è
+ * successo prima che questa scheda esistesse, la socket dice cosa succede adesso. Tenerle in due
+ * liste sullo schermo racconterebbe la stessa storia due volte, spezzata in un punto arbitrario —
+ * l'istante in cui qualcuno ha aperto il browser.
+ *
+ * Sta in un modulo suo per la stessa ragione di `alerts.ts` e `mode-events.ts`: è la parte che può
+ * **sbagliare in silenzio**. Una deduplicazione troppo larga fa sparire eventi veri, una troppo
+ * stretta li mostra doppi, e nessuna delle due solleva un errore.
+ */
+
+/** Una riga del pannello, da qualunque delle due sorgenti venga. */
+export interface AlertEntry {
+  readonly occurredAt: string;
+  readonly message: string;
+  readonly category: AlertCategory;
+}
+
+/**
+ * **La deduplicazione è su istante e messaggio, non sull'identificatore.**
+ *
+ * Sarebbe più naturale confrontare gli `id`, ma il canale push non ne porta uno: la notifica spedita
+ * ha i campi strutturati e il testo, non la chiave della riga. Si potrebbe aggiungerlo al contratto,
+ * e sarebbe una modifica al canale per un bisogno del solo pannello.
+ *
+ * `occurredAt` da solo non basta — due eventi possono condividere l'istante, ed è il caso normale
+ * quando una scelta manuale cambia strategia e modo insieme. Il messaggio lo compone
+ * `notification-copy.ts` **una volta sola** e finisce identico nelle due sorgenti, perché lo storico
+ * salva `delivery.message`, cioè esattamente ciò che è stato spedito. La coppia è quindi esatta:
+ * stesso istante e stesso testo significa lo stesso fatto, visto due volte.
+ */
+const identityOf = (entry: AlertEntry): string => `${entry.occurredAt}\u0000${entry.message}`;
+
+/**
+ * Che categoria è, per colorare la riga.
+ *
+ * Entrambe le sorgenti portano i quattro campi su cui `alertCategoryOf` decide, ed è il motivo per
+ * cui quella funzione non è stata duplicata: la riga persistita e quella push si classificano con la
+ * stessa regola, o il pannello colorerebbe in modo diverso lo stesso fatto a seconda di quando lo
+ * si è guardato.
+ */
+function entryOf(source: OperatorAlert | NotificationPush): AlertEntry | null {
+  const category = alertCategoryOf(source);
+  if (category === null) return null;
+
+  return { occurredAt: source.occurredAt, message: source.message, category };
+}
+
+/**
+ * Storico e diretta in un elenco solo, **dal più recente**, senza ripetizioni.
+ *
+ * `live` arriva già filtrato dal canale — contiene anche le transizioni di flotta, che non sono
+ * alert — e `entryOf` scarta ciò che non lo è. Lo storico invece è già solo alert: il backend
+ * persiste i quattro eventi di governo e nient'altro.
+ */
+export function mergeOperatorAlerts(
+  history: readonly OperatorAlert[],
+  live: readonly NotificationPush[],
+  limit: number,
+): readonly AlertEntry[] {
+  const byIdentity = new Map<string, AlertEntry>();
+
+  // Lo storico per primo, la diretta dopo: a parità di identità vince la seconda, che è la più
+  // vicina a ciò che l'utente ha appena visto accadere. In pratica sono identiche — è la stessa
+  // riga per lo stesso fatto — e l'ordine conta solo perché una regola ci sia.
+  for (const source of [...history, ...live]) {
+    const entry = entryOf(source);
+    if (entry !== null) byIdentity.set(identityOf(entry), entry);
+  }
+
+  return [...byIdentity.values()]
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .slice(0, limit);
+}

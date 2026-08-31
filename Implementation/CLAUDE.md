@@ -91,7 +91,7 @@ confine, stai sbagliando qualcosa.
 | `fleet` | `FleetMonitorPort`, `robotaxi.port.ts` | `getCandidates`, `getBookableRobotaxis`, `getAvailableRobotaxis`, `getFleetStatus`, `assign`, `startPickupNavigation`, `pickupReached`, `startRide`, `completeRide`, `releaseAssignment`, `requestRebalancing`, `completeRebalancing`, `recordPositions` |
 | `rebalancing` | `RebalancingPort` | `analyzeDemand`, `rebalance`, `completeArrivedRebalancing` |
 | `maintenance` | `MaintenancePort` | `requestMaintenance`, `completeMaintenance` |
-| `notifications` | `NotificationPort`, `session.port.ts` (`NotificationSessionPort`) | `update`; `registerSession`, `removeSession`, `registeredSessions` |
+| `notifications` | `NotificationPort`, `session.port.ts` (`NotificationSessionPort`), `operator-alert.port.ts` (`OperatorAlertPort`) | `update`; `registerSession`, `removeSession`, `registeredSessions`; `recentAlerts` |
 | `persistence` | `PersistencePort` | `create`, `update`, `find`, `filterAvailable`, `reserve` |
 | `external` | `ExternalServicesPort`, `fleet-simulation.port.ts` (`FleetSimulationPort`) | `getETA`, `getTraffic`, `commandRoute`, `readTelemetry`; `tick`, `reset`. `getDemandData` **non** è realizzata: la sorgente di domanda resta il database (DD, decisioni D47 e D62) |
 | `platform` | `ClockPort`, `RandomPort` | `now`, `next` |

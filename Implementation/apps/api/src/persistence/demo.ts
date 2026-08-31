@@ -208,7 +208,7 @@ runCommand(async (context) => {
    * sempre su un veicolo che circola.
    */
   await source.query(
-    'TRUNCATE TABLE "notification", "rebalancing_action", "ride", "booking", "robotaxi_reservation", "ride_request", "maintenance_record" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "operator_alert", "notification", "rebalancing_action", "ride", "booking", "robotaxi_reservation", "ride_request", "maintenance_record" RESTART IDENTITY CASCADE',
   );
 
   const stadium = zoneById(STADIUM_ZONE_ID);
