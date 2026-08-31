@@ -214,12 +214,18 @@ marker nel colore di «In riposizionamento». Quando arriva torna «Disponibile�
 raggiunta**, senza attendere il ciclo successivo: a chiudere il riposizionamento è la telemetria
 (decisione D74).
 
-> **Guardalo dall'inizio.** Lo stadio ha bisogno di **sei** veicoli e ne parte uno ogni quindici
-> secondi: misurato, il primo si muove a **t+10s** e il sesto arriva a **t+107s**, dopodiché la zona
-> è coperta e non parte più nessuno. Chi apre la pagina dopo
-> trova la flotta ferma e non vede niente — e il pannello alert **non conserva** ciò che è già
-> passato, perché oggi vive nella memoria della scheda. Per questo il comando aspetta che l'API
-> risponda prima di dirti di aprire il browser: quando lo dice, la finestra buona sta cominciando.
+> **Guardalo dall'inizio, ma non è più tutto o niente.** Lo stadio ha bisogno di **sei** veicoli e
+> ne parte uno ogni quindici secondi: misurato, il primo si muove a **t+10s** e il sesto arriva a
+> **t+107s**, dopodiché la zona è coperta e non parte più nessuno.
+>
+> Chi apre la pagina dopo trova la flotta già ferma, ma **il pannello alert conserva** ciò che è
+> successo: lo storico si rilegge da `GET /notifications/operator` (decisione D77), quindi i sei
+> riposizionamenti restano elencati con la loro ora anche a scenario concluso. Quello che non si
+> recupera è il **movimento**: i marker che attraversano la mappa si vedono mentre accade, e la
+> mappa non ha una storia da rileggere.
+>
+> Per questo il comando aspetta comunque che l'API risponda prima di dirti di aprire il browser:
+> quando lo dice, la finestra in cui c'è qualcosa da *guardare* sta cominciando.
 
 ### Che cosa rende una dimostrazione pilotabile
 
