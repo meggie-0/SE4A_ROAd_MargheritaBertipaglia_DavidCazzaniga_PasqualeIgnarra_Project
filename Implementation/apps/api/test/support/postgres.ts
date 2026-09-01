@@ -5,6 +5,7 @@ import { DataSource, type QueryRunner } from 'typeorm';
 import { AllocationModule } from '../../src/allocation/allocation.module';
 import { AllocationPort } from '../../src/allocation/allocation.port';
 import { AuthModule } from '../../src/auth/auth.module';
+import { TokenVerifierPort } from '../../src/auth/access-control.port';
 import { AuthPort } from '../../src/auth/auth.port';
 import { ExternalModule } from '../../src/external/external.module';
 import { ExternalServicesPort } from '../../src/external/external-services.port';
@@ -52,6 +53,14 @@ export interface ApiHarness {
   /** Le porte: l'unico modo in cui i test parlano con i moduli. */
   readonly persistence: PersistencePort;
   readonly auth: AuthPort;
+  /**
+   * La verifica di un token **fuori dal cammino HTTP** (D78).
+   *
+   * È la porta che protegge l'handshake di una WebSocket, dove i guard non arrivano. Sta qui perché
+   * dopo D78 le due porte d'ingresso devono dare la stessa risposta a un token il cui account non
+   * esiste più, e il cancello di M1b può provarlo solo sul cammino HTTP.
+   */
+  readonly tokenVerifier: TokenVerifierPort;
   readonly fleet: FleetMonitorPort;
   readonly maintenance: MaintenancePort;
   readonly allocation: AllocationPort;
@@ -201,6 +210,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
 
   const persistence = moduleRef.get(PersistencePort);
   const auth = moduleRef.get(AuthPort);
+  const tokenVerifier = moduleRef.get(TokenVerifierPort);
   const fleet = moduleRef.get(FleetMonitorPort);
   const maintenance = moduleRef.get(MaintenancePort);
   const allocation = moduleRef.get(AllocationPort);
@@ -244,6 +254,7 @@ export async function startApiHarness(now = '2026-05-04T09:00:00.000Z'): Promise
     notifications,
     notificationSessions,
     operatorAlerts,
+    tokenVerifier,
     fleetTelemetry,
     external,
     simulation,
