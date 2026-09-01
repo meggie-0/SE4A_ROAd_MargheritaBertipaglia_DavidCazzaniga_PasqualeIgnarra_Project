@@ -63,6 +63,31 @@ export class ApiTransportError extends Error {
   }
 }
 
+/**
+ * Se valga la pena **riprovare** una richiesta fallita.
+ *
+ * Serve alla politica di ripetizione dei due client, e sta qui perché la decisione dipende da
+ * `ApiError`, che è di questo file: un client che la scrivesse da sé dovrebbe conoscere gli stessi
+ * codici, e i due divergerebbero.
+ *
+ * La regola è una sola: **una risposta di errore fra 400 e 499 non si riprova.** Il server non ha
+ * avuto un intoppo, ha rifiutato la richiesta nel merito — un token scaduto resta scaduto, un corpo
+ * malformato resta malformato — e ritentare produce identicamente la stessa risposta un istante
+ * dopo. Tutto il resto sì: un guasto del server e un errore di trasporto sono per loro natura
+ * transitori.
+ *
+ * **Non è un dettaglio di prestazioni.** `@tanstack/react-query` tiene una query che sta aspettando
+ * di ritentare in stato `pending`, non `error`, e mette in pausa i tentativi quando il documento non
+ * è visibile: una lettura periodica che riceve 401 su una scheda in secondo piano resterebbe
+ * `pending` **per sempre**, con `error` a `null`. Chi osserva l'errore per riportare al login non
+ * verrebbe mai svegliato, e la dashboard resterebbe a mostrare l'ultima lettura riuscita. Con questa
+ * regola il 401 non ha alcun tentativo da attendere e la query si posa subito su `error`.
+ */
+export function isRetriableFailure(error: unknown): boolean {
+  if (error instanceof ApiError) return error.status < 400 || error.status >= 500;
+  return true;
+}
+
 export interface ApiRequestOptions<T> {
   /** Lo schema con cui validare la risposta. È obbligatorio: vedi il commento in testa al file. */
   readonly schema: z.ZodType<T>;

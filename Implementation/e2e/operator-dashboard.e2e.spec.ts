@@ -260,3 +260,54 @@ test.describe('[R2][G1] L operatore aggiorna il proprio profilo', () => {
     await expect(page.getByTestId('maintenance-panel')).toBeVisible();
   });
 });
+
+test.describe('[R1][G1] Una sessione che non vale più riporta al login', () => {
+  /**
+   * Il caso che nessun test copriva: **a scoprire che la sessione è finita è una lettura**, non un
+   * comando.
+   *
+   * I comandi il 401 lo gestivano da sempre — cambiare strategia, salvare il profilo, mettere in
+   * manutenzione — ma sono azioni che nessuno ha ragione di tentare davanti a una dashboard che
+   * sembra soltanto ferma. Le tre letture periodiche sono l'unica cosa che continua a succedere, e
+   * finché non riportavano al login l'operatore restava davanti a mappa, conteggi e strategia
+   * dell'ultima lettura riuscita, senza un solo segnale.
+   *
+   * **Questo caso da solo non avrebbe trovato il difetto**, ed è giusto dirlo: qui la pagina è in
+   * primo piano, e in primo piano il ritorno al login funzionava già. Il difetto stava su un
+   * documento non visibile, dove `@tanstack/react-query` sospende i tentativi e lascia la query in
+   * `pending` con `error` a `null` — quello lo blocca il caso unitario di `isRetriableFailure`, che
+   * toglie al 401 il tentativo da attendere. Questo caso blocca l'altra metà: che qualcuno *guardi*
+   * l'errore delle letture, e non dei soli comandi.
+   */
+  test('un token che il server rifiuta riporta alla schermata di accesso, senza toccare nulla', async ({
+    page,
+  }) => {
+    await signIn(page);
+    await expect(page.getByTestId('fleet-status-bar')).toBeVisible();
+
+    /*
+     * Il token viene guastato nel deposito, non fatto scadere aspettando.
+     *
+     * Un token dura un'ora e la suite non può aspettarla; ciò che il client deve distinguere è una
+     * risposta `401`, e il server la dà identica a un token scaduto e a uno che non verifica. Si
+     * ricarica perché la sessione si legge all'avvio: dopo il ricaricamento le tre letture partono
+     * con un token che non vale, che è esattamente la condizione di chi ha lasciato la dashboard
+     * aperta troppo a lungo.
+     */
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('road.operator.session');
+      if (raw === null) throw new Error('Nessuna sessione nel deposito dopo il login.');
+      const session = JSON.parse(raw) as { accessToken: string };
+      session.accessToken = `${session.accessToken}-non-piu-valido`;
+      localStorage.setItem('road.operator.session', JSON.stringify(session));
+    });
+    await page.reload();
+
+    await expect(page.getByTestId('submit-auth')).toBeVisible();
+
+    // E la sessione guasta non resta nel deposito: senza questo, il ricaricamento successivo
+    // ripeterebbe il giro di 401 invece di presentare il login e basta.
+    const stored = await page.evaluate(() => localStorage.getItem('road.operator.session'));
+    expect(stored).toBeNull();
+  });
+});
