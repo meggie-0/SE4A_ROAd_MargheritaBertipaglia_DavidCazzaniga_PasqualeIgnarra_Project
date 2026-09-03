@@ -719,8 +719,8 @@ body {
 }
 
 .robotaxi-marker-badge {
-  width: 34px;
-  height: 34px;
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -743,8 +743,8 @@ body {
 }
 
 .robotaxi-marker-glyph {
-  width: 27px;
-  height: 27px;
+  width: 80%;
+  height: 80%;
   display: block;
   background: var(--robotaxi-color);
   -webkit-mask: url('/road-taxi-icon.png') center / contain no-repeat;
@@ -784,8 +784,8 @@ body {
 }
 
 .service-zone-map-symbol {
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 55%;
+  height: 55%;
   display: block;
   background: white;
   -webkit-mask: var(--zone-icon) center / contain no-repeat;
@@ -793,8 +793,8 @@ body {
 }
 
 .service-zone-map-symbol--linate {
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 48%;
+  height: 48%;
   transform: translate(0, 1px);
 }
 

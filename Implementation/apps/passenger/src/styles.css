@@ -1990,6 +1990,7 @@ div.route-search-preview--expanded:focus-within {
 .service-zone-map-icon {
   display: grid;
   place-items: center;
+  box-sizing: border-box;
   border: 2px solid white;
   border-radius: 50%;
   background: var(--road-blue);
@@ -1997,8 +1998,8 @@ div.route-search-preview--expanded:focus-within {
 }
 
 .service-zone-map-symbol {
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 55%;
+  height: 55%;
   display: block;
   background: white;
   -webkit-mask: var(--zone-icon) center / contain no-repeat;
@@ -2028,8 +2029,8 @@ div.route-search-preview--expanded:focus-within {
 
 /* Regolazioni specifiche per l’aereo di Linate */
 .service-zone-map-symbol--linate {
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 48%;
+  height: 48%;
 
   /* orizzontale, verticale */
   transform: translate(0, 1px);
@@ -2103,6 +2104,7 @@ div.route-search-preview--expanded:focus-within {
 .robotaxi-map-icon {
   display: grid;
   place-items: center;
+  box-sizing: border-box;
   border: 2px solid var(--road-blue);
   border-radius: 50%;
   background: var(--surface);
@@ -2111,8 +2113,8 @@ div.route-search-preview--expanded:focus-within {
 }
 
 .robotaxi-map-symbol {
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 70%;
+  height: 70%;
 }
 
 .mobile-schedule {

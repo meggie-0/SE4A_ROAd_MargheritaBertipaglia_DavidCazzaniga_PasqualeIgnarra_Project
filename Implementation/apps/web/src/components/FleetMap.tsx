@@ -8,10 +8,11 @@ import {
   useMapEvents,
   useMap,
 } from 'react-leaflet';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { STATE_APPEARANCE } from '../robotaxi-states';
 import { divIcon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { robotaxiMarkerSize, serviceZoneMarkerSize } from '../map-marker-size';
 
 /**
  * La flotta viva sulla mappa (DD §3.2, RASD R7 e G8).
@@ -58,6 +59,7 @@ function createRobotaxiIcon(
   state: RobotaxiState,
   color: string,
   selected: boolean,
+  size: number,
 ) {
   return divIcon({
     className: 'robotaxi-marker',
@@ -71,13 +73,13 @@ function createRobotaxiIcon(
         <span class="robotaxi-marker-glyph"></span>
       </span>
     `,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-    popupAnchor: [0, -18],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2)],
   });
 }
 
-function createServiceZoneMapIcon(zoneId: string) {
+function createServiceZoneMapIcon(zoneId: string, size: number) {
   return divIcon({
     className: 'service-zone-map-icon',
     html: `
@@ -87,16 +89,11 @@ function createServiceZoneMapIcon(zoneId: string) {
         aria-hidden="true"
       ></span>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    tooltipAnchor: [0, -18],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    tooltipAnchor: [0, -(size / 2)],
   });
 }
-
-const SERVICE_ZONE_MARKERS = MILAN_ZONES.map((zone) => ({
-  zone,
-  icon: createServiceZoneMapIcon(zone.id),
-}));
 
 export interface FleetMapProps {
   readonly robotaxis: readonly FleetVehicle[];
@@ -149,6 +146,100 @@ function ClearSelectionOnMapClick({ onClearSelection }: ClearSelectionOnMapClick
   return null;
 }
 
+interface ResponsiveMapMarkersProps {
+  readonly robotaxis: readonly FleetVehicle[];
+  readonly selectedRobotaxiId: string | null;
+  readonly onSelectRobotaxi: (robotaxiId: string) => void;
+}
+
+function ResponsiveMapMarkers({
+  robotaxis,
+  selectedRobotaxiId,
+  onSelectRobotaxi,
+}: ResponsiveMapMarkersProps): React.JSX.Element {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+
+  useMapEvents({
+    zoomend: () => {
+      setZoom(map.getZoom());
+    },
+  });
+
+  const taxiSize = robotaxiMarkerSize(zoom);
+  const zoneSize = serviceZoneMarkerSize(zoom);
+
+  return (
+    <>
+      {MILAN_ZONES.map((zone) => {
+        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
+        const icon = createServiceZoneMapIcon(zone.id, zoneSize);
+
+        return (
+          <Marker
+            key={zone.id}
+            position={[position.lat, position.lon]}
+            icon={icon}
+            alt={`Zona: ${zone.name}`}
+            bubblingMouseEvents
+            riseOnHover
+            zIndexOffset={1000}
+          >
+            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -(zoneSize / 2)]}>
+              <strong>{zone.name}</strong>
+
+              {zone.id === 'linate' && (
+                <>
+                  <br />
+                  Terminal / Kiss&Ride
+                </>
+              )}
+            </Tooltip>
+          </Marker>
+        );
+      })}
+
+      {robotaxis.map((vehicle) => {
+        const appearance = STATE_APPEARANCE[vehicle.state];
+        const selected = vehicle.id === selectedRobotaxiId;
+
+        return (
+          <Marker
+            key={vehicle.id}
+            position={[vehicle.position.lat, vehicle.position.lon]}
+            icon={createRobotaxiIcon(
+              vehicle.id,
+              vehicle.state,
+              appearance.color,
+              selected,
+              taxiSize,
+            )}
+            eventHandlers={{
+              click: () => onSelectRobotaxi(vehicle.id),
+            }}
+            bubblingMouseEvents={false}
+            zIndexOffset={selected ? 2000 : 0}
+          >
+            <Popup>
+              <strong>{vehicle.id}</strong>
+              <br />
+              {appearance.label}
+              <br />
+              Zona: {vehicle.zoneId ?? '—'}
+              {selected && (
+                <>
+                  <br />
+                  <em>Robotaxi selezionato</em>
+                </>
+              )}
+            </Popup>
+          </Marker>
+        );
+      })}
+    </>
+  );
+}
+
 export function FleetMap({
   robotaxis,
   selectedRobotaxiId,
@@ -174,66 +265,11 @@ export function FleetMap({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {/* Le zone di Milano: la partizione di Voronoi su cui il riposizionamento ragiona
-          (decisione D10). Sono il riferimento rispetto a cui l'operatore legge una concentrazione
-          di veicoli o la sua assenza. */}
-      {SERVICE_ZONE_MARKERS.map(({ zone, icon }) => {
-        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
-
-        return (
-          <Marker
-            key={zone.id}
-            position={[position.lat, position.lon]}
-            icon={icon}
-            alt={`Zona: ${zone.name}`}
-            bubblingMouseEvents
-            riseOnHover
-            zIndexOffset={1000}
-          >
-            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -18]}>
-              <strong>{zone.name}</strong>
-
-              {zone.id === 'linate' && (
-                <>
-                  <br />
-                  Terminal / Kiss&Ride
-                </>
-              )}
-            </Tooltip>
-          </Marker>
-        );
-      })}
-
-      {robotaxis.map((vehicle) => {
-        const appearance = STATE_APPEARANCE[vehicle.state];
-        const selected = vehicle.id === selectedRobotaxiId;
-        return (
-          <Marker
-            key={vehicle.id}
-            position={[vehicle.position.lat, vehicle.position.lon]}
-            icon={createRobotaxiIcon(vehicle.id, vehicle.state, appearance.color, selected)}
-            eventHandlers={{
-              click: () => onSelectRobotaxi(vehicle.id),
-            }}
-            bubblingMouseEvents={false}
-            zIndexOffset={selected ? 2000 : 0}
-          >
-            <Popup>
-              <strong>{vehicle.id}</strong>
-              <br />
-              {appearance.label}
-              <br />
-              Zona: {vehicle.zoneId ?? '—'}
-              {selected && (
-                <>
-                  <br />
-                  <em>Robotaxi selezionato</em>
-                </>
-              )}
-            </Popup>
-          </Marker>
-        );
-      })}
+      <ResponsiveMapMarkers
+        robotaxis={robotaxis}
+        selectedRobotaxiId={selectedRobotaxiId}
+        onSelectRobotaxi={onSelectRobotaxi}
+      />
     </MapContainer>
   );
 }

@@ -16,6 +16,7 @@ import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef, useState } from 'react';
 import { divIcon } from 'leaflet';
 import { fetchRoadRoute } from '../address-search';
+import { passengerRobotaxiMarkerSize, serviceZoneMarkerSize } from '../map-marker-size';
 /**
  * La mappa su cui l'app passeggero è centrata (DD §3.1).
  *
@@ -79,20 +80,22 @@ const DESTINATION_MAP_ICON = divIcon({
   popupAnchor: [5, -30],
 });
 
-const ROBOTAXI_MAP_ICON = divIcon({
-  className: 'robotaxi-map-icon',
-  html: `
-    <span
-      class="road-taxi-icon robotaxi-map-symbol"
-      aria-hidden="true"
-    ></span>
-  `,
-  iconSize: [42, 42],
-  iconAnchor: [21, 21],
-  popupAnchor: [0, -21],
-});
+function createRobotaxiMapIcon(size: number) {
+  return divIcon({
+    className: 'robotaxi-map-icon',
+    html: `
+      <span
+        class="road-taxi-icon robotaxi-map-symbol"
+        aria-hidden="true"
+      ></span>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2)],
+  });
+}
 
-function createServiceZoneMapIcon(zoneId: string) {
+function createServiceZoneMapIcon(zoneId: string, size: number) {
   return divIcon({
     className: 'service-zone-map-icon',
     html: `
@@ -102,16 +105,11 @@ function createServiceZoneMapIcon(zoneId: string) {
   aria-hidden="true"
 ></span>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    tooltipAnchor: [0, -18],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    tooltipAnchor: [0, -(size / 2)],
   });
 }
-
-const SERVICE_ZONE_MARKERS = MILAN_ZONES.map((zone) => ({
-  zone,
-  icon: createServiceZoneMapIcon(zone.id),
-}));
 
 export interface RideMapProps {
   readonly pickup: GeoPoint | null;
@@ -134,6 +132,55 @@ export interface RideMapProps {
   readonly onPick: ((point: GeoPoint) => void) | null;
   /** Sposta e ingrandisce la mappa sulla destinazione al termine della corsa. */
   readonly focusDestination?: boolean;
+}
+
+function ResponsivePassengerMarkers({
+  robotaxi,
+}: {
+  readonly robotaxi: GeoPoint | null | undefined;
+}): React.JSX.Element {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+
+  useMapEvents({
+    zoomend: () => {
+      setZoom(map.getZoom());
+    },
+  });
+
+  const taxiSize = passengerRobotaxiMarkerSize(zoom);
+  const zoneSize = serviceZoneMarkerSize(zoom);
+
+  return (
+    <>
+      {MILAN_ZONES.map((zone) => {
+        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
+
+        return (
+          <Marker
+            key={zone.id}
+            position={[position.lat, position.lon]}
+            icon={createServiceZoneMapIcon(zone.id, zoneSize)}
+            alt={`Zona servita: ${zone.name}`}
+            bubblingMouseEvents
+            riseOnHover
+          >
+            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -(zoneSize / 2)]}>
+              <strong>{zone.name}</strong>
+              <br />
+              {zone.id === 'linate' ? 'Terminal / Kiss&Ride raggiungibile' : 'Zona servita'}
+            </Tooltip>
+          </Marker>
+        );
+      })}
+
+      {robotaxi !== null && robotaxi !== undefined && (
+        <Marker position={[robotaxi.lat, robotaxi.lon]} icon={createRobotaxiMapIcon(taxiSize)}>
+          <Popup>Il tuo robotaxi</Popup>
+        </Marker>
+      )}
+    </>
+  );
 }
 
 /**
@@ -180,26 +227,7 @@ export function RideMap({
 
       {/* Le zone di Milano, dalla partizione di Voronoi condivisa (decisione D10): danno un
           riferimento a chi tocca la mappa senza conoscere la città. */}
-      {SERVICE_ZONE_MARKERS.map(({ zone, icon }) => {
-        const position = zone.id === 'linate' ? LINATE_TERMINAL_POINT : zone;
-
-        return (
-          <Marker
-            key={zone.id}
-            position={[position.lat, position.lon]}
-            icon={icon}
-            alt={`Zona servita: ${zone.name}`}
-            bubblingMouseEvents
-            riseOnHover
-          >
-            <Tooltip className="service-zone-tooltip" direction="top" offset={[0, -18]}>
-              <strong>{zone.name}</strong>
-              <br />
-              {zone.id === 'linate' ? 'Terminal / Kiss&Ride raggiungibile' : 'Zona servita'}
-            </Tooltip>
-          </Marker>
-        );
-      })}
+      <ResponsivePassengerMarkers robotaxi={robotaxi} />
 
       {pickup !== null && (
         <Marker position={[pickup.lat, pickup.lon]} icon={PICKUP_MAP_ICON}>
@@ -212,13 +240,8 @@ export function RideMap({
           <Popup>Destinazione</Popup>
         </Marker>
       )}
-      {robotaxi !== null && robotaxi !== undefined && (
-        <>
-          {heading !== null && <RobotaxiRoadRoute origin={robotaxi} destination={heading} />}
-          <Marker position={[robotaxi.lat, robotaxi.lon]} icon={ROBOTAXI_MAP_ICON}>
-            <Popup>Il tuo robotaxi</Popup>
-          </Marker>
-        </>
+      {robotaxi !== null && robotaxi !== undefined && heading !== null && (
+        <RobotaxiRoadRoute origin={robotaxi} destination={heading} />
       )}
     </MapContainer>
   );
