@@ -247,9 +247,14 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
     expect(posizioni).not.toContain(-1);
     expect([...posizioni].sort((a, b) => a - b)).toEqual(posizioni);
 
-    // E almeno una fase intermedia è stata vista: senza, «vede lo stato aggiornarsi» sarebbe
-    // soddisfatto da una schermata che salta direttamente all'esito.
-    expect(osservate).toContain('arriving');
+    // È stata vista almeno una fase intermedia prima di `in_ride`.
+    // `arriving` può durare meno dell'intervallo osservabile dal test,
+    // mentre `arrived` dimostra comunque che la UI ha ricevuto un aggiornamento intermedio.
+    const faseIntermediaOsservata = osservate.some(
+      (fase) => fase === 'arriving' || fase === 'arrived',
+    );
+
+    expect(faseIntermediaOsservata).toBe(true);
 
     // L’icona del robotaxi resta visibile anche quando il passeggero è a bordo:
     // la mappa non si svuota quando la corsa comincia.
