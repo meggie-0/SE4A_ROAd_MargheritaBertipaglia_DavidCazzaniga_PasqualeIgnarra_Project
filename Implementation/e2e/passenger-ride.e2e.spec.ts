@@ -145,7 +145,20 @@ test.describe('[R3][R6][G2][G7] Il passeggero richiede una corsa e ne segue lo s
 
     // Un veicolo è stato assegnato: è l'esito di R5, visto dal passeggero. Si guarda **quale**
     // veicolo e non in che fase sia — l'identificatore resta lì per tutta la corsa, la fase no.
+    const sheet = page.getByTestId('ride-status-sheet');
+    const sheetHandle = page.getByTestId('ride-status-sheet-handle');
+
+    await expect(sheet).toHaveAttribute('data-position', 'collapsed');
+
+    await sheetHandle.click();
+
+    await expect(sheet).toHaveAttribute('data-position', 'expanded');
+    await expect(page.getByTestId('ride-robotaxi')).toBeVisible();
     await expect(page.getByTestId('ride-robotaxi')).not.toHaveText('—');
+
+    await sheetHandle.click();
+
+    await expect(sheet).toHaveAttribute('data-position', 'collapsed');
 
     /*
      * Il robotaxi compare sulla mappa già da adesso (DD §3.1 [v1.6], decisione D69).
@@ -332,6 +345,15 @@ test.describe('[R14] Il passeggero annulla una corsa prima che inizi', () => {
     const confirmation = page.getByTestId('cancel-confirmation');
 
     await expect(phase).toBeVisible();
+    const sheet = page.getByTestId('ride-status-sheet');
+    const sheetHandle = page.getByTestId('ride-status-sheet-handle');
+
+    await expect(sheet).toHaveAttribute('data-position', 'collapsed');
+    await expect(cancelButton).not.toBeVisible();
+
+    await sheetHandle.click();
+
+    await expect(sheet).toHaveAttribute('data-position', 'expanded');
     await expect(cancelButton).toBeVisible();
 
     // Il primo tentativo viene rifiutato dal passeggero.
