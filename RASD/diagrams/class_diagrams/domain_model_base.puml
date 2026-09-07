@@ -12,6 +12,7 @@ skinparam linetype polyline
 skinparam nodesep 45
 skinparam ranksep 45
 skinparam ArrowThickness 1.5
+skinparam packageStyle folder
 
 skinparam class {
     BackgroundColor white
@@ -49,7 +50,6 @@ package "Data types" as DT {
     class GNSSPose <<datatype>> {
         + latitude: Real
         + longitude: Real
-        + altitude: Real
     }
 }
 
@@ -81,11 +81,11 @@ class User <<abstract>> {
 }
 
 class Passenger {
-    - phoneNumber: String
+    - phoneNumber: String [0..1]
 }
 
 class FleetOperator {
-    - operatorID: String
+    - operatorID: String 
 }
 
 class Fleet {
@@ -114,23 +114,36 @@ class AdvanceBooking {
 
 class Location {
     - locationPose: GNSSPose
-    - address: String
+    - address: String 
 }
 
+' =========================
+' Layout constraints
+' =========================
+
 DT -[hidden]up- EN
+
+' =========================
+' Generalizations
+' =========================
+
 User <|-- Passenger
 User <|-- FleetOperator
 
 RideRequest <|-- ImmediateRide
 RideRequest <|-- AdvanceBooking
 
-Passenger "1" --> "0..* " RideRequest : submits
+' =========================
+' Associations
+' =========================
 
-FleetOperator "1..*" --> "1 " Fleet : monitors
+Passenger "1" --> "0..*" RideRequest : submits
 
-Fleet "1" *-- "1..*" Robotaxi : contains
+FleetOperator "1..*" --> "1" Fleet : monitors
 
-RideRequest "0..*" --> "\n0..1" Robotaxi : assigned to\n
+Fleet "1" -- "1..*" Robotaxi : contains
+
+RideRequest "0..*" --> "0..1" Robotaxi : assigned to
 
 RideRequest "1" -down- "1" Location : pickup
 RideRequest "1" -down- "1" Location : destination
