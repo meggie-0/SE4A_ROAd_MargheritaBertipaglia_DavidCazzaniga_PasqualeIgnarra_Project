@@ -1,6 +1,5 @@
 @startuml
 
-
 skinparam backgroundColor white
 skinparam shadowing false
 skinparam defaultFontName Arial
@@ -54,42 +53,39 @@ sequenceDiagram {
 hide footbox
 autonumber
 
-actor "p:PassengerClient" as P
-participant "road:ROAdSystem" as ROAD
-participant "map:ExternalMapService" as MAP
-participant "fleet:Fleet" as FLEET
+actor "Passenger" as P
+participant "ROAd System" as ROAD
+participant "External Mapping Service" as MAP
+
+activate P
 
 P -> ROAD : submitAdvanceBooking(pickup, destination, dateTime)
-activate P
 activate ROAD
 
 ROAD -> ROAD : validateBookingRequest()
 
-ROAD -> FLEET : getAvailableRobotaxis(dateTime)
-activate FLEET
-FLEET --> ROAD : availableRobotaxis
-deactivate FLEET
+alt invalid request
+    ROAD --> P : requestRejected(reason)
 
-ROAD -> MAP : estimateTravelTimes(pickup, destination, robotaxiPoses)
-activate MAP
-MAP --> ROAD : travelTimes
-deactivate MAP
+else valid request
+    ROAD -> ROAD : identifyCandidateRobotaxis(dateTime)
 
-ROAD -> ROAD : applyActiveAllocationStrategy()
-ROAD -> ROAD : selectRobotaxi()
-ROAD -> ROAD : checkBookingConflicts(selectedRobotaxi, dateTime)
+    opt routing information required
+        ROAD -> MAP : requestRoutesAndTravelTimes(pickup, destination,\nrobotaxiPositions)
+        activate MAP
+        MAP --> ROAD : routingInformation
+        deactivate MAP
+    end
 
-alt robotaxi selected and no conflicting assignment
-    ROAD -> ROAD : reserveRobotaxi(selectedRobotaxi, dateTime)
-    ROAD -> ROAD : createAdvanceBooking(selectedRobotaxi)
-    ROAD -> ROAD : updateRideRequestStatus(ACCEPTED)
+    ROAD -> ROAD : evaluateReservationFeasibility()
 
-    ROAD --> P : notifyBookingConfirmed(bookingInfo)
+    alt suitable robotaxi can be reserved without conflicts
+        ROAD -> ROAD : reserveVehicleAndRecordBooking()
+        ROAD --> P : bookingConfirmed(bookingInfo)
 
-else no feasible robotaxi or conflicting assignment
-    ROAD -> ROAD : updateRideRequestStatus(REJECTED)
-
-    ROAD --> P : notifyRideRequestRejected()
+    else no feasible reservation
+        ROAD --> P : requestRejected(noSuitableVehicleOrConflictingReservation)
+    end
 end
 
 deactivate ROAD

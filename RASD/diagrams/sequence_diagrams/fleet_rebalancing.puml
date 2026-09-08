@@ -1,6 +1,5 @@
 @startuml
 
-
 skinparam backgroundColor white
 skinparam shadowing false
 skinparam defaultFontName Arial
@@ -54,49 +53,39 @@ sequenceDiagram {
 hide footbox
 autonumber
 
-participant "road:ROAdSystem" as ROAD
-participant "demand:ExternalDemandDataService" as DEMAND
-participant "fleet:Fleet" as FLEET
-actor "operator:FleetOperator" as OP
-participant "selectedRobotaxis:RobotaxiGroup" as TAXIS
+participant "ROAd System" as ROAD
+actor "Fleet Operator" as OP
+participant "Robotaxi" as TAXI
 
-ROAD -> DEMAND : requestDemandData()
+activate OP
 activate ROAD
-activate DEMAND
-DEMAND --> ROAD : demandData
-deactivate DEMAND
 
-ROAD -> ROAD : identifyHighDemandZones()
+ROAD -> ROAD : periodicallyEvaluateRebalancing()
+ROAD -> ROAD : estimateZoneDemand()
+ROAD -> ROAD : compareDemandWithAvailableVehicles()
 
-ROAD -> FLEET : getIdleRobotaxis()
-activate FLEET
-FLEET --> ROAD : idleRobotaxis
-deactivate FLEET
+alt zones with unmet demand exist
+    loop for each target zone, in decreasing deficit order
+        ROAD -> ROAD : selectEligibleIdleRobotaxiFromSurplusZone()
 
-ROAD -> ROAD : selectRebalancingRobotaxis()
+        opt suitable robotaxi can be repositioned
+            ROAD -> ROAD : initiateRebalancingAction(robotaxi, targetZone)
+            ROAD ->> TAXI : proceedToZone(targetZone)
+            activate TAXI
 
-alt manual approval required
-    ROAD -> OP : suggestRebalancing(targetZone, selectedRobotaxis)
-    activate OP
-    OP --> ROAD : approveRebalancing()
-    deactivate OP
+            ROAD ->> OP : rebalancingStarted(robotaxi, targetZone)
 
-    ROAD -> TAXIS : sendRebalancingInstruction(targetZone)
-    activate TAXIS
-    TAXIS --> ROAD : rebalancingStarted
-    deactivate TAXIS
+            ||80||
 
-    ROAD -> ROAD : updateRebalancingStatus(TRIGGERED)
+            deactivate TAXI
+        end
+    end
 
-else automatic rebalancing enabled
-    ROAD -> TAXIS : sendRebalancingInstruction(targetZone)
-    activate TAXIS
-    TAXIS --> ROAD : rebalancingStarted
-    deactivate TAXIS
-
-    ROAD -> ROAD : updateRebalancingStatus(TRIGGERED)
+else no demand imbalance
+    ROAD -> ROAD : retainCurrentRebalancingPlan()
 end
 
 deactivate ROAD
+deactivate OP
 
 @enduml
