@@ -59,8 +59,9 @@ participant "am:AllocationManager" as AM
 participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
-P -> API : submitImmediateRide(pickup, destination)
 activate P
+
+P -> API : submitImmediateRide(pickup, destination)
 activate API
 
 API -> RRM : submitImmediate(passengerId, pickup, destination)
@@ -110,15 +111,17 @@ PM --> RRM : reservationConfirmed
 deactivate PM
 
 RRM --> API : rideConfirmed(rideId, robotaxi, ETA)
-API --> P : ride confirmation
-
-RRM ->> NM : update(RideAssignedEvent)
-activate NM
-NM ->> API : push(RideAssignedEvent)
-deactivate NM
-API ->> P : push(RideAssignedEvent)
+API --> P : rideConfirmation
 
 deactivate RRM
+
+FM ->> NM : update(RobotaxiStateChangedEvent)
+activate NM
+
+NM ->> API : push(RideAssignedEvent)
+API ->> P : push(RideAssignedEvent)
+
+deactivate NM
 deactivate API
 deactivate P
 

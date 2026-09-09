@@ -1,0 +1,118 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+participant "p:PassengerClient" as P
+participant "api:APIGateway" as API
+participant "rrm:RideRequestManager" as RRM
+participant "esg:ExternalServicesGateway" as ESG
+participant "fm:FleetMonitor" as FM
+participant "pm:PersistenceManager" as PM
+database "db:Database" as DB
+participant "nm:NotificationManager" as NM
+
+activate P
+
+P -> API : cancelRideRequest(requestId)
+activate API
+
+API -> RRM : cancel(requestId)
+activate RRM
+
+RRM -> ESG : commandRoute(robotaxiId, null)
+activate ESG
+ESG --> RRM : routeRevoked
+deactivate ESG
+
+RRM -> FM : releaseAssignment(robotaxiId)
+activate FM
+
+alt cancellation allowed
+    FM --> RRM : assignmentReleased
+    deactivate FM
+
+    RRM -> PM : updateStatus(requestId, CANCELLED)
+    activate PM
+    PM -> DB : updateRideRequestStatus(requestId, CANCELLED)
+    activate DB
+    DB --> PM : statusUpdated
+    deactivate DB
+    PM --> RRM : statusUpdated
+    deactivate PM
+
+    RRM -> PM : releaseReservation(requestId)
+    activate PM
+    PM -> DB : deleteOrCloseReservation(requestId)
+    activate DB
+    DB --> PM : reservationReleased
+    deactivate DB
+    PM --> RRM : reservationReleased
+    deactivate PM
+
+    RRM --> API : cancellationConfirmed
+    API --> P : cancellationConfirmation
+
+    RRM ->> NM : update(RideStatusChangedEvent)
+    activate NM
+    deactivate NM
+
+else cancellation not allowed
+    FM --> RRM : cancellationRejected
+    deactivate FM
+
+    RRM --> API : cancellationRejected(reason)
+    API --> P : cancellationError
+end
+
+deactivate RRM
+deactivate API
+deactivate P
+
+@enduml

@@ -11,38 +11,28 @@ skinparam sequence {
     ArrowColor black
     LifeLineBorderColor #444444
     LifeLineBackgroundColor white
-
     ParticipantBorderColor #444444
     ParticipantBackgroundColor white
     ParticipantFontColor black
-
     GroupBorderColor #444444
     GroupBackgroundColor #F7F7F7
-
     DividerBorderColor #444444
     DividerBackgroundColor #F2F2F2
 }
 
 <style>
 sequenceDiagram {
-  participant {
-    Padding 20
-  }
-
+  participant { Padding 20 }
   group {
     Padding 10
     BackgroundColor #F7F7F7
     LineColor #444444
   }
-
   lifeLine {
     LineColor #444444
     BackgroundColor white
   }
-
-  arrow {
-    LineColor black
-  }
+  arrow { LineColor black }
 }
 </style>
 
@@ -59,8 +49,9 @@ participant "am:AllocationManager" as AM
 participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
-P -> API : submitAdvanceBooking(pickup, destination, timeWindow)
 activate P
+
+P -> API : submitAdvanceBooking(pickup, destination, timeWindow)
 activate API
 
 API -> RRM : submitAdvance(passengerId, pickup, destination, timeWindow)
@@ -68,9 +59,9 @@ activate RRM
 
 RRM -> RRM : validateAdvanceRequest()
 
-RRM -> FM : getCandidates(pickup)
+RRM -> FM : getBookableRobotaxis()
 activate FM
-FM --> RRM : candidates
+FM --> RRM : bookableRobotaxis
 deactivate FM
 
 RRM -> PM : filterAvailable(candidates, timeWindow)
@@ -109,22 +100,22 @@ alt feasible robotaxi found
 
     alt reservation committed
         RRM --> API : advanceBookingConfirmed(bookingId)
-        API --> P : booking confirmation
+        API --> P : bookingConfirmation
 
-        RRM ->> NM : update(BookingConfirmedEvent)
+        RRM ->> NM : update(RideStatusChangedEvent)
         activate NM
         NM ->> API : push(BookingConfirmedEvent)
-        deactivate NM
         API ->> P : push(BookingConfirmedEvent)
+        deactivate NM
 
     else concurrent reservation conflict
         RRM --> API : bookingRejected(conflictReason)
-        API --> P : conflict error
+        API --> P : conflictError
     end
 
 else no feasible robotaxi
     RRM --> API : bookingRejected(noAvailabilityReason)
-    API --> P : no availability error
+    API --> P : noAvailabilityError
 end
 
 deactivate RRM

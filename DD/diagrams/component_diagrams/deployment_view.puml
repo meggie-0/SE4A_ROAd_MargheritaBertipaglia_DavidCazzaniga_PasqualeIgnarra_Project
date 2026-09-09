@@ -40,10 +40,6 @@ skinparam cloud {
     FontColor black
 }
 
-' =========================
-' Client tier
-' =========================
-
 node "Passenger Device" <<device>> as PassengerDevice {
     artifact "Passenger Client" as PassengerClient
 }
@@ -52,15 +48,7 @@ node "Fleet Operator Device" <<device>> as OperatorDevice {
     artifact "Fleet Operator Client" as OperatorClient
 }
 
-' =========================
-' Network
-' =========================
-
 cloud "Internet / Network" as Network
-
-' =========================
-' Application tier
-' =========================
 
 node "Application Server\n(replicable)" <<server>> as AppServer {
     component "API Gateway" as APIGateway
@@ -76,17 +64,9 @@ node "Application Server\n(replicable)" <<server>> as AppServer {
     component "External Services\nGateway" as ExternalServicesGateway
 }
 
-' =========================
-' Data tier
-' =========================
-
 database "Database Node" as DB {
     artifact "ROAd Database" as RoadDB
 }
-
-' =========================
-' Robotaxi tier
-' =========================
 
 node "Robotaxi" <<device>> as Robotaxi {
     component "On-board\nControl API" as RobotaxiAPI
@@ -94,13 +74,8 @@ node "Robotaxi" <<device>> as Robotaxi {
 
 cloud "External Systems\nMaps / Traffic / Demand" as ExternalSystems
 
-' =========================
-' Connections
-' =========================
-
 PassengerClient --> Network : HTTPS / WebSocket
 OperatorClient --> Network : HTTPS / WebSocket
-
 Network --> APIGateway : REST API requests
 
 APIGateway --> AuthManager
@@ -112,6 +87,8 @@ APIGateway --> ModeController
 
 RideRequestManager --> AllocationManager
 RideRequestManager --> FleetMonitor
+RideRequestManager --> ExternalServicesGateway
+
 ModeController --> AllocationManager
 MaintenanceManager --> FleetMonitor
 RebalancingManager --> FleetMonitor
@@ -129,6 +106,7 @@ MaintenanceManager --> PersistenceManager
 RebalancingManager --> PersistenceManager
 FleetMonitor --> PersistenceManager
 ModeController --> PersistenceManager
+
 PersistenceManager --> RoadDB
 
 ExternalServicesGateway --> Network : external API calls

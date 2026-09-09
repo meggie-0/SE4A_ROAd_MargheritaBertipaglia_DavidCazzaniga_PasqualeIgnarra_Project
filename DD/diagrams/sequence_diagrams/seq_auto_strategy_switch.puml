@@ -25,9 +25,7 @@ skinparam sequence {
 
 <style>
 sequenceDiagram {
-  participant {
-    Padding 20
-  }
+  participant { Padding 20 }
 
   group {
     Padding 10
@@ -40,9 +38,7 @@ sequenceDiagram {
     BackgroundColor white
   }
 
-  arrow {
-    LineColor black
-  }
+  arrow { LineColor black }
 }
 </style>
 
@@ -55,9 +51,7 @@ participant "am:AllocationManager" as AM
 participant "pm:PersistenceManager" as PM
 participant "nm:NotificationManager" as NM
 participant "api:APIGateway" as API
-participant "operatorClient:FleetOperatorClient" as Operator
-
-autonumber
+participant "operatorClient:FleetOperatorClient" as OP
 
 == Automatic strategy switching in Auto Mode ==
 
@@ -67,27 +61,28 @@ activate MC
 MC -> MC : checkAutoMode()
 MC -> MC : checkHysteresis(level)
 
-alt autoMode enabled and hysteresis satisfied
-    MC -> AM : setActiveStrategy(strategy)
+alt auto mode enabled and hysteresis satisfied
+    MC -> AM : setActiveStrategy(strategy, AUTO)
     activate AM
+
+    AM -> PM : update(strategyConfig)
+    activate PM
+    PM --> AM : strategyUpdated
+    deactivate PM
+
     AM --> MC : strategyUpdated
     deactivate AM
-
-    MC -> PM : update(modeConfig)
-    activate PM
-    PM --> MC : ok
-    deactivate PM
 
     MC ->> NM : update(StrategyChangedEvent)
     activate NM
     NM ->> API : push(StrategyChangedEvent)
+    API ->> OP : push(StrategyChangedEvent)
     deactivate NM
-    API ->> Operator : push(StrategyChangedEvent)
 
 else hysteresis not satisfied
     MC -> MC : keepCurrentStrategy()
 
-else manualMode enabled
+else manual mode enabled
     MC -> MC : ignoreAutomaticSwitch()
 end
 
@@ -95,32 +90,35 @@ deactivate MC
 
 == Human manual override ==
 
-Operator -> API : setManualStrategy(strategy)
+OP -> API : setManualStrategy(strategy)
+activate OP
 activate API
 
 API -> MC : setManual(strategy)
 activate MC
 
-MC -> AM : setActiveStrategy(strategy)
+MC -> AM : setActiveStrategy(strategy, MANUAL)
 activate AM
-AM --> MC : strategyUpdated
-deactivate AM
 
-MC -> PM : update(modeConfig)
+AM -> PM : update(strategyAndModeConfig)
 activate PM
-PM --> MC : ok
+PM --> AM : strategyAndModeUpdated
 deactivate PM
+
+AM --> MC : strategyAndModeUpdated
+deactivate AM
 
 MC ->> NM : update(ManualOverrideEvent)
 activate NM
 NM ->> API : push(ManualOverrideEvent)
+API ->> OP : push(ManualOverrideEvent)
 deactivate NM
-API ->> Operator : push(ManualOverrideEvent)
 
 MC --> API : manualModeEnabled
-deactivate MC
+API --> OP : manualOverrideConfirmation
 
-API --> Operator : manual override confirmation
+deactivate MC
 deactivate API
+deactivate OP
 
 @enduml

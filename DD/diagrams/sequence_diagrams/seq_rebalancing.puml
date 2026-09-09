@@ -11,38 +11,28 @@ skinparam sequence {
     ArrowColor black
     LifeLineBorderColor #444444
     LifeLineBackgroundColor white
-
     ParticipantBorderColor #444444
     ParticipantBackgroundColor white
     ParticipantFontColor black
-
     GroupBorderColor #444444
     GroupBackgroundColor #F7F7F7
-
     DividerBorderColor #444444
     DividerBackgroundColor #F2F2F2
 }
 
 <style>
 sequenceDiagram {
-  participant {
-    Padding 20
-  }
-
+  participant { Padding 20 }
   group {
     Padding 10
     BackgroundColor #F7F7F7
     LineColor #444444
   }
-
   lifeLine {
     LineColor #444444
     BackgroundColor white
   }
-
-  arrow {
-    LineColor black
-  }
+  arrow { LineColor black }
 }
 </style>
 
@@ -51,10 +41,10 @@ autonumber
 
 participant "scheduler:RebalancingScheduler" as S
 participant "rbm:RebalancingManager" as RBM
-participant "esg:ExternalServicesGateway" as ESG
-participant "fm:FleetMonitor" as FM
 participant "pm:PersistenceManager" as PM
 database "db:Database" as DB
+participant "fm:FleetMonitor" as FM
+participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 participant "api:APIGateway" as API
 participant "operatorClient:FleetOperatorClient" as OP
@@ -62,22 +52,21 @@ participant "operatorClient:FleetOperatorClient" as OP
 S ->> RBM : triggerRebalancingCycle()
 activate RBM
 
-RBM -> ESG : getDemandData()
-activate ESG
-ESG --> RBM : demandData
-deactivate ESG
-
-RBM -> ESG : getTraffic()
-activate ESG
-ESG --> RBM : trafficData
-deactivate ESG
+RBM -> PM : getDemandData()
+activate PM
+PM -> DB : readDemandSamplesAndEvents()
+activate DB
+DB --> PM : demandData
+deactivate DB
+PM --> RBM : demandData
+deactivate PM
 
 RBM -> FM : getFleetStatus()
 activate FM
 FM --> RBM : fleetStatus
 deactivate FM
 
-RBM -> RBM : analyzeDemand(demandData, trafficData, fleetStatus)
+RBM -> RBM : analyzeDemand(demandData, fleetStatus)
 RBM -> RBM : identifyHighDemandZones()
 
 alt rebalancing needed
@@ -98,29 +87,22 @@ alt rebalancing needed
         activate ESG
         ESG --> RBM : commandAccepted
         deactivate ESG
+
+        RBM -> PM : saveRebalancingAction(robotaxi, targetZone)
+        activate PM
+        PM -> DB : insertRebalancingAction(robotaxi, targetZone)
+        activate DB
+        DB --> PM : ok
+        deactivate DB
+        PM --> RBM : actionSaved
+        deactivate PM
     end
-
-    RBM -> PM : saveRebalancingPlan(rebalancingPlan, stateUpdates)
-    activate PM
-
-    PM -> DB : saveRebalancingPlan(rebalancingPlan)
-    activate DB
-    DB --> PM : ok
-    deactivate DB
-
-    PM -> DB : updateRobotaxiStates(stateUpdates)
-    activate DB
-    DB --> PM : ok
-    deactivate DB
-
-    PM --> RBM : updateConfirmed
-    deactivate PM
 
     RBM ->> NM : update(RebalancingStartedEvent)
     activate NM
     NM ->> API : push(RebalancingStartedEvent)
-    deactivate NM
     API ->> OP : push(RebalancingStartedEvent)
+    deactivate NM
 
 else no rebalancing needed
     RBM -> RBM : keepCurrentFleetDistribution()

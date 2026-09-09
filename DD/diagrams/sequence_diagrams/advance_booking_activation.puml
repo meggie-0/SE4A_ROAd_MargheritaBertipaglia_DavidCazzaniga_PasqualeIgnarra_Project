@@ -1,0 +1,118 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam dpi 150
+skinparam maxMessageSize 90
+
+skinparam sequence {
+    ArrowColor black
+    LifeLineBorderColor #444444
+    LifeLineBackgroundColor white
+
+    ParticipantBorderColor #444444
+    ParticipantBackgroundColor white
+    ParticipantFontColor black
+
+    GroupBorderColor #444444
+    GroupBackgroundColor #F7F7F7
+
+    DividerBorderColor #444444
+    DividerBackgroundColor #F2F2F2
+}
+
+<style>
+sequenceDiagram {
+  participant {
+    Padding 20
+  }
+
+  group {
+    Padding 10
+    BackgroundColor #F7F7F7
+    LineColor #444444
+  }
+
+  lifeLine {
+    LineColor #444444
+    BackgroundColor white
+  }
+
+  arrow {
+    LineColor black
+  }
+}
+</style>
+
+hide footbox
+autonumber
+
+participant "sched:AdvanceBookingActivator" as S
+participant "rrm:RideRequestManager" as RRM
+participant "pm:PersistenceManager" as PM
+participant "fm:FleetMonitor" as FM
+participant "am:AllocationManager" as AM
+participant "nm:NotificationManager" as NM
+
+S ->> RRM : activateDueBookings(now)
+activate RRM
+
+RRM -> PM : findBookingsDueAt(now + activationLead)
+activate PM
+PM --> RRM : dueBookings
+deactivate PM
+
+loop for each due booking
+
+    RRM -> FM : getCandidates(pickup)
+    activate FM
+    FM --> RRM : candidates
+    deactivate FM
+
+    alt reserved robotaxi still eligible
+        RRM -> FM : assign(reservedRobotaxi, request)
+        activate FM
+        FM --> RRM : assignmentConfirmed
+        deactivate FM
+
+    else reserved robotaxi no longer eligible
+        RRM -> PM : filterAvailable(candidates, timeWindow)
+        activate PM
+        PM --> RRM : availableCandidates
+        deactivate PM
+
+        RRM -> AM : allocate(request, availableCandidates)
+        activate AM
+        AM --> RRM : selectedRobotaxi
+        deactivate AM
+
+        alt feasible robotaxi found
+            RRM -> PM : reserve(request, selectedRobotaxi, timeWindow)
+            activate PM
+            PM --> RRM : reservationConfirmed
+            deactivate PM
+
+            RRM -> FM : assign(selectedRobotaxi, request)
+            activate FM
+            FM --> RRM : assignmentConfirmed
+            deactivate FM
+
+        else no feasible robotaxi
+            RRM -> PM : update(request, REJECTED)
+            activate PM
+            PM --> RRM : updateConfirmed
+            deactivate PM
+
+            RRM ->> NM : update(RideStatusChangedEvent)
+            activate NM
+            deactivate NM
+        end
+    end
+
+end
+
+deactivate RRM
+
+@enduml
