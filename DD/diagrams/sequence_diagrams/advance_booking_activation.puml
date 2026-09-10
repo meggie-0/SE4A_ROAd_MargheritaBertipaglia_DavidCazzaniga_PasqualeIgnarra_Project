@@ -11,14 +11,11 @@ skinparam sequence {
     ArrowColor black
     LifeLineBorderColor #444444
     LifeLineBackgroundColor white
-
     ParticipantBorderColor #444444
     ParticipantBackgroundColor white
     ParticipantFontColor black
-
     GroupBorderColor #444444
     GroupBackgroundColor #F7F7F7
-
     DividerBorderColor #444444
     DividerBackgroundColor #F2F2F2
 }
@@ -28,18 +25,15 @@ sequenceDiagram {
   participant {
     Padding 20
   }
-
   group {
     Padding 10
     BackgroundColor #F7F7F7
     LineColor #444444
   }
-
   lifeLine {
     LineColor #444444
     BackgroundColor white
   }
-
   arrow {
     LineColor black
   }
@@ -49,70 +43,162 @@ sequenceDiagram {
 hide footbox
 autonumber
 
-participant "sched:AdvanceBookingActivator" as S
-participant "rrm:RideRequestManager" as RRM
+' Component-level view: arguments and returned DTOs are abbreviated.
+' PersistenceManager includes database access; its internal SQL is omitted.
+' Internal helper work is grouped under the component that owns it.
+' Calls to update(event) include subject notification where applicable.
+' WebSocket delivery uses the sessions registered by the API Gateway.
+
+participant "sched:AdvanceBookingSchedule" as S
+participant "aba:AdvanceBookingActivator" as ABA
 participant "pm:PersistenceManager" as PM
 participant "fm:FleetMonitor" as FM
 participant "am:AllocationManager" as AM
+participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
-S ->> RRM : activateDueBookings(now)
-activate RRM
+note over ABA
+    Internal part of the RideRequestManager component.
+    RideAllocator and RideJournal work is grouped here.
+end note
 
-RRM -> PM : findBookingsDueAt(now + activationLead)
+activate S
+S -> ABA : runOnce()
+activate ABA
+ABA -> PM : find(booking, activationDueAt <= now, closedAt = null)
 activate PM
-PM --> RRM : dueBookings
+PM --> ABA : dueBookings
 deactivate PM
 
 loop for each due booking
+    ABA -> PM : find(ride_request, booking.rideRequestId)
+    activate PM
+    PM --> ABA : request
+    deactivate PM
 
-    RRM -> FM : getCandidates(pickup)
-    activate FM
-    FM --> RRM : candidates
-    deactivate FM
-
-    alt reserved robotaxi still eligible
-        RRM -> FM : assign(reservedRobotaxi, request)
+    alt request missing or no longer ACCEPTED
+        ABA -> PM : update(booking, closedAt = now)
+        activate PM
+        deactivate PM
+    else request still ACCEPTED
+        ABA -> FM : getCandidates()
         activate FM
-        FM --> RRM : assignmentConfirmed
+        FM --> ABA : candidates in AVAILABLE or REBALANCING
         deactivate FM
 
-    else reserved robotaxi no longer eligible
-        RRM -> PM : filterAvailable(candidates, timeWindow)
-        activate PM
-        PM --> RRM : availableCandidates
-        deactivate PM
-
-        RRM -> AM : allocate(request, availableCandidates)
-        activate AM
-        AM --> RRM : selectedRobotaxi
-        deactivate AM
-
-        alt feasible robotaxi found
-            RRM -> PM : reserve(request, selectedRobotaxi, timeWindow)
+        opt reserved robotaxi is still a candidate
+            ABA -> PM : update(ride_request, assignedRobotaxiId = reservedId)
             activate PM
-            PM --> RRM : reservationConfirmed
             deactivate PM
-
-            RRM -> FM : assign(selectedRobotaxi, request)
+            ABA -> FM : assign(reservedId, rideAssignment)
             activate FM
-            FM --> RRM : assignmentConfirmed
+            alt state transition persisted successfully
+                FM -> NM : update(RobotaxiStateChangedEvent: ASSIGNED)
+                activate NM
+                deactivate NM
+                FM --> ABA : assignment completed
+            else illegal transition or concurrent state change
+                FM --> ABA : transition error
+            end
             deactivate FM
+        end
 
-        else no feasible robotaxi
-            RRM -> PM : update(request, REJECTED)
+        opt reserved robotaxi was not assigned
+            ABA -> PM : update(oldReservation, releasedAt = now)
             activate PM
-            PM --> RRM : updateConfirmed
             deactivate PM
+            ABA -> ESG : getETA(pickupOrigin, destination)
+            activate ESG
+            ESG --> ABA : estimatedRideDuration
+            deactivate ESG
 
-            RRM ->> NM : update(RideStatusChangedEvent)
+            opt ride duration can be estimated
+                ABA -> ABA : compute nominal booking window
+                ABA -> PM : filterAvailable(candidateIds, nominalWindow)
+                activate PM
+                PM --> ABA : availableCandidateIds
+                deactivate PM
+
+                loop while not assigned and candidates remain
+                    ABA -> AM : allocate(request, remainingCandidates)
+                    activate AM
+                    note over AM, ESG
+                        The active strategy is read from persistence.
+                        Only MinimumETAStrategy requests ranking ETAs;
+                        NearestAvailableStrategy uses distance.
+                    end note
+                    AM --> ABA : selectedRobotaxi or null
+                    deactivate AM
+
+                    alt a robotaxi was selected
+                        ABA -> ABA : remove selected robotaxi from remaining candidates
+                        ABA -> ESG : getETA(selectedRobotaxiOrigin, pickup)
+                        activate ESG
+                        ESG --> ABA : etaToPickup
+                        deactivate ESG
+                        opt pickup ETA can be estimated
+                            ABA -> ABA : compute actual reservation window
+                            ABA -> PM : reserve(vehicle, request, window,\nrequest-to-vehicle link)
+                            activate PM
+                            PM --> ABA : reservationResult
+                            deactivate PM
+                            opt reservation committed
+                                ABA -> FM : assign(robotaxiId, rideAssignment)
+                                activate FM
+                                alt state transition persisted successfully
+                                    FM -> NM : update(RobotaxiStateChangedEvent: ASSIGNED)
+                                    activate NM
+                                    deactivate NM
+                                    FM --> ABA : assignment completed
+                                else illegal transition or concurrent state change
+                                    FM --> ABA : transition error
+                                end
+                                deactivate FM
+
+                                opt assignment failed
+                                    ABA -> PM : update(newReservation, releasedAt = now)
+                                    activate PM
+                                    deactivate PM
+                                end
+                            end
+                        end
+                    else no candidate can be selected
+                        ABA -> ABA : stop candidate search
+                    end
+                end
+            end
+        end
+
+        alt a robotaxi has been assigned
+            ABA -> PM : update(booking, activatedAt, closedAt,\nvehicle and reservation references)
+            activate PM
+            deactivate PM
+            ABA -> PM : update(ride, assigned robotaxiId)
+            activate PM
+            deactivate PM
+            note over ABA, NM
+                Assignment was already notified inside FleetMonitor.assign().
+                Attaching the robotaxi to the Ride does not duplicate it.
+            end note
+        else no feasible assignment
+            ABA -> PM : update(ride_request, REJECTED, assignedRobotaxiId = null)
+            activate PM
+            deactivate PM
+            ABA -> PM : update(booking, closedAt = now)
+            activate PM
+            deactivate PM
+            ABA -> PM : update(ride, CANCELLED)
+            activate PM
+            deactivate PM
+            ABA -> NM : update(RideStatusChangedEvent: CANCELLED)
             activate NM
             deactivate NM
         end
     end
-
 end
 
-deactivate RRM
+ABA --> S : activationReport
+deactivate ABA
+deactivate S
 
 @enduml

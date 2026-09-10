@@ -11,14 +11,11 @@ skinparam sequence {
     ArrowColor black
     LifeLineBorderColor #444444
     LifeLineBackgroundColor white
-
     ParticipantBorderColor #444444
     ParticipantBackgroundColor white
     ParticipantFontColor black
-
     GroupBorderColor #444444
     GroupBackgroundColor #F7F7F7
-
     DividerBorderColor #444444
     DividerBackgroundColor #F2F2F2
 }
@@ -28,18 +25,15 @@ sequenceDiagram {
   participant {
     Padding 20
   }
-
   group {
     Padding 10
     BackgroundColor #F7F7F7
     LineColor #444444
   }
-
   lifeLine {
     LineColor #444444
     BackgroundColor white
   }
-
   arrow {
     LineColor black
   }
@@ -49,79 +43,134 @@ sequenceDiagram {
 hide footbox
 autonumber
 
+' Component-level view: arguments and returned DTOs are abbreviated.
+' PersistenceManager includes database access; its internal SQL is omitted.
+' Internal helper work is grouped under the component that owns it.
+' Calls to update(event) include subject notification where applicable.
+' WebSocket delivery uses the sessions registered by the API Gateway.
+
 participant "p:PassengerClient" as P
 participant "api:APIGateway" as API
 participant "rrm:RideRequestManager" as RRM
 participant "pm:PersistenceManager" as PM
-database "db:Database" as DB
 participant "fm:FleetMonitor" as FM
 participant "am:AllocationManager" as AM
 participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
 activate P
-
 P -> API : submitImmediateRide(pickup, destination)
 activate API
-
-API -> RRM : submitImmediate(passengerId, pickup, destination)
+API -> API : authenticate and validate payload
+API -> RRM : submitImmediate(draft)
 activate RRM
 
-RRM -> PM : create(request)
+RRM -> PM : create(ride_request, PENDING)
 activate PM
-
-PM -> DB : insertRideRequest(request)
-activate DB
-DB --> PM : requestId
-deactivate DB
-
-PM --> RRM : rideRequest
+PM --> RRM : request
 deactivate PM
 
-RRM -> FM : getCandidates(pickup)
-activate FM
-FM --> RRM : candidates
-deactivate FM
-
-RRM -> AM : allocate(request, candidates)
-activate AM
-
-AM -> ESG : getETA(candidates, pickup)
+RRM -> ESG : getETA(pickupOrigin, destination)
 activate ESG
-ESG --> AM : etaList
+ESG --> RRM : estimatedRideDuration
 deactivate ESG
 
-AM --> RRM : selectedRobotaxi
-deactivate AM
+opt ride duration can be estimated
+    RRM -> FM : getCandidates()
+    activate FM
+    FM --> RRM : candidates
+    deactivate FM
 
-RRM -> FM : assign(selectedRobotaxi, request)
-activate FM
-FM --> RRM : assignmentConfirmed
-deactivate FM
+    loop while not allocated and candidates remain
+        RRM -> AM : allocate(request, remainingCandidates)
+        activate AM
+        AM -> AM : resolve persisted active strategy
 
-RRM -> PM : reserve(request, selectedRobotaxi)
-activate PM
+        alt MINIMUM_ETA
+            AM -> ESG : getETA(remainingCandidates, pickup)
+            activate ESG
+            ESG --> AM : etaList
+            deactivate ESG
+        else NEAREST_AVAILABLE
+            AM -> AM : score candidates by geographical distance
+        end
 
-PM -> DB : updateAssignment(request, selectedRobotaxi)
-activate DB
-DB --> PM : ok
-deactivate DB
+        AM --> RRM : selectedRobotaxi or null
+        deactivate AM
 
-PM --> RRM : reservationConfirmed
-deactivate PM
+        alt a robotaxi was selected
+            RRM -> RRM : remove selected robotaxi from remaining candidates
+            RRM -> ESG : getETA(selectedRobotaxiOrigin, pickup)
+            activate ESG
+            ESG --> RRM : etaToPickup
+            deactivate ESG
 
-RRM --> API : rideConfirmed(rideId, robotaxi, ETA)
-API --> P : rideConfirmation
+            opt pickup ETA can be estimated
+                RRM -> RRM : compute bounded reservation window
+                RRM -> PM : reserve(vehicle, request, window,\nrequest-to-vehicle link)
+                activate PM
+                note right of PM
+                    Reservation and request-to-vehicle link
+                    are written in the same transaction.
+                    Overlapping reservations are rejected.
+                end note
+                PM --> RRM : reservationResult
+                deactivate PM
+
+                opt reservation committed
+                    RRM -> FM : assign(robotaxiId, rideAssignment)
+                    activate FM
+
+                    alt transition legal and conditional write succeeds
+                        FM -> NM : update(RobotaxiStateChangedEvent)
+                        activate NM
+                        NM ->> API : push(assignment notification)
+                        API ->> P : assignment notification
+                        deactivate NM
+                        FM --> RRM : assignment completed
+                    else illegal transition or concurrent state change
+                        FM --> RRM : transition error
+                    end
+                    deactivate FM
+
+                    alt assignment completed
+                        RRM -> RRM : mark allocation successful
+                    else assignment failed
+                        RRM -> PM : update(reservation, releasedAt)
+                        activate PM
+                        deactivate PM
+                    end
+                end
+            end
+        else no candidate can be selected
+            RRM -> RRM : stop candidate search
+        end
+    end
+end
+
+alt allocation succeeded
+    RRM -> PM : update(ride_request, ACCEPTED)
+    activate PM
+    deactivate PM
+    RRM -> PM : create(ride, SCHEDULED, robotaxiId)
+    activate PM
+    deactivate PM
+    RRM -> NM : update(RideStatusChangedEvent: SCHEDULED)
+    activate NM
+    NM ->> API : push(ride confirmation notification)
+    API ->> P : ride confirmation notification
+    deactivate NM
+    RRM --> API : accepted outcome
+    API --> P : ride confirmation
+else no feasible allocation or missing travel estimate
+    RRM -> PM : update(ride_request, REJECTED, assignedRobotaxiId = null)
+    activate PM
+    deactivate PM
+    RRM --> API : rejected outcome
+    API --> P : request rejected
+end
 
 deactivate RRM
-
-FM ->> NM : update(RobotaxiStateChangedEvent)
-activate NM
-
-NM ->> API : push(RideAssignedEvent)
-API ->> P : push(RideAssignedEvent)
-
-deactivate NM
 deactivate API
 deactivate P
 

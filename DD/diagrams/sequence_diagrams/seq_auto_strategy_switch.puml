@@ -11,113 +11,157 @@ skinparam sequence {
     ArrowColor black
     LifeLineBorderColor #444444
     LifeLineBackgroundColor white
-
     ParticipantBorderColor #444444
     ParticipantBackgroundColor white
     ParticipantFontColor black
-
     GroupBorderColor #444444
     GroupBackgroundColor #F7F7F7
-
     DividerBorderColor #444444
     DividerBackgroundColor #F2F2F2
 }
 
 <style>
 sequenceDiagram {
-  participant { Padding 20 }
-
+  participant {
+    Padding 20
+  }
   group {
     Padding 10
     BackgroundColor #F7F7F7
     LineColor #444444
   }
-
   lifeLine {
     LineColor #444444
     BackgroundColor white
   }
-
-  arrow { LineColor black }
+  arrow {
+    LineColor black
+  }
 }
 </style>
 
 hide footbox
 autonumber
 
+' Component-level view: arguments and returned DTOs are abbreviated.
+' PersistenceManager includes database access; its internal SQL is omitted.
+' Internal helper work is grouped under the component that owns it.
+' Calls to update(event) include subject notification where applicable.
+' WebSocket delivery uses the sessions registered by the API Gateway.
+
+participant "tm:TrafficMonitor" as TM
 participant "esg:ExternalServicesGateway" as ESG
 participant "mc:ModeController" as MC
 participant "am:AllocationManager" as AM
 participant "pm:PersistenceManager" as PM
 participant "nm:NotificationManager" as NM
 participant "api:APIGateway" as API
-participant "operatorClient:FleetOperatorClient" as OP
+participant "op:FleetOperatorClient" as OP
 
-== Automatic strategy switching in Auto Mode ==
+activate OP
 
-ESG ->> MC : onTrafficLevel(level)
+== Periodic traffic reading and automatic switching ==
+
+activate TM
+TM -> TM : runOnce()
+TM -> ESG : getTraffic()
+activate ESG
+ESG --> TM : level
+deactivate ESG
+TM -> MC : onTrafficLevel(level)
 activate MC
+MC -> PM : find(system_mode)
+activate PM
+PM --> MC : previous mode, strategy, and traffic level
+deactivate PM
+MC -> PM : update(system_mode, lastTrafficLevel = level)
+activate PM
+deactivate PM
 
-MC -> MC : checkAutoMode()
-MC -> MC : checkHysteresis(level)
+alt previously observed mode is MANUAL
+    note right of MC
+        Keep the operator's strategy.
+        The traffic reading is still stored.
+    end note
+else previously observed mode is AUTO
+    alt level is MEDIUM
+        opt previous traffic level was not MEDIUM
+            MC -> NM : update(TrafficAlertEvent, suggestedStrategy = MINIMUM_ETA)
+            activate NM
+            NM ->> API : push(traffic alert)
+            activate API
+            API ->> OP : traffic alert
+            deactivate API
+            deactivate NM
+        end
+        note right of MC
+            Keep the current strategy.
+        end note
+    else LOW or HIGH
+        MC -> MC : determine target strategy\nLOW: NEAREST_AVAILABLE / HIGH: MINIMUM_ETA
+        opt target differs from the previously observed strategy
+            MC -> AM : setActiveStrategy(target, 'auto')
+            activate AM
+            AM -> PM : update(system_mode, activeStrategy = target,\ncondition: mode = AUTO)
+            activate PM
+            PM --> AM : committed or StaleRecordError
+            deactivate PM
+            AM --> MC : completed or StaleRecordError
+            deactivate AM
 
-alt auto mode enabled and hysteresis satisfied
-    MC -> AM : setActiveStrategy(strategy, AUTO)
-    activate AM
-
-    AM -> PM : update(strategyConfig)
-    activate PM
-    PM --> AM : strategyUpdated
-    deactivate PM
-
-    AM --> MC : strategyUpdated
-    deactivate AM
-
-    MC ->> NM : update(StrategyChangedEvent)
-    activate NM
-    NM ->> API : push(StrategyChangedEvent)
-    API ->> OP : push(StrategyChangedEvent)
-    deactivate NM
-
-else hysteresis not satisfied
-    MC -> MC : keepCurrentStrategy()
-
-else manual mode enabled
-    MC -> MC : ignoreAutomaticSwitch()
+            alt update committed
+                MC -> NM : update(StrategyChangedEvent, source = 'auto')
+                activate NM
+                NM ->> API : push(strategy notification)
+                activate API
+                API ->> OP : strategy notification
+                deactivate API
+                deactivate NM
+            else mode changed to MANUAL before the write
+                note right of MC
+                    Absorb the conditional-write failure.
+                    Do not overwrite the manual choice
+                    and do not announce an automatic switch.
+                end note
+            end
+        end
+    end
 end
 
+MC --> TM : done
 deactivate MC
+deactivate TM
 
 == Human manual override ==
 
 OP -> API : setManualStrategy(strategy)
-activate OP
 activate API
-
+API -> API : authenticate and authorize operator
 API -> MC : setManual(strategy)
 activate MC
-
-MC -> AM : setActiveStrategy(strategy, MANUAL)
+MC -> AM : setActiveStrategy(strategy, 'manual')
 activate AM
-
-AM -> PM : update(strategyAndModeConfig)
+AM -> PM : update(system_mode, activeStrategy = strategy, mode = MANUAL)
 activate PM
-PM --> AM : strategyAndModeUpdated
+note right of PM
+    Strategy and mode are changed
+    in one atomic database update.
+end note
 deactivate PM
-
-AM --> MC : strategyAndModeUpdated
+AM --> MC : completed
 deactivate AM
-
-MC ->> NM : update(ManualOverrideEvent)
+MC -> PM : find(system_mode)
+activate PM
+PM --> MC : lastTrafficLevel
+deactivate PM
+MC -> NM : update(StrategyChangedEvent, source = 'manual')
 activate NM
-NM ->> API : push(ManualOverrideEvent)
-API ->> OP : push(ManualOverrideEvent)
+NM ->> API : push(manual strategy notification)
+API ->> OP : manual strategy notification
 deactivate NM
-
-MC --> API : manualModeEnabled
-API --> OP : manualOverrideConfirmation
-
+MC --> API : completed
 deactivate MC
+API --> OP : manual override confirmation
 deactivate API
 deactivate OP
 

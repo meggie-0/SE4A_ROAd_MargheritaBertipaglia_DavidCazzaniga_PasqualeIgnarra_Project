@@ -11,14 +11,11 @@ skinparam sequence {
     ArrowColor black
     LifeLineBorderColor #444444
     LifeLineBackgroundColor white
-
     ParticipantBorderColor #444444
     ParticipantBackgroundColor white
     ParticipantFontColor black
-
     GroupBorderColor #444444
     GroupBackgroundColor #F7F7F7
-
     DividerBorderColor #444444
     DividerBackgroundColor #F2F2F2
 }
@@ -28,18 +25,15 @@ sequenceDiagram {
   participant {
     Padding 20
   }
-
   group {
     Padding 10
     BackgroundColor #F7F7F7
     LineColor #444444
   }
-
   lifeLine {
     LineColor #444444
     BackgroundColor white
   }
-
   arrow {
     LineColor black
   }
@@ -49,66 +43,114 @@ sequenceDiagram {
 hide footbox
 autonumber
 
+' Component-level view: arguments and returned DTOs are abbreviated.
+' PersistenceManager includes database access; its internal SQL is omitted.
+' Internal helper work is grouped under the component that owns it.
+' Calls to update(event) include subject notification where applicable.
+' WebSocket delivery uses the sessions registered by the API Gateway.
+
 participant "p:PassengerClient" as P
 participant "api:APIGateway" as API
 participant "rrm:RideRequestManager" as RRM
-participant "esg:ExternalServicesGateway" as ESG
-participant "fm:FleetMonitor" as FM
 participant "pm:PersistenceManager" as PM
-database "db:Database" as DB
+participant "fm:FleetMonitor" as FM
+participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
 activate P
-
 P -> API : cancelRideRequest(requestId)
 activate API
-
-API -> RRM : cancel(requestId)
+API -> API : authenticate caller
+API -> RRM : cancel(requestId, passengerId)
 activate RRM
+RRM -> PM : find(ride_request, requestId)
+activate PM
+PM --> RRM : request or none
+deactivate PM
+RRM -> RRM : check ownership and active request status
 
-RRM -> ESG : commandRoute(robotaxiId, null)
-activate ESG
-ESG --> RRM : routeRevoked
-deactivate ESG
+alt request missing, not owned, or not active
+    RRM --> API : cancellation error
+    API --> P : cancellation rejected
+else request belongs to passenger and is PENDING or ACCEPTED
+    opt request has an operationally assigned robotaxi
+        RRM -> FM : getFleetStatus()
+        activate FM
+        FM --> RRM : currentFleetStatus
+        deactivate FM
 
-RRM -> FM : releaseAssignment(robotaxiId)
-activate FM
+        alt vehicle is ASSIGNED, ARRIVING, or ARRIVED
+            RRM -> ESG : commandRoute(robotaxiId, null)
+            activate ESG
+            ESG --> RRM : null (route cleared)
+            deactivate ESG
+            RRM -> FM : releaseAssignment(robotaxiId)
+            activate FM
+            alt cancellation transition persisted successfully
+                FM -> NM : update(RobotaxiStateChangedEvent: AVAILABLE)
+                activate NM
+                note right of NM
+                    The vehicle event updates the fleet view.
+                    The Ride event below carries the
+                    passenger cancellation notification.
+                end note
+                deactivate NM
+                FM --> RRM : assignment released
+            else illegal transition or concurrent state change
+                FM --> RRM : transition error
+            end
+            deactivate FM
+        else assigned vehicle cannot be cancelled
+            RRM -> RRM : reject without revoking the route
+        end
+    end
 
-alt cancellation allowed
-    FM --> RRM : assignmentReleased
-    deactivate FM
-
-    RRM -> PM : updateStatus(requestId, CANCELLED)
-    activate PM
-    PM -> DB : updateRideRequestStatus(requestId, CANCELLED)
-    activate DB
-    DB --> PM : statusUpdated
-    deactivate DB
-    PM --> RRM : statusUpdated
-    deactivate PM
-
-    RRM -> PM : releaseReservation(requestId)
-    activate PM
-    PM -> DB : deleteOrCloseReservation(requestId)
-    activate DB
-    DB --> PM : reservationReleased
-    deactivate DB
-    PM --> RRM : reservationReleased
-    deactivate PM
-
-    RRM --> API : cancellationConfirmed
-    API --> P : cancellationConfirmation
-
-    RRM ->> NM : update(RideStatusChangedEvent)
-    activate NM
-    deactivate NM
-
-else cancellation not allowed
-    FM --> RRM : cancellationRejected
-    deactivate FM
-
-    RRM --> API : cancellationRejected(reason)
-    API --> P : cancellationError
+    alt no assigned vehicle or assignment released successfully
+        RRM -> PM : find(robotaxi_reservation, requestId, releasedAt = null)
+        activate PM
+        PM --> RRM : activeReservations
+        deactivate PM
+        loop for each active reservation
+            RRM -> PM : update(reservation, releasedAt = now)
+            activate PM
+            deactivate PM
+        end
+        RRM -> PM : find(booking, requestId)
+        activate PM
+        PM --> RRM : booking or none
+        deactivate PM
+        opt booking exists
+            RRM -> PM : update(booking, reservationId = null, closedAt = now)
+            activate PM
+            deactivate PM
+        end
+        RRM -> PM : update(ride_request, CANCELLED, assignedRobotaxiId = null)
+        activate PM
+        deactivate PM
+        RRM -> PM : find(ride, requestId)
+        activate PM
+        PM --> RRM : ride or none
+        deactivate PM
+        opt Ride exists
+            RRM -> PM : update(ride, CANCELLED)
+            activate PM
+            deactivate PM
+            RRM -> NM : update(RideStatusChangedEvent: CANCELLED)
+            activate NM
+            NM ->> API : push(cancellation notification)
+            API ->> P : cancellation notification
+            deactivate NM
+        end
+        RRM --> API : cancellation outcome
+        API --> P : cancellation confirmation
+    else state check or assignment release failed
+        note over RRM, PM
+            Request and reservation records are not cancelled.
+            A concurrent-transition failure is reported separately.
+        end note
+        RRM --> API : cancellation error
+        API --> P : cancellation rejected
+    end
 end
 
 deactivate RRM

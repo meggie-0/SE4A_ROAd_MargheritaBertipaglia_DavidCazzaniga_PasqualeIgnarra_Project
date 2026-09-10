@@ -22,7 +22,9 @@ skinparam sequence {
 
 <style>
 sequenceDiagram {
-  participant { Padding 20 }
+  participant {
+    Padding 20
+  }
   group {
     Padding 10
     BackgroundColor #F7F7F7
@@ -32,90 +34,127 @@ sequenceDiagram {
     LineColor #444444
     BackgroundColor white
   }
-  arrow { LineColor black }
+  arrow {
+    LineColor black
+  }
 }
 </style>
 
 hide footbox
 autonumber
 
+' Component-level view: arguments and returned DTOs are abbreviated.
+' PersistenceManager includes database access; its internal SQL is omitted.
+' Internal helper work is grouped under the component that owns it.
+' Calls to update(event) include subject notification where applicable.
+' WebSocket delivery uses the sessions registered by the API Gateway.
+
 participant "p:PassengerClient" as P
 participant "api:APIGateway" as API
 participant "rrm:RideRequestManager" as RRM
 participant "pm:PersistenceManager" as PM
-database "db:Database" as DB
 participant "fm:FleetMonitor" as FM
 participant "am:AllocationManager" as AM
 participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 
 activate P
-
-P -> API : submitAdvanceBooking(pickup, destination, timeWindow)
+P -> API : submitAdvanceBooking(pickup, destination, scheduledPickup)
 activate API
-
-API -> RRM : submitAdvance(passengerId, pickup, destination, timeWindow)
+API -> API : authenticate and validate payload
+API -> RRM : submitAdvance(draft)
 activate RRM
+RRM -> RRM : validate future pickup time
 
-RRM -> RRM : validateAdvanceRequest()
-
-RRM -> FM : getBookableRobotaxis()
-activate FM
-FM --> RRM : bookableRobotaxis
-deactivate FM
-
-RRM -> PM : filterAvailable(candidates, timeWindow)
-activate PM
-
-PM -> DB : findOverlappingAssignments(candidateIds, timeWindow)
-activate DB
-DB --> PM : conflicts
-deactivate DB
-
-PM --> RRM : availableCandidates
-deactivate PM
-
-RRM -> AM : allocate(advanceRequest, availableCandidates)
-activate AM
-
-AM -> ESG : getETA(availableCandidates, pickup)
-activate ESG
-ESG --> AM : etaList
-deactivate ESG
-
-AM --> RRM : selectedRobotaxi
-deactivate AM
-
-alt feasible robotaxi found
-    RRM -> PM : reserve(advanceRequest, selectedRobotaxi, timeWindow)
+alt invalid pickup time
+    RRM --> API : validation error
+    API --> P : booking rejected
+else valid pickup time
+    RRM -> PM : create(ride_request, PENDING)
     activate PM
-
-    PM -> DB : insertBookingAndReservation(advanceRequest, selectedRobotaxi, timeWindow)
-    activate DB
-    DB --> PM : reservationResult
-    deactivate DB
-
-    PM --> RRM : reservationResult
+    PM --> RRM : request
     deactivate PM
+    RRM -> ESG : getETA(pickupOrigin, destination)
+    activate ESG
+    ESG --> RRM : estimatedRideDuration
+    deactivate ESG
 
-    alt reservation committed
-        RRM --> API : advanceBookingConfirmed(bookingId)
-        API --> P : bookingConfirmation
+    opt ride duration can be estimated
+        RRM -> FM : getBookableRobotaxis()
+        activate FM
+        FM --> RRM : vehicles not in MAINTENANCE
+        deactivate FM
+        RRM -> RRM : compute nominal window\nusing activation lead and buffer
+        RRM -> PM : filterAvailable(candidateIds, nominalWindow)
+        activate PM
+        PM --> RRM : availableCandidateIds
+        deactivate PM
 
-        RRM ->> NM : update(RideStatusChangedEvent)
-        activate NM
-        NM ->> API : push(BookingConfirmedEvent)
-        API ->> P : push(BookingConfirmedEvent)
-        deactivate NM
+        loop while not reserved and candidates remain
+            RRM -> AM : allocate(request, remainingCandidates)
+            activate AM
+            AM -> AM : resolve persisted active strategy
+            alt MINIMUM_ETA
+                AM -> ESG : getETA(remainingCandidates, pickup)
+                activate ESG
+                ESG --> AM : etaList
+                deactivate ESG
+            else NEAREST_AVAILABLE
+                AM -> AM : score candidates by geographical distance
+            end
+            AM --> RRM : selectedRobotaxi or null
+            deactivate AM
 
-    else concurrent reservation conflict
-        RRM --> API : bookingRejected(conflictReason)
-        API --> P : conflictError
+            alt a robotaxi was selected
+                RRM -> RRM : remove selected robotaxi from remaining candidates
+                RRM -> ESG : getETA(selectedRobotaxiOrigin, pickup)
+                activate ESG
+                ESG --> RRM : etaToPickup
+                deactivate ESG
+
+                opt pickup ETA can be estimated
+                    RRM -> RRM : compute actual reservation window
+                    RRM -> PM : reserve(vehicle, request, window, bookingData)
+                    activate PM
+                    note right of PM
+                        Booking and reservation are created atomically.
+                        activationDueAt is stored with the booking.
+                        No operational assignment is made.
+                    end note
+                    PM --> RRM : reservationResult
+                    deactivate PM
+                    note over RRM
+                        A reservation conflict leaves the search open
+                        for the remaining candidates.
+                    end note
+                end
+            else no candidate can be selected
+                RRM -> RRM : stop candidate search
+            end
+        end
     end
 
-else no feasible robotaxi
-    RRM --> API : bookingRejected(noAvailabilityReason)
-    API --> P : noAvailabilityError
+    alt reservation committed
+        RRM -> PM : update(ride_request, ACCEPTED)
+        activate PM
+        deactivate PM
+        RRM -> PM : create(ride, SCHEDULED, robotaxiId = null)
+        activate PM
+        deactivate PM
+        RRM -> NM : update(RideStatusChangedEvent: SCHEDULED)
+        activate NM
+        NM ->> API : push(booking notification)
+        API ->> P : booking notification
+        deactivate NM
+        RRM --> API : accepted outcome with booking
+        API --> P : booking confirmation
+    else no feasible reservation or missing travel estimate
+        RRM -> PM : update(ride_request, REJECTED, assignedRobotaxiId = null)
+        activate PM
+        deactivate PM
+        RRM --> API : rejected outcome
+        API --> P : booking rejected
+    end
 end
 
 deactivate RRM
