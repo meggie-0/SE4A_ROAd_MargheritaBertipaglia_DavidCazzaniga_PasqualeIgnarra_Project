@@ -10,7 +10,7 @@
 // impostate qui raggiungono l'API senza altro cablaggio.
 
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
+import { connect } from 'node:net';
 
 import { run, runOrExit, buildPackages, colors, repoRoot } from '../lib/run.mjs';
 
@@ -132,14 +132,36 @@ const SCENARIOS = {
 
 const PORTS = [3000, 5173, 5174];
 
-/** Vero se qualcuno è già in ascolto su quella porta. */
+/**
+ * Vero se qualcuno risponde su quella porta, da una delle due interfacce di loopback.
+ *
+ * **Si prova a connettersi, non a occupare la porta**, e non è una preferenza. Fino al 1° settembre
+ * la sonda faceva `listen(port, '127.0.0.1')` e deduceva «occupata» da un errore: su Windows quel
+ * `bind` riesce anche quando la porta è presa, purché lo sia su un indirizzo diverso. Misurato,
+ * server per server: non vedeva uno legato a `[::1]` — cioè Vite, che su Windows ascolta lì perché
+ * `localhost` risolve prima in IPv6 —, né uno legato a `0.0.0.0` o a `::`, cioè Nest. Intercettava
+ * soltanto un server legato esattamente a `127.0.0.1`, che nello stack non c'è. Il guard qui sotto
+ * non ha mai protetto niente, e il `db:seed` che segue passava su un database che un altro stack
+ * stava usando.
+ *
+ * La connessione invece risponde alla domanda che conta davvero — *c'è qualcuno dove la demo andrà
+ * a cercare?* — e le due interfacce si provano entrambe perché nessuna delle due, da sola, copre
+ * tutti i casi.
+ */
 function inUse(port) {
-  return new Promise((resolve) => {
-    const probe = createServer();
-    probe.once('error', () => resolve(true));
-    probe.once('listening', () => probe.close(() => resolve(false)));
-    probe.listen(port, '127.0.0.1');
-  });
+  const answers = (host) =>
+    new Promise((resolve) => {
+      const socket = connect({ port, host });
+      const settle = (value) => {
+        socket.destroy();
+        resolve(value);
+      };
+      socket.setTimeout(500, () => settle(false));
+      socket.once('connect', () => settle(true));
+      socket.once('error', () => settle(false));
+    });
+
+  return answers('127.0.0.1').then((ipv4) => ipv4 || answers('::1'));
 }
 
 /**

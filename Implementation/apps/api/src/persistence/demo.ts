@@ -54,7 +54,8 @@ const LASTS_MINUTES = 120;
  *
  * È il numero da cui si ricava il moltiplicatore dell'evento, dividendo per la base storica della
  * fascia: sei, perché è la scala che tiene lo stadio in deficit per parecchi cicli di
- * riposizionamento di seguito, e un ciclo manda un veicolo per zona scoperta.
+ * riposizionamento di seguito, e un ciclo manda un veicolo per zona scoperta. Da quando il
+ * moltiplicatore non è più arrotondato la domanda attesa vale **questo** numero a ogni ora.
  */
 const STADIUM_EXPECTED_RIDES = 6;
 
@@ -128,9 +129,20 @@ runCommand(async (context) => {
     );
   }
 
-  // Il moltiplicatore che porta lo stadio alla domanda di fine partita, arrotondato per eccesso
-  // perché sia un numero leggibile in dashboard invece di `13.428…`.
-  const multiplier = Math.ceil(STADIUM_EXPECTED_RIDES / stadiumBase);
+  /*
+   * Il moltiplicatore che porta lo stadio **esattamente** alla domanda di fine partita.
+   *
+   * Fino al 1° settembre era arrotondato per eccesso, «perché sia un numero leggibile in dashboard».
+   * Non lo è mai stato: il moltiplicatore non compare in nessuna risposta — `ZoneDemand` porta i
+   * *nomi* degli eventi, non i fattori — e la colonna è `double precision`. L'arrotondamento non
+   * comprava niente e costava due veicoli: con la base di 1,8 corse, cioè dalle 8 alle 19 di ogni
+   * feriale, dava ×4 e una domanda di 7,2, e allo stadio ne partivano otto invece dei sei promessi.
+   *
+   * Senza, `base × (6 / base)` vale 6 alla virgola: misurato su tutte e quattro le basi che il seed
+   * può dare allo stadio (0,3, 0,6, 1,2 e 1,8), nessuna produce un `6,000…1` che terrebbe il deficit
+   * sopra zero a stadio coperto.
+   */
+  const multiplier = STADIUM_EXPECTED_RIDES / stadiumBase;
   const expectedDemand = stadiumBase * multiplier;
 
   /*
@@ -220,7 +232,7 @@ runCommand(async (context) => {
     }, 0);
 
   console.log(
-    `Evento: partita a ${stadium?.name ?? STADIUM_ZONE_ID}, moltiplicatore ×${multiplier}`,
+    `Evento: partita a ${stadium?.name ?? STADIUM_ZONE_ID}, moltiplicatore ×${multiplier.toFixed(2)}`,
   );
   console.log(`Finestra: ${startsAt.toISOString()} → ${endsAt.toISOString()}`);
   console.log(
