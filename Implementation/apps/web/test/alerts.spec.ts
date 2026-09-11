@@ -88,3 +88,21 @@ describe('[R11][R12][G9] Alert della dashboard operatore', () => {
     expect(alertCategoryOf({ ...NOTHING, ...fields })).toBeNull();
   });
 });
+
+describe('[R12][R13] Una riga di assegnazione non è un alert', () => {
+  it('la spiegazione della D79 non ha categoria: resta nel registro operativo', () => {
+    /**
+     * È la forma **esatta** della consegna: il testo, l'istante, il veicolo, e i campi su cui questa
+     * funzione decide tutti nulli. Se l'evento portasse la strategia finirebbe fra le commutazioni —
+     * cinquanta righe in tre minuti, nella categoria riservata ai cambi di strategia.
+     */
+    const explained = {
+      ...NOTHING,
+      message:
+        'RT-22 assegnato con ETA minimo, 9,3 min — il più vicino, RT-06, ne avrebbe impiegati 10,5',
+      robotaxiId: 'RT-22',
+    } satisfies NotificationPush;
+
+    expect(alertCategoryOf(explained)).toBeNull();
+  });
+});

@@ -8,6 +8,7 @@ import type { RouteRequest, VehicleTelemetry } from './external-services.port';
 import { readSimulatorSettings } from './external.config';
 import { FleetSimulationPort } from './fleet-simulation.port';
 import type { RouteLeg } from './route-leg';
+import { TrafficSlowdown } from './traffic-slowdown';
 
 /**
  * L'adapter della **flotta**: il simulatore di `@road/simulator`, visto dalla porta.
@@ -34,9 +35,15 @@ export class SimulatorFleetGateway extends FleetSimulationPort {
   constructor(
     config: ConfigService,
     private readonly clock: ClockPort,
+    traffic: TrafficSlowdown,
   ) {
     super();
-    this.simulator = new FleetSimulator(readSimulatorSettings(config));
+    // Il traffico rallenta i veicoli **dove sono** (D79). Senza fattori configurati la funzione è
+    // `undefined`, e il simulatore percorre il ciclo di avanzamento di sempre.
+    this.simulator = new FleetSimulator(
+      readSimulatorSettings(config),
+      traffic.slowdownForSimulator(),
+    );
   }
 
   /**

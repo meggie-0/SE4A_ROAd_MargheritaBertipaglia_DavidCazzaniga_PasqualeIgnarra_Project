@@ -99,7 +99,16 @@ export class FleetSimulator {
    */
   private readonly vehicles = new Map<string, SimulatedVehicle>();
 
-  constructor(private readonly settings: FleetSimulatorSettings = DEFAULT_SIMULATOR_SETTINGS) {}
+  /**
+   * @param slowdown quanto la strada è più lenta in ciascun punto (decisione D79). **Assente è il
+   * comportamento di sempre**, e non per aritmetica: senza, `tick()` percorre il ciclo di prima,
+   * non lo stesso ciclo con un fattore uno. Il cancello di M7 conta i tick fino all'arrivo, e un
+   * percorso diverso anche solo nell'ordine delle somme in virgola mobile potrebbe spostarne uno.
+   */
+  constructor(
+    private readonly settings: FleetSimulatorSettings = DEFAULT_SIMULATOR_SETTINGS,
+    private readonly slowdown?: Slowdown,
+  ) {}
 
   /**
    * Comanda al veicolo di percorrere `waypoints`, partendo da `origin` se non lo si conosce già.
@@ -162,6 +171,12 @@ export class FleetSimulator {
 
     for (const vehicle of this.vehicles.values()) {
       if (vehicle.remaining.length === 0) continue;
+
+      if (this.slowdown !== undefined) {
+        advanceThroughTraffic(vehicle, stepKm, this.slowdown);
+        if (vehicle.remaining.length === 0) vehicle.hasArrived = true;
+        continue;
+      }
 
       let budgetKm = stepKm;
       while (budgetKm > 0 && vehicle.remaining.length > 0) {
@@ -232,6 +247,63 @@ export class FleetSimulator {
  * da `assigned` ad `arrived` in un numero deterministico di tick» — e un cancello che la
  * ricalcolasse a modo suo verificherebbe la propria aritmetica invece di quella del simulatore.
  */
+/**
+ * Quanto la strada è più lenta in un punto: `1` è la velocità di crociera, `3` vuol dire che lì un
+ * chilometro costa il tempo di tre (decisione D79).
+ *
+ * È una funzione del **punto** e non del veicolo, ed è la scelta su cui la D79 si regge: un veicolo
+ * che parte dalla periferia rallenta quando entra in centro, uno che parte dal centro corre quando
+ * ne esce. Il simulatore non sa perché un punto è lento — traffico, lavori, un corteo —: lo sa chi
+ * gli passa la funzione, cioè l'adapter di `external`.
+ */
+export type Slowdown = (position: GeoPoint) => number;
+
+/**
+ * La lunghezza dei tratti in cui un segmento si spezza per chiedere quanto è lenta la strada.
+ *
+ * Serve perché un segmento può essere lunghissimo — la stima in linea d'aria ne dà **uno solo** per
+ * l'intera rotta — e attraversare il confine fra una zona scorrevole e una congestionata a metà. Il
+ * fattore si legge al centro di ogni tratto, e la stima dei tempi in `external` spezza la stessa
+ * linea con lo stesso passo: è ciò che fa sì che la stima preveda quello che il simulatore farà.
+ */
+export const SLOWDOWN_SAMPLE_KM = 0.05;
+
+/**
+ * Un tick di percorrenza quando la strada non è ovunque uguale.
+ *
+ * Il budget è in **chilometri a velocità di crociera**: un tratto di cinquanta metri dove il fattore
+ * vale tre ne consuma centocinquanta. Quando il budget non basta per il tratto intero, il veicolo
+ * ne percorre la parte che il budget paga, al fattore di quel tratto, e si ferma lì.
+ */
+function advanceThroughTraffic(
+  vehicle: SimulatedVehicle,
+  stepKm: number,
+  slowdown: Slowdown,
+): void {
+  let budgetKm = stepKm;
+
+  while (budgetKm > 0 && vehicle.remaining.length > 0) {
+    // `remaining` non è vuoto: il controllo del `while` lo garantisce.
+    const next = vehicle.remaining[0] as GeoPoint;
+    const legKm = haversineKm(vehicle.position, next);
+    const pieceKm = Math.min(legKm, SLOWDOWN_SAMPLE_KM);
+    const wholeLeg = pieceKm === legKm;
+    const pieceEnd = wholeLeg ? next : interpolate(vehicle.position, next, pieceKm / legKm);
+    const factor = slowdown(interpolate(vehicle.position, pieceEnd, 0.5));
+    const costKm = pieceKm * factor;
+
+    if (costKm <= budgetKm) {
+      vehicle.position = pieceEnd;
+      if (wholeLeg) vehicle.remaining.shift();
+      budgetKm -= costKm;
+      continue;
+    }
+
+    vehicle.position = interpolate(vehicle.position, next, budgetKm / factor / legKm);
+    budgetKm = 0;
+  }
+}
+
 export function ticksToCover(routeKm: number, settings: FleetSimulatorSettings): number {
   const stepKm = (settings.speedKmH * settings.tickSeconds) / 3600;
   return Math.ceil(routeKm / stepKm);

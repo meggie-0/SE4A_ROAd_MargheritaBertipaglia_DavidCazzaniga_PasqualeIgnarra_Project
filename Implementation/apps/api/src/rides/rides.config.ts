@@ -24,6 +24,19 @@ import {
  * avvicinerebbe due riserve consecutive sullo stesso veicolo, che è precisamente ciò che la D8
  * evita. Un valore configurabile in più senza una ragione è una manopola che qualcuno girerà.
  */
+/**
+ * Se ogni assegnazione lascia una riga di spiegazione nel registro dell'operatore (decisione D79).
+ *
+ * **Spenta di default**, e non per prudenza generica: accesa, ogni assegnazione produce una consegna
+ * in più alla dashboard, e il cancello di M5 asserisce la lista esatta di ciò che la dashboard riceve.
+ * La dimostrazione del traffico la accende con `ALLOCATION_EXPLANATIONS=on`; un'installazione che non
+ * ne sa niente riceve le stesse consegne di prima.
+ */
+export function readAllocationExplanations(config: ConfigService): boolean {
+  const raw = (config.get<string>('ALLOCATION_EXPLANATIONS') ?? '').trim().toLowerCase();
+  return raw === 'on' || raw === 'true' || raw === '1';
+}
+
 export function readReservationTiming(config: ConfigService): ReservationTiming {
   const raw = config.get<string>('RESERVATION_ACTIVATION_LEAD_MINUTES');
   const parsed = Number.parseInt((raw ?? '').trim(), 10);

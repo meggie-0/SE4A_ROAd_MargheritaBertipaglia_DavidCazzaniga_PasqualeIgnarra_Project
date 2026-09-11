@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { TRAFFIC_LEVELS, type TrafficLevel } from '@road/shared';
+import {
+  MILAN_ZONES,
+  TRAFFIC_LEVELS,
+  nearestZone,
+  type GeoPoint,
+  type TrafficLevel,
+} from '@road/shared';
 
 import { ClockPort } from '../platform/clock.port';
 
@@ -86,9 +92,17 @@ export class ScriptedTrafficGateway extends TrafficSource {
    */
   private readonly startedAt: Date;
 
+  /**
+   * @param centreZoneIds le zone a cui la tabella si applica (D79). `null` — il default — vuol dire
+   * **tutta la città**, cioè il comportamento di prima: un livello solo, ovunque. Con un insieme di
+   * zone la tabella vale lì, e il resto della città resta `LOW`: la dimostrazione racconta un
+   * traffico che sale **in centro**, e un centro congestionato accanto a una periferia scorrevole è
+   * la situazione in cui il veicolo più vicino smette di essere il più veloce.
+   */
   constructor(
     private readonly clock: ClockPort,
     script: string,
+    private readonly centreZoneIds: ReadonlySet<string> | null = null,
   ) {
     super();
     const parsed = parseTrafficScript(script);
@@ -97,6 +111,17 @@ export class ScriptedTrafficGateway extends TrafficSource {
   }
 
   getTraffic(): Promise<TrafficLevel> {
+    return Promise.resolve(this.tableLevel());
+  }
+
+  /** Il livello della tabella nel centro, `LOW` fuori; ovunque la tabella se il centro non c'è. */
+  levelAt(point: GeoPoint): TrafficLevel {
+    if (this.centreZoneIds === null) return this.tableLevel();
+    const zone = nearestZone(point, MILAN_ZONES);
+    return zone !== null && this.centreZoneIds.has(zone.id) ? this.tableLevel() : 'LOW';
+  }
+
+  private tableLevel(): TrafficLevel {
     const elapsedSeconds = (this.clock.now().getTime() - this.startedAt.getTime()) / 1000;
 
     /**
@@ -114,6 +139,6 @@ export class ScriptedTrafficGateway extends TrafficSource {
       [...this.steps].reverse().find((step) => elapsedSeconds >= step.fromSecond) ?? this.steps[0];
 
     // `steps` non è mai vuoto: il costruttore ricade sulla tabella di default.
-    return Promise.resolve((current as ScriptStep).level);
+    return (current as ScriptStep).level;
   }
 }

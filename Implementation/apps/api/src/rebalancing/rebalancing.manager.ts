@@ -86,10 +86,26 @@ export class RebalancingManager extends RebalancingPort {
      * della zona in cui è arrivato, contato come copertura.
      *
      * Il difetto che l'ordinamento dentro il ciclo serviva a evitare — mandare un secondo veicolo
-     * dove uno è appena arrivato, perché per un giro restava invisibile — non si dà più, ma per una
-     * ragione diversa da prima: non è che si chiuda *prima* di analizzare, è che la chiusura non
-     * dipende affatto da questo ciclo. Il caso peggiore non è più un giro intero di ritardo, è la
-     * distanza fra due esecuzioni della telemetria.
+     * dove uno è appena **arrivato**, perché per un giro restava invisibile — non si dà più, ma per
+     * una ragione diversa da prima: non è che si chiuda *prima* di analizzare, è che la chiusura non
+     * dipende affatto da questo ciclo.
+     *
+     * **Resta invece il veicolo ancora in viaggio**, e fino al 1° settembre questo commento lo dava
+     * per risolto: diceva che il caso peggiore era «la distanza fra due esecuzioni della telemetria».
+     * Non lo è. L'analisi conta come copertura i soli inattivi *della zona*, quindi un veicolo
+     * mandato verso lo stadio resta invisibile per **tutto il tragitto**, non per mezzo secondo — e
+     * un ciclo che cade mentre è in strada ne manda un altro. Misurato sullo scenario 4
+     * (`pnpm demo:rebalancing`, ciclo ogni quindici secondi): a domanda attesa 6 partono **sette**
+     * veicoli, e il settimo parte quando la copertura reale è già sei — cinque allo stadio e uno in
+     * viaggio, perché il sesto impiega ventitré secondi e il ciclo successivo lo trova ancora in
+     * strada. Con la domanda a 7,2 che `db:demo` produceva prima di togliere un arrotondamento ne
+     * partivano nove invece di otto: sempre uno di troppo, sempre l'ultimo.
+     *
+     * Alla cadenza di produzione non si vede — un veicolo arriva molto prima del ciclo successivo, che
+     * è dieci minuti dopo — ed è la ragione per cui il conteggio non è stato aggiunto: toccherebbe la
+     * metrica di deficit di D12, il tipo condiviso `ZoneDemand` e il contratto, per un veicolo che si
+     * manifesta solo alla cadenza della dimostrazione. Chi lo riprende ha già il dato che serve: le
+     * azioni `TRIGGERED` di `rebalancing_action` dicono quali veicoli sono impegnati verso quale zona.
      */
     const { zones, idleByZone, zoneById } = await this.analyse(analyzedAt);
 
