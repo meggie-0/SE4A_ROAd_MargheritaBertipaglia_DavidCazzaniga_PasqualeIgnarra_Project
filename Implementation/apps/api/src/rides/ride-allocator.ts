@@ -192,7 +192,10 @@ export class RideAllocator {
       }
 
       if (request.assign && strategy !== null) {
-        await this.explain(chosen, etaToPickupMinutes, strategy, request);
+        const obtainable = request.candidates.filter(
+          (candidate) => candidate.id === chosen.id || remaining.includes(candidate),
+        );
+        await this.explain(chosen, etaToPickupMinutes, strategy, request.pickup, obtainable);
       }
 
       return {
@@ -211,21 +214,26 @@ export class RideAllocator {
    * La riga del registro operativo: chi, con quale strategia, con che tempo — e il più vicino, se non
    * è lui (decisione D79).
    *
-   * Il più vicino si cerca fra **tutti** i candidati della richiesta, non fra quelli rimasti dopo un
-   * eventuale rifiuto per concorrenza: la domanda che la riga risponde è «perché non il più vicino?»,
-   * e quella vale rispetto alla flotta che c'era. Il suo tempo si chiede allo stesso stimatore che ha
-   * servito la strategia, nello stesso istante, così i due numeri sono confrontabili. Se il
-   * fornitore non sa rispondere per lui, la riga lo tace invece di inventarlo.
+   * Il più vicino si cerca fra i candidati **ottenibili**: lo scelto e quelli che l'ultimo giro del
+   * ciclo aveva ancora davanti, esclusi quelli scartati da un rifiuto per concorrenza. Non fra tutti:
+   * misurato in dimostrazione, a un secondo dalla commutazione, una riga ha detto «assegnato con Più
+   * vicino disponibile, 1,9 min — il più vicino, RT-25, ne avrebbe impiegati 1,6». RT-25 era stato
+   * scartato da un tentativo fallito, e la strategia aveva scelto il più vicino **fra quelli
+   * rimasti**; il confronto con un veicolo che l'allocatore non poteva prendere dava un distacco
+   * negativo, cioè un numero falso nel registro. Il tempo del più vicino si chiede allo stesso
+   * stimatore che ha servito la strategia, nello stesso istante, così i due numeri sono
+   * confrontabili. Se il fornitore non sa rispondere per lui, la riga lo tace invece di inventarlo.
    */
   private async explain(
     chosen: RobotaxiSnapshot,
     etaMinutes: number,
     strategy: StrategyName,
-    request: RideAllocationRequest,
+    pickup: GeoPoint,
+    obtainable: readonly RobotaxiSnapshot[],
   ): Promise<void> {
-    const nearest = request.candidates.reduce<RobotaxiSnapshot | null>(
+    const nearest = obtainable.reduce<RobotaxiSnapshot | null>(
       (best, candidate) =>
-        best === null || haversineKm(candidate, request.pickup) < haversineKm(best, request.pickup)
+        best === null || haversineKm(candidate, pickup) < haversineKm(best, pickup)
           ? candidate
           : best,
       null,
@@ -235,7 +243,7 @@ export class RideAllocator {
     if (nearest !== null && nearest.id !== chosen.id) {
       const [estimate] = await this.external.getETA(
         [{ id: nearest.id, position: { lat: nearest.lat, lon: nearest.lon } }],
-        request.pickup,
+        pickup,
       );
       const minutes = finiteMinutes(estimate?.etaMinutes);
       if (minutes !== null) nearestEta = { robotaxiId: nearest.id, etaMinutes: minutes };
