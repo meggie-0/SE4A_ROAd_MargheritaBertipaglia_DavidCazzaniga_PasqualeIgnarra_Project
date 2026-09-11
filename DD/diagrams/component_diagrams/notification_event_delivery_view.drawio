@@ -1,0 +1,96 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Pagina-1" id="D12FmEb2KeRTbdoj5cSD">
+    <mxGraphModel dx="301" dy="510" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-59" edge="1" parent="1" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1177" y="909.7142857142856" as="sourcePoint" />
+            <mxPoint x="1437" y="958" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-34" parent="1" style="html=1;dropTarget=0;whiteSpace=wrap;" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Ride Request&lt;br&gt;Manager&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="1000" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-35" parent="uUxx3R6SS5vNNWpiAl88-34" style="shape=module;jettyWidth=8;jettyHeight=4;" value="" vertex="1">
+          <mxGeometry height="20" relative="1" width="20" x="1" as="geometry">
+            <mxPoint x="-27" y="7" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-60" edge="1" parent="1" source="uUxx3R6SS5vNNWpiAl88-37" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1440" y="960" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-37" parent="1" style="html=1;dropTarget=0;whiteSpace=wrap;" value="&lt;span style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Fleet Monitor&lt;/b&gt;&lt;/span&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="1030" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-38" parent="uUxx3R6SS5vNNWpiAl88-37" style="shape=module;jettyWidth=8;jettyHeight=4;" value="" vertex="1">
+          <mxGeometry height="20" relative="1" width="20" x="1" as="geometry">
+            <mxPoint x="-27" y="7" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-61" edge="1" parent="1" source="uUxx3R6SS5vNNWpiAl88-43" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;endArrow=halfCircle;endFill=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1440" y="959.9999999999998" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-43" parent="1" style="html=1;dropTarget=0;whiteSpace=wrap;" value="&lt;span style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Mode&lt;/b&gt;&lt;/span&gt;&lt;div&gt;&lt;span style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Controller&lt;/b&gt;&lt;/span&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="1640" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-44" parent="uUxx3R6SS5vNNWpiAl88-43" style="shape=module;jettyWidth=8;jettyHeight=4;" value="" vertex="1">
+          <mxGeometry height="20" relative="1" width="20" x="1" as="geometry">
+            <mxPoint x="-27" y="7" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-45" edge="1" parent="1" source="uUxx3R6SS5vNNWpiAl88-46" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1789" y="773.0000000000002" as="sourcePoint" />
+            <mxPoint x="1439" y="958" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-46" parent="1" style="html=1;dropTarget=0;whiteSpace=wrap;" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Maintenance Manager&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="1370" y="630" as="geometry" />
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-47" parent="uUxx3R6SS5vNNWpiAl88-46" style="shape=module;jettyWidth=8;jettyHeight=4;" value="" vertex="1">
+          <mxGeometry height="20" relative="1" width="20" x="1" as="geometry">
+            <mxPoint x="-27" y="7" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-48" edge="1" parent="1" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=oval;endFill=0;endSize=10;exitX=0.75;exitY=0;exitDx=0;exitDy=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1438.0000000000005" y="1088" as="sourcePoint" />
+            <mxPoint x="1439" y="960" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-50" parent="1" style="html=1;dropTarget=0;whiteSpace=wrap;" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Notification Manager&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="1339" y="1079" as="geometry" />
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-51" parent="uUxx3R6SS5vNNWpiAl88-50" style="shape=module;jettyWidth=8;jettyHeight=4;" value="" vertex="1">
+          <mxGeometry height="20" relative="1" width="20" x="1" as="geometry">
+            <mxPoint x="-27" y="7" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-52" edge="1" parent="1" source="uUxx3R6SS5vNNWpiAl88-53" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1440" y="960" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-53" parent="1" style="html=1;dropTarget=0;whiteSpace=wrap;" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;&lt;b&gt;Rebalancing&lt;br&gt;Manager&lt;/b&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="180" x="1770" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-54" parent="uUxx3R6SS5vNNWpiAl88-53" style="shape=module;jettyWidth=8;jettyHeight=4;" value="" vertex="1">
+          <mxGeometry height="20" relative="1" width="20" x="1" as="geometry">
+            <mxPoint x="-27" y="7" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uUxx3R6SS5vNNWpiAl88-63" connectable="0" parent="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="&lt;b&gt;&lt;font style=&quot;font-size: 18px;&quot;&gt;INotificationServic&lt;/font&gt;&lt;font style=&quot;font-size: 18px;&quot;&gt;e&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry x="1770" y="947" as="geometry">
+            <mxPoint x="-323" y="-14" as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
