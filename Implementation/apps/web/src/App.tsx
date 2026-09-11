@@ -2,6 +2,7 @@ import {
   ApiError,
   FLEET_POSITION_REFRESH_MS,
   fetchHealth,
+  isRetriableFailure,
   type AuthResponse,
   type ModeResponse,
   type StrategyName,
@@ -88,8 +89,23 @@ const MODE_REFRESH_MS = 15_000;
 /** Quanti alert tenere a schermo: oltre, l'elenco smette di essere leggibile a colpo d'occhio. */
 const VISIBLE_ALERTS = 12;
 
+/**
+ * Un solo tentativo in più, e **nessuno** su una risposta che il server ha rifiutato nel merito.
+ *
+ * La seconda metà è ciò che rende affidabile il ritorno al login qui sotto. `retry: 1` da solo
+ * lascia la query in stato `pending` mentre aspetta il secondo tentativo, e i tentativi si fermano
+ * quando il documento non è visibile: misurato, una dashboard in secondo piano con un token scaduto
+ * resta `pending` a tempo indeterminato — `failureReason` porta il 401, ma `error` è `null`, quindi
+ * l'effetto che riporta al login non scatta mai e i pannelli continuano a mostrare l'ultima lettura
+ * riuscita. La regola sta in `@road/shared` accanto ad `ApiError`, che è ciò su cui decide.
+ */
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => failureCount < 1 && isRetriableFailure(error),
+      refetchOnWindowFocus: false,
+    },
+  },
 });
 
 export function App(): React.JSX.Element {
@@ -301,17 +317,22 @@ function Dashboard(): React.JSX.Element {
    * bar: l'operatore restava davanti a una mappa vuota, senza sapere che bastava rifare l'accesso,
    * e solo un comando — cioè un'azione che nessuno ha ragione di tentare davanti a una dashboard
    * che sembra rotta — lo avrebbe rimandato al login.
+   *
+   * **Le letture periodiche sono tre, non due**: lo storico degli alert è arrivato con D77 e non era
+   * in questo elenco. Fallisce con lo stesso 401 delle altre due, e per come sono scritte le tre
+   * query non c'è nessun caso in cui sia l'unica a fallire — ma un elenco che ne dimentica una
+   * dipende, per essere corretto, da una coincidenza invece che da una regola.
    */
   useEffect(() => {
-    for (const failure of [fleet.error, mode.error]) {
+    for (const failure of [fleet.error, mode.error, alertHistory.error]) {
       if (failure instanceof ApiError && failure.status === 401) {
         signOut();
         return;
       }
     }
-    // Dipende dai due errori e non da `signOut`, che è ricreata a ogni render: ciò che deve far
+    // Dipende dai tre errori e non da `signOut`, che è ricreata a ogni render: ciò che deve far
     // ripartire l'effetto è il cambiare dell'esito delle letture, non l'identità della funzione.
-  }, [fleet.error, mode.error]);
+  }, [fleet.error, mode.error, alertHistory.error]);
 
   async function chooseStrategy(strategy: StrategyName): Promise<void> {
     if (token === null) return;

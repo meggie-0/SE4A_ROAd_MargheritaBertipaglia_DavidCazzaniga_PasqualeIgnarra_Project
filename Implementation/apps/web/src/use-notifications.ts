@@ -61,6 +61,17 @@ export function useNotifications(token: string | null): NotificationFeed {
 
     socket.on('connect', () => setConnection('connected'));
     socket.on('disconnect', () => setConnection('disconnected'));
+    /**
+     * Un handshake **rifiutato** non è una disconnessione, e senza questa riga non lo dice nessuno.
+     *
+     * Socket.IO emette `disconnect` quando una connessione stabilita cade, e `connect_error` quando
+     * non è mai stata stabilita — che è il caso di ogni token scaduto o falso, cioè proprio quello
+     * in cui l'operatore ha più bisogno di sapere che il canale non c'è. Senza gestirlo lo stato
+     * resta su `connecting`, e l'indicatore mostra comunque «canale non connesso» perché tutto ciò
+     * che non è `connected` finisce in quel ramo: la risposta giusta per la ragione sbagliata, che è
+     * il genere di cosa che la prima riscrittura del ternario romperebbe in silenzio.
+     */
+    socket.on('connect_error', () => setConnection('disconnected'));
     socket.on(NOTIFICATION_EVENT, (payload: unknown) => {
       const parsed = notificationPushSchema.safeParse(payload);
       if (!parsed.success) return;

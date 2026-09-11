@@ -6,6 +6,7 @@ import { PassportModule } from '@nestjs/passport';
 import { PersistenceModule } from '../persistence/persistence.module';
 
 import { TokenVerifierPort } from './access-control.port';
+import { AccountLookup } from './account-lookup';
 import { AuthManager } from './auth.manager';
 import { AuthPort } from './auth.port';
 import { readJwtSecret } from './jwt.config';
@@ -46,6 +47,9 @@ import { TokenVerifier } from './token-verifier';
   providers: [
     PasswordHasher,
     TokenIssuer,
+    // `AccountLookup` non è esportata: la usano `JwtStrategy` e `TokenVerifier`, che stanno qui
+    // dentro. Fuori si continua a vedere solo le due porte (D78).
+    AccountLookup,
     JwtStrategy,
     { provide: AuthPort, useClass: AuthManager },
     { provide: TokenVerifierPort, useClass: TokenVerifier },

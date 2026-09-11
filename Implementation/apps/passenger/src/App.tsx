@@ -1,5 +1,6 @@
 import {
   ApiError,
+  isRetriableFailure,
   FLEET_POSITION_REFRESH_MS,
   fetchHealth,
   haversineKm,
@@ -66,8 +67,23 @@ import { BookingsPanel } from './components/BookingsPanel';
 const VEHICLE_REFRESH_MS = FLEET_POSITION_REFRESH_MS;
 const MIN_ROUTE_DISTANCE_KM = 0.01;
 
+/**
+ * Un solo tentativo in più, e **nessuno** su una risposta rifiutata nel merito dal server.
+ *
+ * Stessa politica della dashboard e per la stessa ragione misurata: con un tentativo pendente la
+ * query resta `pending` invece di posarsi su `error`, e i tentativi si fermano quando il documento
+ * non è visibile — quindi un token scaduto non raggiungerebbe mai chi riporta al login. Qui
+ * l'insidia è la stessa: l'app segue la corsa rileggendo la posizione del veicolo due volte al
+ * secondo, e una schermata di stato ferma su un veicolo che non si muove più è indistinguibile da
+ * un veicolo fermo.
+ */
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => failureCount < 1 && isRetriableFailure(error),
+      refetchOnWindowFocus: false,
+    },
+  },
 });
 
 export function App(): React.JSX.Element {

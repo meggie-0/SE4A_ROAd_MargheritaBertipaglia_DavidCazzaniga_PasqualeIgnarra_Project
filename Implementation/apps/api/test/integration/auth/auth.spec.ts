@@ -5,6 +5,7 @@ import {
   type AuthPort,
   type RegisterInput,
 } from '../../../src/auth/auth.port';
+import type { TokenVerifierPort } from '../../../src/auth/access-control.port';
 import type { PersistencePort } from '../../../src/persistence/persistence.port';
 import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
@@ -38,11 +39,13 @@ const PASSENGER: RegisterInput = {
 let harness: ApiHarness;
 let auth: AuthPort;
 let persistence: PersistencePort;
+let tokenVerifier: TokenVerifierPort;
 
 beforeAll(async () => {
   harness = await startApiHarness(NOW.toISOString());
   auth = harness.auth;
   persistence = harness.persistence;
+  tokenVerifier = harness.tokenVerifier;
 }, HOOK_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -238,8 +241,9 @@ describe('[R2][G1] Profile Management', () => {
   });
 
   it('rifiuta un utente inesistente', async () => {
-    // È il caso di un token ancora valido il cui account è stato rimosso: senza stato di sessione
-    // lato server (NFR3) nessuno può accorgersene prima di questo momento.
+    // Da D78 un token il cui account è sparito non arriva più fin qui: lo ferma prima
+    // `AccountLookup`, dentro il guard. Questo caso resta perché la porta deve difendersi da sola —
+    // la chiamano anche i test e i comandi di manutenzione del database, che nessun guard protegge.
     await expect(
       auth.updateProfile('33333333-3333-4333-8333-333333333333', { name: 'Nessuno' }),
     ).rejects.toBeInstanceOf(UnknownUserError);
@@ -255,5 +259,36 @@ describe('[R2][G1] Profile Management', () => {
     // «per comodità», un passeggero potrebbe promuoversi a operatore da solo.
     const [record] = await persistence.find('user', { where: { id: user.id } });
     expect(record?.role).toBe('PASSENGER');
+  });
+});
+
+/**
+ * L'altra porta d'ingresso: la verifica di un token **fuori dal cammino HTTP** (decisione D78).
+ *
+ * Il cancello di M1b prova che le rotte protette rifiutano un token il cui account non esiste più.
+ * Non può provarlo per l'handshake di una WebSocket, che non passa dai guard — e se le due porte
+ * divergessero, una socket resterebbe aperta a spedire eventi di flotta a chi non può più leggere
+ * la dashboard.
+ */
+describe('[R1][NFR3] Un token il cui account non esiste più non apre nemmeno una socket', () => {
+  it('verify() restituisce null, come per un token illeggibile', async () => {
+    const {
+      user,
+      token: { accessToken },
+    } = await auth.register(PASSENGER);
+
+    // Prima è valido: senza questa metà il test passerebbe anche con un `verify()` che rifiuta
+    // tutto.
+    await expect(tokenVerifier.verify(accessToken)).resolves.toMatchObject({
+      id: user.id,
+      role: 'PASSENGER',
+    });
+
+    // Il caso reale: `pnpm db:seed` svuota `user`, il browser conserva il token.
+    await harness.query(`DELETE FROM "user" WHERE "id" = $1`, [user.id]);
+
+    // `null` e non un'eccezione: per il canale push è un esito ordinario, e chi chiama chiude la
+    // connessione. La firma è ancora buona e la scadenza è lontana — a mancare è il soggetto.
+    await expect(tokenVerifier.verify(accessToken)).resolves.toBeNull();
   });
 });

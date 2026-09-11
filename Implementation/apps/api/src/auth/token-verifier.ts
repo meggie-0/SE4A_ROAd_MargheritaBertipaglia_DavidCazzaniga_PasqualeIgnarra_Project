@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { USER_ROLES } from '@road/shared';
 
 import type { AccessTokenPayload, AuthenticatedUser } from './authenticated-user';
+import { AccountLookup } from './account-lookup';
 import { TokenVerifierPort } from './access-control.port';
 
 /**
@@ -24,7 +25,10 @@ import { TokenVerifierPort } from './access-control.port';
  */
 @Injectable()
 export class TokenVerifier extends TokenVerifierPort {
-  constructor(private readonly jwt: JwtService) {
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly accounts: AccountLookup,
+  ) {
     super();
   }
 
@@ -38,6 +42,11 @@ export class TokenVerifier extends TokenVerifierPort {
    * Il payload viene **ricontrollato** dopo la verifica della firma. Un token firmato con la
    * nostra chiave ma con un `role` che non è dei nostri non deve produrre un utente a metà: la
    * firma dice che il token è nostro, non che il contenuto è quello che ci aspettiamo.
+   *
+   * L'ultimo controllo è che l'account esista ancora (D78), **lo stesso che fa `JwtStrategy`** e per
+   * mezzo della stessa classe. Le due porte d'ingresso devono rispondere allo stesso modo: una
+   * socket che resta aperta con un token che le rotte rifiutano continuerebbe a spedire eventi a chi
+   * non può più leggerli.
    */
   async verify(accessToken: string): Promise<AuthenticatedUser | null> {
     let payload: AccessTokenPayload;
@@ -50,6 +59,7 @@ export class TokenVerifier extends TokenVerifierPort {
     if (typeof payload.sub !== 'string' || payload.sub === '') return null;
     if (typeof payload.email !== 'string') return null;
     if (!USER_ROLES.includes(payload.role)) return null;
+    if (!(await this.accounts.exists(payload.sub))) return null;
 
     return { id: payload.sub, email: payload.email, role: payload.role };
   }

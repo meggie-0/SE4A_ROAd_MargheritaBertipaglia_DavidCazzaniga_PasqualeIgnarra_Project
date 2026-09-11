@@ -442,27 +442,52 @@ describe('[M1b] Cancello: AuthenticationManager', () => {
       expect(seen.body).toMatchObject({ email: REGISTRATION.email, role: 'PASSENGER' });
     });
 
-    it('e lo accetta senza consultare alcun registro, né in memoria né sul database', async () => {
+    /**
+     * **Questo caso è cambiato con D78, e il cambiamento è deliberato.**
+     *
+     * Fino a v1.12 asseriva il contrario: cancellava la riga di `user` e pretendeva `200`, con un
+     * commento che chiamava quella la linea di confine — *autenticare* non legge nulla, leggere o
+     * scrivere il profilo sì. Il confine non si è spostato: **è sparito**, ed è il punto della
+     * decisione. Un token il cui soggetto non esiste più non è autenticabile, perché non c'è
+     * nessuno da autenticare; lasciarlo passare significava soltanto rimandare il rifiuto a un
+     * punto dove non sapeva più esprimersi — una violazione di chiave esterna, cioè un `500`, alla
+     * prima rotta che scriveva qualcosa di legato all'utente.
+     *
+     * Quel che l'asserzione vecchia proteggeva — *nessuna lettura, di nessun genere* — era più
+     * severo del criterio di M1b (HARNESS.md §6: «un token emesso da un'istanza è accettato da una
+     * seconda che non ha visto il login») e più severo della formulazione di NFR3 nel DD §4.3, che
+     * vieta uno **store di sessione**. Il criterio è dimostrato dal caso qui sopra, che è la sua
+     * traduzione verbatim e resta intatto.
+     *
+     * E NFR3 continua a essere verificato **anche qui**, in una forma che la versione vecchia non
+     * raggiungeva: le due istanze rispondono identicamente a un token il cui account è sparito, pur
+     * non avendo mai scambiato una parola. È esattamente ciò che le rende intercambiabili — la
+     * fonte della risposta è il livello dati condiviso, non la memoria di chi ha emesso il token.
+     */
+    it('e se l account che il token dichiara non esiste più, entrambe lo rifiutano', async () => {
       const registered = await registerPassenger();
       const { accessToken } = registered as unknown as { accessToken: string };
       const { id } = (registered as unknown as { user: { id: string } }).user;
 
-      // La riga sparisce dal database. Se l'autenticazione consultasse un registro — una mappa di
-      // sessioni, una cache, o l'utente stesso — questa richiesta fallirebbe.
+      // Il caso reale: `pnpm db:seed` svuota `user` e ricrea gli account con identificatori nuovi,
+      // mentre il browser conserva il token di prima.
       await harness.query(`DELETE FROM "user" WHERE "id" = $1`, [id]);
 
-      await request(verifier.getHttpServer())
-        .get(GATE_ROUTES.anyAuthenticated)
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
+      for (const app of [issuer, verifier]) {
+        await request(app.getHttpServer())
+          .get(GATE_ROUTES.anyAuthenticated)
+          .set('Authorization', `Bearer ${accessToken}`)
+          .expect(401);
+      }
 
-      // È esattamente il confine fra le due cose, e la seconda metà lo mostra: *autenticare* non
-      // legge nulla, ma leggere o scrivere il profilo sì, e lì l'account mancante si vede.
+      // Anche il profilo: prima rispondeva `404`, perché il token passava il guard e l'account
+      // mancante si scopriva nel gestore. Ora il rifiuto arriva prima, ed è lo stesso per tutte le
+      // rotte protette — che è ciò che permette al client di avere una sola regola.
       await request(issuer.getHttpServer())
         .patch(API_ROUTES.authProfile)
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ name: 'Fantasma' })
-        .expect(404);
+        .expect(401);
     });
 
     it('un token firmato con un altro segreto non è accettato da nessuna delle due', async () => {
