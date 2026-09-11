@@ -214,12 +214,18 @@ marker nel colore di «In riposizionamento». Quando arriva torna «Disponibile�
 raggiunta**, senza attendere il ciclo successivo: a chiudere il riposizionamento è la telemetria
 (decisione D74).
 
-> **Guardalo dall'inizio, ma non è più tutto o niente.** Lo stadio ha bisogno di **sei** veicoli e
-> ne parte uno ogni quindici secondi: misurato, il primo si muove a **t+10s** e il sesto arriva a
-> **t+107s**, dopodiché la zona è coperta e non parte più nessuno.
+> **Guardalo dall'inizio, ma non è più tutto o niente.** La domanda attesa allo stadio è **sei**
+> corse, a qualunque ora lo esegui, e parte un veicolo ogni quindici secondi. Misurato: il primo si
+> muove a **t+11s**, e le partenze sono **sette**, l'ultima a **t+101s**; a **t+126s** sono tutti
+> arrivati e non parte più nessuno.
+>
+> La settima è di troppo, e non è un caso: il ciclo conta come copertura i veicoli *già allo stadio*,
+> non quelli ancora in viaggio, e il sesto impiega ventitré secondi — più dei quindici fra un ciclo e
+> l'altro. È un limite noto e voluto, spiegato in `rebalancing.manager.ts`: alla cadenza di
+> produzione, dieci minuti, un veicolo arriva ben prima del ciclo successivo e il caso non si dà.
 >
 > Chi apre la pagina dopo trova la flotta già ferma, ma **il pannello alert conserva** ciò che è
-> successo: lo storico si rilegge da `GET /notifications/operator` (decisione D77), quindi i sei
+> successo: lo storico si rilegge da `GET /notifications/operator` (decisione D77), quindi i sette
 > riposizionamenti restano elencati con la loro ora anche a scenario concluso. Quello che non si
 > recupera è il **movimento**: i marker che attraversano la mappa si vedono mentre accade, e la
 > mappa non ha una storia da rileggere.

@@ -101,8 +101,9 @@ const SCENARIOS = {
   },
   rebalancing: {
     durata:
-      'circa due minuti: sei veicoli, uno ogni quindici secondi. Finiti quelli lo stadio è ' +
-      'coperto e non parte più nessuno — se apri la pagina dopo, trovi la flotta già ferma.',
+      'circa due minuti: sette partenze, una ogni quindici secondi — sei coprono la domanda, la ' +
+      'settima è di troppo perché il ciclo non conta chi è ancora in viaggio. Poi non parte più ' +
+      'nessuno: se apri la pagina dopo, trovi la flotta ferma e il pannello alert che lo racconta.',
     guida: {
       apri: ['Dashboard operatore  http://localhost:5173'],
       guarda: [
