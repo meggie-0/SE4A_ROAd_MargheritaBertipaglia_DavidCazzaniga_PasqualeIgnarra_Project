@@ -4,6 +4,7 @@ import {
   DEFAULT_SIMULATOR_SETTINGS,
   SIMULATED_TIME_SCALE,
   FleetSimulator,
+  SLOWDOWN_SAMPLE_KM,
   ticksToCover,
   type FleetSimulatorSettings,
 } from '../src/index';
@@ -209,5 +210,83 @@ describe('[NFR8] Il simulatore di flotta avanza solo su tick espliciti', () => {
     }
 
     expect(first.reading('RT-01')).toEqual(second.reading('RT-01'));
+  });
+});
+
+/**
+ * La strada più lenta in alcuni punti che in altri (decisione D79).
+ *
+ * È la metà del modello che mancava: fino a qui il traffico era un'etichetta — commutava la
+ * strategia, ma un veicolo impiegava lo stesso tempo con traffico basso o altissimo. Questi casi
+ * provano la fisica, cioè che un chilometro lento costa davvero più tick; che il sistema scelga di
+ * conseguenza lo prova un test d'integrazione di `allocation`.
+ */
+describe('[R12] Il simulatore rallenta i veicoli dove la strada è lenta', () => {
+  /** Due chilometri e mezzo verso nord dal Duomo, in linea retta. */
+  const NORTH: GeoPoint = { lat: DUOMO.lat + 2.5 / 111.32, lon: DUOMO.lon };
+
+  function ticksToArrive(simulator: FleetSimulator): number {
+    simulator.followRoute('RT-01', DUOMO, [NORTH]);
+    let ticks = 0;
+    while (simulator.reading('RT-01')?.hasArrived !== true) {
+      simulator.tick();
+      ticks += 1;
+      if (ticks > 1000) throw new Error('Il veicolo non arriva.');
+    }
+    return ticks;
+  }
+
+  const STEP: FleetSimulatorSettings = { speedKmH: 20, tickSeconds: 9 }; // 50 m a tick
+
+  it('con un fattore uno ovunque arriva negli stessi tick, e nello stesso punto, di prima', () => {
+    // Il percorso con il rallentamento spezza la strada in tratti: a fattore uno deve dare la
+    // stessa risposta del percorso di sempre, o il modello cambierebbe il mondo anche dove dice
+    // che la strada è libera.
+    const plain = new FleetSimulator(STEP);
+    const neutral = new FleetSimulator(STEP, () => 1);
+
+    expect(ticksToArrive(neutral)).toBe(ticksToArrive(plain));
+    expect(neutral.reading('RT-01')?.position).toEqual(plain.reading('RT-01')?.position);
+  });
+
+  it('con un fattore tre ovunque impiega tre volte i tick', () => {
+    const free = ticksToArrive(new FleetSimulator(STEP));
+    const jammed = ticksToArrive(new FleetSimulator(STEP, () => 3));
+
+    expect(jammed).toBe(free * 3);
+  });
+
+  it('rallenta solo nel tratto lento, anche se la rotta è un segmento unico', () => {
+    // La stima in linea d'aria dà **un** segmento per l'intera rotta: il confine fra strada libera
+    // e strada lenta cade a metà, ed è il caso per cui il simulatore spezza i segmenti in tratti.
+    const halfway = DUOMO.lat + 1.25 / 111.32;
+    const northHalfIsSlow = (position: GeoPoint): number => (position.lat > halfway ? 3 : 1);
+
+    const free = ticksToArrive(new FleetSimulator(STEP));
+    const mixed = ticksToArrive(new FleetSimulator(STEP, northHalfIsSlow));
+
+    // Metà strada a velocità piena e metà a un terzo: il doppio del tempo, entro un tratto.
+    expect(Math.abs(mixed - free * 2)).toBeLessThanOrEqual(1);
+    expect(SLOWDOWN_SAMPLE_KM).toBeLessThan(1.25);
+  });
+
+  it('il fattore è del punto, non del veicolo: chi esce dalla zona lenta torna a correre', () => {
+    const southIsSlow = (position: GeoPoint): number =>
+      position.lat < DUOMO.lat + 0.5 / 111.32 ? 4 : 1;
+    const simulator = new FleetSimulator(STEP, southIsSlow);
+    simulator.followRoute('RT-01', DUOMO, [NORTH]);
+
+    // Nel primo mezzo chilometro, lento, un tick fa un quarto del passo. La lunghezza di partenza
+    // si legge e non si presume: in gradi «2,5 km» vale 2,497 km di haversine.
+    const start = simulator.reading('RT-01')?.remainingKm ?? 0;
+    simulator.tick();
+    const slowStep = start - (simulator.reading('RT-01')?.remainingKm ?? 0);
+    for (let tick = 0; tick < 60; tick += 1) simulator.tick();
+    const before = simulator.reading('RT-01')?.remainingKm ?? 0;
+    simulator.tick();
+    const fastStep = before - (simulator.reading('RT-01')?.remainingKm ?? 0);
+
+    expect(slowStep).toBeCloseTo(0.05 / 4, 4);
+    expect(fastStep).toBeCloseTo(0.05, 4);
   });
 });

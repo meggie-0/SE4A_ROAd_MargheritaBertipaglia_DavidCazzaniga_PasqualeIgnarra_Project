@@ -15,6 +15,8 @@ export {
   SIMULATED_TIME_SCALE,
   FleetSimulator,
   ticksToCover,
+  SLOWDOWN_SAMPLE_KM,
   type FleetSimulatorSettings,
+  type Slowdown,
   type VehicleTelemetryReading,
 } from './fleet-simulator';

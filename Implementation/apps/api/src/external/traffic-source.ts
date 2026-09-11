@@ -1,4 +1,4 @@
-import type { TrafficLevel } from '@road/shared';
+import type { GeoPoint, TrafficLevel } from '@road/shared';
 
 /**
  * La sorgente del livello di traffico, dietro cui stanno due adapter (decisione D76).
@@ -14,5 +14,20 @@ import type { TrafficLevel } from '@road/shared';
  * fornitori ce n'era uno solo.
  */
 export abstract class TrafficSource {
+  /**
+   * Il livello che il sistema **legge**: uno solo, quello su cui il `ModeController` decide.
+   *
+   * Con il traffico per zona della D79 è il livello del **centro**, che è dove la commutazione
+   * della strategia ha senso: è lì che il veicolo più vicino smette di essere il più veloce.
+   */
   abstract getTraffic(): Promise<TrafficLevel>;
+
+  /**
+   * Il livello **in un punto** della città, per chi rallenta i veicoli e allunga le stime (D79).
+   *
+   * Non esce da `external`: il resto del sistema non sa che il traffico ha un dettaglio per zona, e
+   * non deve saperlo — la strategia attiva è una per la città, quindi una soglia per zona non
+   * avrebbe niente da comandare (`ExternalServicesPort.getTraffic`).
+   */
+  abstract levelAt(point: GeoPoint): TrafficLevel;
 }

@@ -138,6 +138,12 @@ export abstract class ExternalServicesPort {
    * per zona non avrebbe niente da comandare. Il giorno in cui servisse il dettaglio per zona
    * sarebbe una seconda operazione, non un tipo di ritorno diverso da questo.
    *
+   * **[v1.14]** Il dettaglio per zona ora esiste, e resta **dentro il mondo** (decisione D79): il
+   * traffico rallenta i veicoli e allunga le stime zona per zona, ma da qui esce ancora un livello
+   * solo. Quando la configurazione divide la città in centro e periferia, è **il livello del
+   * centro** — che è dove il veicolo più vicino smette di essere il più veloce, e quindi dove una
+   * commutazione della strategia ha un senso.
+   *
    * Chi la chiama è `TrafficMonitor.runOnce()`, che poi passa il livello a
    * `ModePort.onTrafficLevel()` (DD §2.2.1, «Periodic work»; Figura 2.6). Nessun altro: il livello
    * *osservato* non è un ingresso dell'allocazione, è ciò che decide quale politica allocherà.

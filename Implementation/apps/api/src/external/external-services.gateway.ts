@@ -12,6 +12,7 @@ import {
 import { TrafficSource } from './traffic-source';
 import { OsrmRouteGateway } from './osrm-route.gateway';
 import { SimulatorFleetGateway } from './simulator-fleet.gateway';
+import { TrafficSlowdown } from './traffic-slowdown';
 
 /**
  * L'`ExternalServicesGateway` del DD §2.2: **un facade, un adapter per fornitore**.
@@ -35,12 +36,33 @@ export class ExternalServicesGateway extends ExternalServicesPort {
     private readonly maps: OsrmRouteGateway,
     private readonly traffic: TrafficSource,
     private readonly fleet: SimulatorFleetGateway,
+    private readonly slowdown: TrafficSlowdown,
   ) {
     super();
   }
 
-  getETA(origins: readonly EtaOrigin[], destination: GeoPoint): Promise<readonly EtaEstimate[]> {
-    return this.maps.getETA(origins, destination);
+  /**
+   * Il tempo delle mappe, allungato dal traffico **lungo il tragitto** (decisione D79).
+   *
+   * Il fattore si applica qui e non dentro un adapter, ed è il punto: vale per **qualunque**
+   * fornitore di mappe, la stima in linea d'aria come OSRM, perché il traffico è un fatto del mondo e
+   * non una proprietà di chi calcola i percorsi. Senza fattori configurati è esattamente uno.
+   */
+  async getETA(
+    origins: readonly EtaOrigin[],
+    destination: GeoPoint,
+  ): Promise<readonly EtaEstimate[]> {
+    const estimates = await this.maps.getETA(origins, destination);
+    const positions = new Map(origins.map((origin) => [origin.id, origin.position]));
+
+    return estimates.map((estimate) => {
+      const from = positions.get(estimate.id);
+      if (from === undefined) return estimate;
+      return {
+        id: estimate.id,
+        etaMinutes: estimate.etaMinutes * this.slowdown.routeFactor(from, destination),
+      };
+    });
   }
 
   getTraffic(): Promise<TrafficLevel> {
@@ -58,7 +80,10 @@ export class ExternalServicesGateway extends ExternalServicesPort {
     const leg = await this.maps.route(route.from, route.to);
     this.fleet.follow(robotaxiId, route, leg);
 
-    return { robotaxiId, etaMinutes: leg.durationMinutes, distanceKm: leg.distanceKm };
+    // Lo stesso fattore della stima: il tempo di attesa promesso al passeggero è quello che il
+    // simulatore, rallentando il veicolo dove passa, manterrà.
+    const etaMinutes = leg.durationMinutes * this.slowdown.routeFactor(route.from, route.to);
+    return { robotaxiId, etaMinutes, distanceKm: leg.distanceKm };
   }
 
   readTelemetry(): Promise<readonly VehicleTelemetry[]> {

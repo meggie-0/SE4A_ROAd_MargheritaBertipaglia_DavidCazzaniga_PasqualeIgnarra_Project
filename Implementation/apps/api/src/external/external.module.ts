@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClockPort } from '../platform/clock.port';
 import { PlatformModule } from '../platform/platform.module';
 
+import { readCentreZones, readTrafficTimeFactors } from './external.config';
 import { ExternalServicesGateway } from './external-services.gateway';
 import { ExternalServicesPort } from './external-services.port';
 import { FleetSimulationPort } from './fleet-simulation.port';
@@ -13,6 +14,7 @@ import { OsrmRouteGateway } from './osrm-route.gateway';
 import { DEFAULT_TRAFFIC_SCRIPT, ScriptedTrafficGateway } from './scripted-traffic.gateway';
 import { SimulatorFleetGateway } from './simulator-fleet.gateway';
 import { SimulatorSchedule } from './simulator.schedule';
+import { TrafficSlowdown } from './traffic-slowdown';
 import { TrafficSource } from './traffic-source';
 
 /**
@@ -62,8 +64,23 @@ import { TrafficSource } from './traffic-source';
           ? new ScriptedTrafficGateway(
               clock,
               config.get<string>('TRAFFIC_SCRIPT') ?? DEFAULT_TRAFFIC_SCRIPT,
+              readCentreZones(config),
             )
           : new HourlyTrafficGateway(clock),
+    },
+    /**
+     * **Quanto il traffico rallenta il mondo, deciso da configurazione** (decisione D79).
+     *
+     * Senza `TRAFFIC_TIME_FACTORS` non rallenta niente: le stime restano quelle del fornitore di
+     * mappe e il simulatore percorre il ciclo di sempre. È la stessa disciplina della D76 — la
+     * dimostrazione è un file d'ambiente, non una regressione — ed è ciò che lascia intatto il
+     * cancello di M7, che conta i tick fino all'arrivo.
+     */
+    {
+      provide: TrafficSlowdown,
+      inject: [TrafficSource, ConfigService],
+      useFactory: (traffic: TrafficSource, config: ConfigService): TrafficSlowdown =>
+        new TrafficSlowdown(traffic, readTrafficTimeFactors(config)),
     },
     SimulatorFleetGateway,
     SimulatorSchedule,

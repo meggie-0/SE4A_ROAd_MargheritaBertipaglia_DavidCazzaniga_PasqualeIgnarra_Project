@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { isWeekend, milanWeekdayHourSlot, type TrafficLevel } from '@road/shared';
+import { isWeekend, milanWeekdayHourSlot, type GeoPoint, type TrafficLevel } from '@road/shared';
 
 import { ClockPort } from '../platform/clock.port';
 
@@ -55,14 +55,26 @@ export class HourlyTrafficGateway extends TrafficSource {
   }
 
   getTraffic(): Promise<TrafficLevel> {
+    return Promise.resolve(this.currentLevel());
+  }
+
+  /**
+   * Lo stesso livello in ogni punto: l'ora di Milano non sa niente delle zone (D79).
+   *
+   * Conta solo se qualcuno configura `TRAFFIC_TIME_FACTORS` insieme a questa sorgente, e allora
+   * rallenta la città intera nelle ore di punta — che è coerente, e non è la configurazione di
+   * nessuno: senza fattori il livello non rallenta niente.
+   */
+  levelAt(_point: GeoPoint): TrafficLevel {
+    return this.currentLevel();
+  }
+
+  private currentLevel(): TrafficLevel {
     const slot = milanWeekdayHourSlot(this.clock.now());
 
-    if (isWeekend(slot)) {
-      return Promise.resolve(WEEKEND_BUSY_HOURS.includes(slot.hourOfDay) ? 'MEDIUM' : 'LOW');
-    }
-
-    if (WEEKDAY_RUSH_HOURS.includes(slot.hourOfDay)) return Promise.resolve('HIGH');
-    if (WEEKDAY_BUSY_HOURS.includes(slot.hourOfDay)) return Promise.resolve('MEDIUM');
-    return Promise.resolve('LOW');
+    if (isWeekend(slot)) return WEEKEND_BUSY_HOURS.includes(slot.hourOfDay) ? 'MEDIUM' : 'LOW';
+    if (WEEKDAY_RUSH_HOURS.includes(slot.hourOfDay)) return 'HIGH';
+    if (WEEKDAY_BUSY_HOURS.includes(slot.hourOfDay)) return 'MEDIUM';
+    return 'LOW';
   }
 }
