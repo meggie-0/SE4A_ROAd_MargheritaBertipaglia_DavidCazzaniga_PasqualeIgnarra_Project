@@ -32,17 +32,67 @@ const PASSENGERS = 16;
 const PASSENGER_PASSWORD = 'passeggero-della-demo';
 
 /**
- * Il ritmo: da quale secondo, ogni quanti secondi parte una richiesta, e che quota va in centro.
+ * Il ritmo: da quale secondo, ogni quanti secondi parte una richiesta, che quota va in centro, e se
+ * i ritiri in centro vengono dai punti della messa in scena.
  *
- * Tre fasi, che sono quelle della tabella del traffico. All'inizio poche richieste sparse, perché
- * si veda che con il traffico basso vince l'auto più vicina; poi il picco, con la maggior parte dei
- * ritiri **in centro** — dove, quando il traffico sale, il più vicino smette di essere il più
- * veloce —; alla fine il ritmo cala e la città torna quieta.
+ * Quattro fasi, allineate alla tabella del traffico della demo (`LOW:0,MEDIUM:60,HIGH:90,…`):
+ *
+ * - **0–40 s**, poche richieste sparse: con il traffico basso vince il più vicino, e si vede;
+ * - **40–90 s**, il picco comincia e la mappa si riempie, ma **quasi tutto fuori dal centro**. Non è
+ *   un dettaglio: con «Più vicino disponibile» ogni ritiro in centro consuma un'auto del centro, e un
+ *   centro svuotato prima che il traffico salga non ha più il più vicino da battere. Misurato: con
+ *   metà delle venti auto del centro impegnate un ribaltamento su venticinque mostra un distacco
+ *   sotto il minuto, con tre quarti uno su sette; con al più cinque, nessuno;
+ * - **90–150 s**, il centro è a `HIGH`: quattro ritiri su cinque vanno **ai bordi del centro**, sui
+ *   punti di `STAGED_PICKUPS`, dove l'auto di periferia arriva prima di quella del centro. Vincendo
+ *   quelle, il centro non si svuota;
+ * - **150–190 s**, la città torna quieta.
  */
 const RHYTHM = [
-  { fromSecond: 0, everySeconds: 6, centreShare: 0.3 },
-  { fromSecond: 40, everySeconds: 3, centreShare: 0.7 },
-  { fromSecond: 160, everySeconds: 6, centreShare: 0.3 },
+  { fromSecond: 0, everySeconds: 6, centreShare: 0.3, staged: false },
+  { fromSecond: 40, everySeconds: 3, centreShare: 0.15, staged: false },
+  { fromSecond: 90, everySeconds: 3, centreShare: 0.8, staged: true },
+  { fromSecond: 150, everySeconds: 5, centreShare: 0.3, staged: false },
+];
+
+/**
+ * I ritiri del picco: punti **ai bordi del centro, sul lato verso la periferia** (decisione D79).
+ *
+ * È una messa in scena, come la partita a San Siro di `db:demo`, ed è dichiarata qui e nel README.
+ * Il fenomeno che la demo mostra — sotto traffico il più vicino non è il più veloce — nel cuore del
+ * centro non esiste: al Duomo qualunque auto venga da fuori deve attraversare il centro per
+ * arrivare, e il più vicino vince comunque. Esiste ai bordi, dove un'auto di periferia arriva facendo
+ * quasi tutta la strada fuori dalla congestione.
+ *
+ * Scelti una volta, e non a occhio: su una griglia di 150 metri sul centro, i punti in cui — con la
+ * flotta del seed intera, il centro a `HIGH` e un fattore quattro — il più vicino è un'auto del centro
+ * e il più veloce un'auto di periferia, **con almeno due minuti di distacco** (nessuno qui sotto sta
+ * sotto i tre). Poi, a turno fra le quattro zone di bordo e mai due a meno di 250 metri. La taratura
+ * è sul distacco e non sul vincitore: una riga che dice «il più vicino ne avrebbe impiegati 7,9»
+ * contro 7,8 non dimostra niente a chi guarda. Se cambia il seed della flotta, questi punti vanno
+ * ricalcolati.
+ */
+const STAGED_PICKUPS = [
+  { lat: 45.4625, lon: 9.155 }, // Cadorna
+  { lat: 45.4625, lon: 9.221 }, // Porta Venezia
+  { lat: 45.4595, lon: 9.224 }, // Porta Romana
+  { lat: 45.458, lon: 9.155 }, // Navigli
+  { lat: 45.4655, lon: 9.158 }, // Cadorna
+  { lat: 45.4655, lon: 9.2195 }, // Porta Venezia
+  { lat: 45.461, lon: 9.218 }, // Porta Romana
+  { lat: 45.455, lon: 9.155 }, // Navigli
+  { lat: 45.479, lon: 9.173 }, // Cadorna
+  { lat: 45.4745, lon: 9.191 }, // Porta Venezia
+  { lat: 45.4565, lon: 9.224 }, // Porta Romana
+  { lat: 45.458, lon: 9.1595 }, // Navigli
+  { lat: 45.4775, lon: 9.1775 }, // Cadorna
+  { lat: 45.47, lon: 9.218 }, // Porta Venezia
+  { lat: 45.458, lon: 9.221 }, // Porta Romana
+  { lat: 45.476, lon: 9.182 }, // Cadorna
+  { lat: 45.473, lon: 9.2165 }, // Porta Venezia
+  { lat: 45.4535, lon: 9.224 }, // Porta Romana
+  { lat: 45.4745, lon: 9.185 }, // Cadorna
+  { lat: 45.464, lon: 9.2165 }, // Porta Venezia
 ];
 
 /** Dopo quanti secondi smette di chiedere corse. */
@@ -53,7 +103,17 @@ const CENTRE_ZONE_IDS = new Set(['duomo', 'cadorna', 'porta-venezia', 'navigli',
 
 /** Quanto lontano dal centroide può cadere un punto, e quanto almeno deve distare la destinazione. */
 const SCATTER_KM = 0.7;
-const MIN_TRIP_KM = 2;
+
+/**
+ * Quanto è lunga una corsa: fra uno e mezzo e quattro chilometri e mezzo.
+ *
+ * Corte di proposito. Un'auto torna disponibile solo a corsa finita, e con tragitti di dieci
+ * chilometri — che la città permette — la flotta resterebbe impegnata per tutta la dimostrazione:
+ * il più vicino diventerebbe un'auto dall'altra parte di Milano, e i ribaltamenti fra due auto
+ * lontanissime non racconterebbero niente.
+ */
+const MIN_TRIP_KM = 1.5;
+const MAX_TRIP_KM = 4.5;
 
 /** Mulberry32: trentadue bit di stato, abbastanza per una sequenza che deve solo ripetersi uguale. */
 function seededRandom(seed) {
@@ -107,19 +167,37 @@ export function planRideRequests(seed = DEMO_SEED) {
   const outskirts = MILAN_ZONES.filter((zone) => !CENTRE_ZONE_IDS.has(zone.id));
 
   const plan = [];
+  let stagedUsed = 0;
   let second = 2;
   while (second < REQUESTS_UNTIL_SECOND) {
     const phase = [...RHYTHM].reverse().find((step) => second >= step.fromSecond) ?? RHYTHM[0];
     const inCentre = random() < phase.centreShare;
-    const pickupZone = pick(inCentre ? centre : outskirts, random);
-    const pickup = pointIn(pickupZone, random);
+    let pickupZone;
+    let pickup;
+    if (inCentre && phase.staged) {
+      pickup = STAGED_PICKUPS[stagedUsed % STAGED_PICKUPS.length];
+      stagedUsed += 1;
+      pickupZone = nearestZone(pickup, MILAN_ZONES);
+    } else {
+      pickupZone = pick(inCentre ? centre : outskirts, random);
+      pickup = pointIn(pickupZone, random);
+    }
 
-    let destinationZone;
-    let destination;
-    do {
-      destinationZone = pick(MILAN_ZONES, random);
-      destination = pointIn(destinationZone, random);
-    } while (haversineKm(pickup, destination) < MIN_TRIP_KM);
+    // La destinazione si sceglie fra le zone il cui centro cade nella fascia di lunghezza. Non
+    // ritentando a caso: da Rho Fiera o da Linate nessuna zona sta a meno di cinque chilometri, e un
+    // ciclo che aspettasse un punto nella fascia non terminerebbe. Lì si ripiega sulla più vicina.
+    const others = MILAN_ZONES.filter((zone) => zone.id !== pickupZone.id);
+    const inRange = others.filter((zone) => {
+      const km = haversineKm(pickup, zone);
+      return km >= MIN_TRIP_KM && km <= MAX_TRIP_KM;
+    });
+    const destinationZone =
+      inRange.length > 0
+        ? pick(inRange, random)
+        : others.reduce((best, zone) =>
+            haversineKm(pickup, zone) < haversineKm(pickup, best) ? zone : best,
+          );
+    const destination = pointIn(destinationZone, random);
 
     plan.push({
       index: plan.length + 1,

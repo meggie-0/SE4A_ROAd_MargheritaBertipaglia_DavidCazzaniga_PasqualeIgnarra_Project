@@ -73,30 +73,50 @@ const SCENARIOS = {
     },
   },
   traffic: {
-    durata: 'due minuti esatti dall’avvio dell’API, poi il livello resta su LOW.',
+    durata:
+      'circa tre minuti e mezzo: le richieste finiscono a 185 secondi, il traffico torna LOW a 180. ' +
+      'Poi lo stack resta acceso e le ultime corse si concludono da sole.',
     guida: {
       apri: ['Dashboard operatore  http://localhost:5173'],
       guarda: [
-        'Guarda il pannello «Strategia di allocazione». La sequenza dura due minuti dall’avvio:',
-        '  0s  LOW     — strategia «Più vicino disponibile»',
-        '  20s MEDIUM  — compare un alert che **suggerisce** ETA minimo, e la strategia NON cambia',
-        '  50s HIGH    — il sistema commuta da solo a «ETA minimo»',
-        '  80s MEDIUM  — resta su ETA minimo: è l’isteresi, non si torna indietro a metà (NFR9)',
-        ' 110s LOW     — solo ora rientra su «Più vicino disponibile»',
-        'Poi premi «ETA minimo» a mano: il modo passa a Manual e ogni cambio automatico si ferma',
-        '(R13). «Riabilita il modo Auto» rivaluta subito l’ultimo livello letto.',
+        'Una città in cui la gente chiede corse, e il traffico che sale **in centro**. Guarda la mappa,',
+        'il pannello «Strategia di allocazione» e il «Log operativo», dove ogni assegnazione dice con',
+        'quale strategia è stata decisa e — quando non è andata al più vicino — quanto ci avrebbe messo lui.',
+        '    0s  LOW     richieste sparse per la città: vince sempre l’auto più vicina',
+        '   40s          il ritmo sale e la mappa si riempie',
+        '   60s  MEDIUM  un alert suggerisce ETA minimo, e la strategia NON cambia; le auto in centro rallentano',
+        '   90s  HIGH    il sistema commuta da solo a «ETA minimo», e i ritiri ai bordi del centro vanno',
+        '                ad auto che arrivano dalla periferia: lì si viaggia, in centro no',
+        '  150s  MEDIUM  resta su ETA minimo: è l’isteresi (NFR9)',
+        '  180s  LOW     solo ora rientra su «Più vicino disponibile»',
+        'I tempi nel log sono del mondo simulato, che corre trenta volte più veloce del tuo orologio.',
       ],
     },
     // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
-    title: 'Scenario 3 — traffico, isteresi e rientro in Auto',
+    // Le richieste di corsa le fa il generatore, attraverso l'API pubblica (decisione D79).
+    requests: true,
+    title: 'Scenario 3 — traffico, domanda e allocazione',
     grep: 'Scenario 3',
     dataset: 'seed',
     env: {
       TRAFFIC_SOURCE: 'scripted',
-      TRAFFIC_SCRIPT: 'LOW:0,MEDIUM:20,HIGH:50,MEDIUM:80,LOW:110',
+      // Il centro: basso, medio a un minuto, alto da un minuto e mezzo, e ritorno.
+      TRAFFIC_SCRIPT: 'LOW:0,MEDIUM:60,HIGH:90,MEDIUM:150,LOW:180',
       // Il monitor legge ogni dieci secondi, quindi ogni gradino della tabella viene osservato.
       TRAFFIC_CRON: '*/10 * * * * *',
+      // Il traffico vive nel mondo (D79): sale in centro, rallenta le auto e allunga le stime.
+      TRAFFIC_CENTRE_ZONES: 'duomo,cadorna,porta-venezia,navigli,porta-romana',
+      TRAFFIC_TIME_FACTORS: 'MEDIUM:1.6,HIGH:4',
+      // Ogni assegnazione lascia la sua riga nel log operativo.
+      ALLOCATION_EXPLANATIONS: 'on',
+      // Le stime in linea d'aria, non OSRM: la demo deve ripetersi uguale e funzionare senza rete,
+      // e cinquanta matrici da sessantaquattro candidati non sono un carico da chiedere al server
+      // pubblico. Vuota nell'ambiente vince sul `.env`: verificato su Node, `ConfigModule` e
+      // `ConfigService`.
+      OSRM_BASE_URL: '',
+      // Più lento degli scenari a effetto immediato, come il 4: le auto devono vedersi muovere.
+      SIMULATOR_TICK_SECONDS: '15',
     },
   },
   rebalancing: {
@@ -228,9 +248,10 @@ if (scenario.dataset === 'demo') runOrExit('node', ['tools/db/demo.mjs']);
  * scoprirlo davanti a chi guarda.
  *
  * Altrimenti si alza lo stack e si dice cosa aprire e cosa guardare, lasciandolo acceso. È ciò che
- * serve **a chi guarda**, ed è la forma giusta per gli scenari 3 e 4: lì non c'è niente da guidare —
- * il traffico cambia da solo, il riposizionamento parte da solo — e uno script sarebbe «aspetta e
- * asserisci», cioè un test travestito da dimostrazione.
+ * serve **a chi guarda**, ed è la forma giusta per gli scenari 3 e 4: lì chi guarda non ha niente da
+ * premere — il traffico cambia da solo e le richieste le fa il generatore della D79, il
+ * riposizionamento parte da solo — e uno script sarebbe «aspetta e asserisci», cioè un test
+ * travestito da dimostrazione.
  *
  * `--live` forza il secondo modo anche dove il primo esiste: `pnpm demo:immediate --live` prepara la
  * corsa immediata e lascia che sia una persona a richiederla.
@@ -309,4 +330,24 @@ if (!(await waitForApi())) {
 
   console.log(colors.bold('\nLo stack resta acceso. Ctrl-C per fermarlo.'));
   console.log(colors.bold('─'.repeat(78) + '\n'));
+
+  /**
+   * Le richieste partono **dopo** che si è detto cosa aprire, e subito.
+   *
+   * La tabella del traffico conta dall'avvio dell'API, quindi il generatore non può aspettare chi
+   * guarda: i primi quaranta secondi sono volutamente tranquilli, ed è il tempo di aprire la pagina.
+   */
+  if (scenario.requests === true) {
+    console.log(colors.dim('Richieste di corsa, dal generatore della demo:'));
+    // Import dinamico, e non in testa al file: il generatore legge la build di `packages/shared`,
+    // che su un clone pulito esiste solo dopo `buildPackages()` qui sopra.
+    const { runRideRequests } = await import('./ride-requests.mjs');
+    const outcomes = await runRideRequests({ log: (line) => console.log(colors.dim(line)) });
+    const assigned = outcomes.filter((outcome) => outcome.robotaxiId !== null).length;
+    console.log(
+      colors.bold(
+        `\n${outcomes.length} richieste, ${assigned} assegnate. Le corse finiscono da sole; Ctrl-C per chiudere.`,
+      ),
+    );
+  }
 }

@@ -128,7 +128,7 @@ ciò che in esecuzione normale è lento, alza i tre servizi e dice cosa aprire e
 ```bash
 pnpm demo:immediate      # scenario 1 — corsa immediata
 pnpm demo:advance        # scenario 2 — prenotazione anticipata
-pnpm demo:traffic        # scenario 3 — traffico, isteresi, rientro in Auto
+pnpm demo:traffic        # scenario 3 — traffico, domanda e allocazione
 pnpm demo:rebalancing    # scenario 4 — riposizionamento verso San Siro
 ```
 
@@ -145,8 +145,9 @@ Chi guarda una dimostrazione e chi la mantiene hanno bisogno di due cose diverse
 
 **Dal vivo.** Il comando prepara il mondo, alza lo stack, stampa cosa aprire e cosa guardare, e
 **resta acceso** finché non lo si interrompe con Ctrl-C. È il modo predefinito degli scenari 3 e 4,
-dove non c'è niente da guidare — il traffico cambia da solo, il riposizionamento parte da solo — e
-si aggiunge a qualunque scenario con `--live`:
+dove chi guarda non ha niente da premere — il traffico cambia da solo e le richieste di corsa le fa
+un generatore (D79), il riposizionamento parte da solo — e si aggiunge a qualunque scenario con
+`--live`:
 
 ```bash
 pnpm demo:immediate --live
@@ -193,19 +194,52 @@ Misurato su una prenotazione fatta per le 22:01:10 — i tempi sono quelli veri 
 | 22:00:30 | il veicolo è al ritiro, la corsa comincia |
 | 22:00:38 | la corsa si conclude |
 
-**`pnpm demo:traffic` — traffico e isteresi (R12, R13, NFR9, NFR10).** Basta la dashboard. Il
-livello segue una tabella di due minuti dall'avvio del processo:
+**`pnpm demo:traffic` — traffico, domanda e allocazione (R5, R8, R12, R13, NFR9, NFR10).** Basta
+la dashboard. È una città in cui la gente chiede corse — cinquantuno in tre minuti, da un generatore
+che passa dall'API come l'app passeggero — e in cui il traffico sale **in centro**. Si vede
+l'algoritmo decidere: le auto partono da punti diversi della città, il traffico sale, la strategia
+commuta da sola, e da quel momento i ritiri ai bordi del centro vanno ad auto che arrivano dalla
+periferia, perché lì si viaggia e in centro no. Il **log operativo** dice il perché di ogni
+assegnazione:
 
-| dall'avvio | livello | che cosa fa il sistema |
+> RT-40 assegnato con ETA minimo, 6,5 min — il più vicino, RT-43, ne avrebbe impiegati 25,7
+
+Tempi **misurati** su tre esecuzioni, dall'istante in cui l'API risponde (le variazioni sono di un
+secondo, perché il livello si legge ogni dieci):
+
+| da quando l'API risponde | traffico in centro | che cosa succede |
 |---|---|---|
-| 0s | `LOW` | strategia «Più vicino disponibile» |
-| 20s | `MEDIUM` | un alert **suggerisce** ETA minimo, e la strategia **non** cambia |
-| 50s | `HIGH` | commuta da solo a «ETA minimo» |
-| 80s | `MEDIUM` | **resta** su ETA minimo: è l'isteresi, non si torna indietro a metà |
-| 110s | `LOW` | solo ora rientra su «Più vicino disponibile» |
+| 0–40 s | `LOW` | richieste sparse per la città: vince sempre l'auto più vicina |
+| 40 s | `LOW` | il ritmo sale, una richiesta ogni tre secondi, e la mappa si riempie |
+| 63–64 s | `MEDIUM` | un alert **suggerisce** ETA minimo, e la strategia **non** cambia; le auto in centro rallentano |
+| 93–94 s | `HIGH` | commuta da sola a «ETA minimo», e i ritiri ai bordi del centro vanno ad auto di periferia |
+| 153–154 s | `MEDIUM` | **resta** su ETA minimo: è l'isteresi, non si torna indietro a metà |
+| 184 s | `LOW` | solo ora rientra su «Più vicino disponibile» |
 
-Poi premi «ETA minimo» a mano: il modo passa a Manual e ogni cambio automatico si ferma finché non
-riabiliti Auto. «Riabilita il modo Auto» rivaluta subito l'ultimo livello letto.
+Che cosa si è misurato: 51 richieste e 51 assegnazioni a ogni esecuzione, 22 prima della commutazione
+e 29 dopo. Con ETA minimo **11 assegnazioni non vanno al più vicino**, e il distacco che la riga
+mostra va da 1,3 a 19,2 minuti, con una mediana di 9,6: nessuna riga dice «ne avrebbe impiegati 7,9»
+contro 7,8. **Le stesse 48 corse su 51** vanno allo stesso veicolo in tutte e tre le esecuzioni; le
+altre tre cambiano perché lo stack gira su tempo reale, e una richiesta che cade un passo del
+simulatore prima o dopo trova un'auto un po' più in là. La proprietà che la demo mostra non dipende
+da questo: la prova un test d'integrazione con l'orologio finto, `traffic-allocation.spec.ts`.
+
+> **La messa in scena, dichiarata.** Durante il traffico alto quattro ritiri su cinque stanno **ai
+> bordi del centro, sul lato verso la periferia** — Cadorna, Porta Venezia, Porta Romana, Navigli —
+> e non nel cuore. Non è per far vincere la periferia: è che il fenomeno esiste solo lì. Al Duomo
+> qualunque auto venga da fuori deve attraversare il centro per arrivare, e il più vicino vince
+> comunque. È la stessa ragione per cui `db:demo` mette una partita a San Siro: si mostra una scena
+> in cui la cosa accade, e si dice che è una scena. I punti sono in `tools/demo/ride-requests.mjs`,
+> con il criterio con cui sono stati scelti.
+>
+> **I tempi nel log sono del mondo simulato**, che in questa demo corre trenta volte più veloce:
+> «6,5 min» è un'attesa di tredici secondi sul tuo orologio. E il traffico **vive nel mondo** — rallenta
+> davvero le auto in centro e allunga le stime — ma nessuna rotta lo imposta: segue una tabella
+> relativa all'avvio, come prima (decisioni D76 e D79). Le stime sono in linea d'aria e non da OSRM,
+> di proposito: la demo deve ripetersi uguale e funzionare senza rete.
+
+A demo finita puoi premere «ETA minimo» a mano: il modo passa a Manual e ogni cambio automatico si
+ferma finché non riabiliti Auto. «Riabilita il modo Auto» rivaluta subito l'ultimo livello letto.
 
 **`pnpm demo:rebalancing` — riposizionamento (R10, R11, G9).** Basta la dashboard. C'è una partita a
 San Siro *adesso* e i veicoli sono altrove; il ciclo gira ogni quindici secondi invece che ogni
