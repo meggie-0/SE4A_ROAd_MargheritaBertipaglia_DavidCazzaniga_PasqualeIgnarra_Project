@@ -173,6 +173,35 @@ export interface RebalancingStartedEvent {
 }
 
 /**
+ * Un veicolo è stato assegnato a una corsa, **e perché lui** (decisione D79).
+ *
+ * È una decisione, come il cambio di modo e il riposizionamento, e come loro si comunica una volta
+ * sola chiamando `update()` direttamente: soggetto dell'Observer resta chi ha uno stato. La
+ * transizione `AVAILABLE → ASSIGNED` la notifica già il `Robotaxi`; questo evento dice ciò che la
+ * transizione non sa — con quale strategia, con che tempo, e quanto ci avrebbe messo il più vicino.
+ *
+ * **Diventa solo testo**, e i campi strutturati della consegna restano nulli: un evento che portasse
+ * `strategy` finirebbe nel pannello alert come una commutazione e riscriverebbe il pannello
+ * strategia della dashboard a ogni assegnazione (`alertCategoryOf`, `applyModeEvent`). Nel testo, al
+ * peggio, una riga dice una cosa imprecisa; nei campi sposterebbe lo schermo.
+ */
+export interface VehicleAllocatedEvent {
+  readonly kind: 'VEHICLE_ALLOCATED';
+  readonly occurredAt: Date;
+  readonly robotaxiId: string;
+  /**
+   * La strategia attiva, letta **accanto** ad `allocate()` e non dentro: una commutazione che cadesse
+   * fra le due letture etichetterebbe male questa riga, e solo lei. È la finestra che la D79 dichiara;
+   * chiuderla richiederebbe di cambiare la firma di `AllocationPort`, e con essa il cancello di M3.
+   */
+  readonly strategy: StrategyName;
+  /** Il tempo stimato del veicolo scelto verso il punto di ritiro, in minuti. */
+  readonly etaMinutes: number;
+  /** Il più vicino fra i candidati, **se non è lui lo scelto** e se se ne conosce il tempo. */
+  readonly nearest: { readonly robotaxiId: string; readonly etaMinutes: number } | null;
+}
+
+/**
  * Il `DomainEvent` della Figura 2.4: ciò che un soggetto notifica ai propri observer.
  *
  * **[M6]** I tre eventi aggiunti non nascono da un `Subject`, e non è un'incoerenza col DD §2.3.3:
@@ -187,7 +216,8 @@ export type DomainEvent =
   | StrategyChangedEvent
   | ModeChangedEvent
   | TrafficAlertEvent
-  | RebalancingStartedEvent;
+  | RebalancingStartedEvent
+  | VehicleAllocatedEvent;
 
 // ---------------------------------------------------------------------------------------------
 // Le due interfacce del pattern

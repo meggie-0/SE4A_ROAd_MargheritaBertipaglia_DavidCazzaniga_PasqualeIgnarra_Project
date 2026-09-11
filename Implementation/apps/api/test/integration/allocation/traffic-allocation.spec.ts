@@ -1,5 +1,6 @@
 import { MILAN_ZONES, haversineKm, nearestZone, type GeoPoint } from '@road/shared';
 
+import { recordOperator, type RecordedOperator } from '../../support/notifications';
 import { startApiHarness, type ApiHarness } from '../../support/postgres';
 
 /**
@@ -28,6 +29,8 @@ const DEMO_ENVIRONMENT: Readonly<Record<string, string>> = {
   TRAFFIC_SCRIPT: 'LOW:0,HIGH:60',
   TRAFFIC_CENTRE_ZONES: 'duomo,cadorna,porta-venezia,navigli,porta-romana',
   TRAFFIC_TIME_FACTORS: 'MEDIUM:1.6,HIGH:4',
+  // Ogni assegnazione lascia la sua riga nel registro dell'operatore (passo 4 della D79).
+  ALLOCATION_EXPLANATIONS: 'on',
 };
 const CENTRE = new Set(DEMO_ENVIRONMENT.TRAFFIC_CENTRE_ZONES?.split(','));
 
@@ -95,7 +98,11 @@ interface Assignment {
   readonly pickup: GeoPoint;
   readonly nearest: string;
   readonly chosen: string;
+  /** La riga che l'operatore ha letto per questa assegnazione. */
+  readonly explanation: string;
 }
+
+let dashboard: RecordedOperator;
 
 /**
  * Ogni prelievo della griglia, uno per volta, sulla stessa flotta intatta.
@@ -128,6 +135,7 @@ async function assignEveryPickup(secondsAfterStart: number): Promise<readonly As
     role: 'PASSENGER',
   });
   await harness.allocation.setActiveStrategy('MINIMUM_ETA', 'manual');
+  dashboard = recordOperator(harness.notificationSessions);
 
   const assignments: Assignment[] = [];
   for (const pickup of PICKUPS) {
@@ -142,7 +150,10 @@ async function assignEveryPickup(secondsAfterStart: number): Promise<readonly As
     });
     if (!outcome.accepted) throw new Error(`Nessun veicolo per ${pickup.lat},${pickup.lon}.`);
 
-    assignments.push({ pickup, nearest: nearest.id, chosen: outcome.robotaxiId });
+    const explanation =
+      dashboard.received.map((one) => one.message).find((m) => m.includes(' assegnato con ')) ?? '';
+    dashboard.received.length = 0;
+    assignments.push({ pickup, nearest: nearest.id, chosen: outcome.robotaxiId, explanation });
     await harness.rides.cancel(outcome.request.id, user.id);
   }
   return assignments;
@@ -184,6 +195,40 @@ describe('[R5][R8][R12] Con il centro congestionato, ETA minimo sceglie chi arri
       for (const { pickup, nearest, chosen } of notNearest) {
         expect(await etaOf(chosen, pickup)).toBeLessThan(await etaOf(nearest, pickup));
       }
+    },
+    HOOK_TIMEOUT_MS,
+  );
+
+  it(
+    'l’operatore legge perché: quale strategia, con che tempo, e quanto ci avrebbe messo il più vicino',
+    async () => {
+      const assignments = await assignEveryPickup(120);
+
+      for (const { nearest, chosen, explanation } of assignments) {
+        if (chosen === nearest) {
+          expect(explanation).toMatch(
+            new RegExp(
+              `^${chosen} assegnato con ETA minimo, [0-9]+,[0-9] min — è anche il più vicino$`,
+            ),
+          );
+          continue;
+        }
+
+        const shown = new RegExp(
+          `^${chosen} assegnato con ETA minimo, ([0-9]+,[0-9]) min — il più vicino, ${nearest}, ne avrebbe impiegati ([0-9]+,[0-9])$`,
+        ).exec(explanation);
+        expect(shown).not.toBeNull();
+
+        // Il distacco mostrato: la riga deve dimostrare qualcosa a chi la legge, non un decimo di
+        // minuto che il lettore attribuirebbe all'arrotondamento.
+        const chosenMinutes = Number((shown?.[1] ?? '').replace(',', '.'));
+        const nearestMinutes = Number((shown?.[2] ?? '').replace(',', '.'));
+        expect(nearestMinutes - chosenMinutes).toBeGreaterThanOrEqual(1);
+      }
+
+      // E nessuna di queste righe finisce nello storico degli alert: quello resta i quattro eventi
+      // di governo della D77, e qui non ce n'è nessuno.
+      expect(await harness.operatorAlerts.recentAlerts(100)).toEqual([]);
     },
     HOOK_TIMEOUT_MS,
   );

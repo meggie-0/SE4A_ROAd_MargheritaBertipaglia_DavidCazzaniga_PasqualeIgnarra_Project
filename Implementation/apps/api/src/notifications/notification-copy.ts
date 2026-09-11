@@ -133,6 +133,43 @@ function rideStatusMessage(status: string): string {
   }
 }
 
+/**
+ * Il nome delle due politiche nella riga di un'assegnazione (D79).
+ *
+ * In italiano, e non con i nomi di `STRATEGY_LABEL` qui sotto, perché la riga sta accanto al
+ * pannello strategia della dashboard, che le chiama così: la stessa politica non deve avere due nomi
+ * nella stessa schermata.
+ */
+const ALLOCATION_STRATEGY_LABEL: Readonly<Record<StrategyName, string>> = {
+  NEAREST_AVAILABLE: 'Più vicino disponibile',
+  MINIMUM_ETA: 'ETA minimo',
+};
+
+/** Un decimale e la virgola: «9,3». */
+function oneDecimal(minutes: number): string {
+  return minutes.toFixed(1).replace('.', ',');
+}
+
+/**
+ * La riga del registro operativo per un'assegnazione (D79).
+ *
+ * Tre forme, e la terza è quella per cui esiste: quando la strategia non ha scelto il più vicino,
+ * dice quanto ci avrebbe messo. «Il più vicino ne avrebbe impiegati 10,5» è ciò che rende leggibile
+ * una scelta che altrimenti, sulla mappa, sembrerebbe un errore.
+ */
+function allocationMessage(
+  robotaxiId: string,
+  strategy: StrategyName,
+  etaMinutes: number,
+  nearest: { readonly robotaxiId: string; readonly etaMinutes: number } | null,
+): string {
+  const head = `${robotaxiId} assegnato con ${ALLOCATION_STRATEGY_LABEL[strategy]}, ${oneDecimal(etaMinutes)} min`;
+  if (nearest === null) {
+    return strategy === 'NEAREST_AVAILABLE' ? head : `${head} — è anche il più vicino`;
+  }
+  return `${head} — il più vicino, ${nearest.robotaxiId}, ne avrebbe impiegati ${oneDecimal(nearest.etaMinutes)}`;
+}
+
 /** Il nome leggibile delle due politiche, per i messaggi che l'operatore vede (M6, R12, R13). */
 const STRATEGY_LABEL: Readonly<Record<StrategyName, string>> = {
   NEAREST_AVAILABLE: 'Nearest Available',
@@ -282,6 +319,25 @@ export function describeEvent(event: DomainEvent): NotificationDelivery {
         occurredAt: event.occurredAt,
         robotaxiId: event.robotaxiId,
         zoneId: event.targetZoneId,
+      };
+
+    /**
+     * Solo testo e il veicolo, per la ragione scritta su `VehicleAllocatedEvent`: `type`, `strategy`,
+     * `mode`, `trafficLevel` e `zoneId` restano nulli, quindi la consegna non lascia righe in
+     * `notification`, non raggiunge nessun passeggero, non è un alert e non sposta il pannello
+     * strategia. `robotaxiId` resta, perché il registro lo rende cliccabile per trovarlo sulla mappa.
+     */
+    case 'VEHICLE_ALLOCATED':
+      return {
+        ...NOTHING,
+        message: allocationMessage(
+          event.robotaxiId,
+          event.strategy,
+          event.etaMinutes,
+          event.nearest,
+        ),
+        occurredAt: event.occurredAt,
+        robotaxiId: event.robotaxiId,
       };
   }
 }

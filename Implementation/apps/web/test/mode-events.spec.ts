@@ -137,3 +137,36 @@ describe('[R13][NFR10] Una scelta manuale non cancella il livello osservato', ()
     expect(next?.trafficLevel).toBe('LOW');
   });
 });
+
+/**
+ * La riga che spiega un'assegnazione (decisione D79), nella forma **esatta** in cui il backend la
+ * spedisce: `NOTHING` più il testo, l'istante e il veicolo — e nient'altro, di proposito.
+ *
+ * Il caso che questo test difende è quello che si vedrebbe a schermo se l'evento portasse la
+ * strategia: ogni assegnazione riscriverebbe il pannello, e un'assegnazione decisa un istante prima
+ * di una commutazione automatica lo riporterebbe indietro proprio nel momento che la dimostrazione
+ * vuole mostrare.
+ */
+const ALLOCATION_EXPLAINED = {
+  ...NOTHING,
+  message:
+    'RT-22 assegnato con ETA minimo, 9,3 min — il più vicino, RT-06, ne avrebbe impiegati 10,5',
+  occurredAt: '2026-05-04T19:31:00.000Z',
+  robotaxiId: 'RT-22',
+} satisfies NotificationPush;
+
+describe('[R8][R13] Una riga di assegnazione non tocca il pannello strategia', () => {
+  it('non scrive niente in cache: restituisce lo stesso oggetto che la dashboard sta mostrando', () => {
+    // `toBe` e non `toEqual`: un oggetto nuovo con gli stessi valori farebbe comunque ridisegnare il
+    // pannello, ed è la scrittura in sé che non deve avvenire.
+    expect(applyModeEvent(SHOWING, ALLOCATION_EXPLAINED, null)).toBe(SHOWING);
+  });
+
+  it('nemmeno dopo una commutazione più vecchia già applicata', () => {
+    const switched: ModeResponse = { ...SHOWING, activeStrategy: 'MINIMUM_ETA' };
+
+    expect(applyModeEvent(switched, ALLOCATION_EXPLAINED, '2026-05-04T19:30:30.000Z')).toBe(
+      switched,
+    );
+  });
+});

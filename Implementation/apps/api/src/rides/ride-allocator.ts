@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { GeoPoint } from '@road/shared';
+import { ConfigService } from '@nestjs/config';
+import { haversineKm, type GeoPoint, type StrategyName } from '@road/shared';
 
 import { AllocationPort } from '../allocation/allocation.port';
 import { ExternalServicesPort } from '../external/external-services.port';
@@ -16,7 +17,10 @@ import {
   type ReservationRecord,
   type TimeWindow,
 } from '../persistence/persistence.port';
+import { NotificationPort } from '../notifications/notification.port';
 import { ClockPort } from '../platform/clock.port';
+
+import { readAllocationExplanations } from './rides.config';
 
 /**
  * Il tratto comune fra la richiesta immediata, la prenotazione anticipata e la ri-allocazione
@@ -99,7 +103,14 @@ export class RideAllocator {
     private readonly allocation: AllocationPort,
     private readonly external: ExternalServicesPort,
     private readonly clock: ClockPort,
-  ) {}
+    private readonly notifications: NotificationPort,
+    config: ConfigService,
+  ) {
+    this.explainAllocations = readAllocationExplanations(config);
+  }
+
+  /** Se ogni assegnazione lascia una riga di spiegazione all'operatore (D79). Spenta di default. */
+  private readonly explainAllocations: boolean;
 
   /**
    * Quanto dura la corsa, dal ritiro alla destinazione, in minuti.
@@ -136,6 +147,9 @@ export class RideAllocator {
    */
   async run(request: RideAllocationRequest): Promise<RideAllocationResult> {
     let remaining = [...request.candidates];
+    // La strategia si legge **prima** di `allocate()`, che la rilegge per conto proprio: è la
+    // finestra dichiarata nella D79, e al peggio etichetta male il testo di una riga.
+    const strategy = this.explainAllocations ? await this.allocation.getActiveStrategy() : null;
 
     while (remaining.length > 0) {
       const chosen = await this.allocation.allocate({ pickup: request.pickup }, remaining);
@@ -177,6 +191,10 @@ export class RideAllocator {
         continue;
       }
 
+      if (request.assign && strategy !== null) {
+        await this.explain(chosen, etaToPickupMinutes, strategy, request);
+      }
+
       return {
         allocated: true,
         robotaxi: chosen,
@@ -187,6 +205,50 @@ export class RideAllocator {
     }
 
     return { allocated: false };
+  }
+
+  /**
+   * La riga del registro operativo: chi, con quale strategia, con che tempo — e il più vicino, se non
+   * è lui (decisione D79).
+   *
+   * Il più vicino si cerca fra **tutti** i candidati della richiesta, non fra quelli rimasti dopo un
+   * eventuale rifiuto per concorrenza: la domanda che la riga risponde è «perché non il più vicino?»,
+   * e quella vale rispetto alla flotta che c'era. Il suo tempo si chiede allo stesso stimatore che ha
+   * servito la strategia, nello stesso istante, così i due numeri sono confrontabili. Se il
+   * fornitore non sa rispondere per lui, la riga lo tace invece di inventarlo.
+   */
+  private async explain(
+    chosen: RobotaxiSnapshot,
+    etaMinutes: number,
+    strategy: StrategyName,
+    request: RideAllocationRequest,
+  ): Promise<void> {
+    const nearest = request.candidates.reduce<RobotaxiSnapshot | null>(
+      (best, candidate) =>
+        best === null || haversineKm(candidate, request.pickup) < haversineKm(best, request.pickup)
+          ? candidate
+          : best,
+      null,
+    );
+
+    let nearestEta: { robotaxiId: string; etaMinutes: number } | null = null;
+    if (nearest !== null && nearest.id !== chosen.id) {
+      const [estimate] = await this.external.getETA(
+        [{ id: nearest.id, position: { lat: nearest.lat, lon: nearest.lon } }],
+        request.pickup,
+      );
+      const minutes = finiteMinutes(estimate?.etaMinutes);
+      if (minutes !== null) nearestEta = { robotaxiId: nearest.id, etaMinutes: minutes };
+    }
+
+    await this.notifications.update({
+      kind: 'VEHICLE_ALLOCATED',
+      occurredAt: this.clock.now(),
+      robotaxiId: chosen.id,
+      strategy,
+      etaMinutes,
+      nearest: nearestEta,
+    });
   }
 
   /**
