@@ -30,12 +30,14 @@ export class RebalancingScheduler {
 
   constructor(private readonly rebalancing: RebalancingPort) {}
 
-  /**
-   * La cadenza si accorcia da configurazione (decisione D76), con i dieci minuti come default.
-   * `process.env` e non `ConfigService`: `@Cron` valuta l'argomento all'import, e `pnpm dev` carica
-   * il file d'ambiente con `--env-file-if-exists` prima che qualunque modulo venga importato.
-   */
-  @Cron(process.env.REBALANCING_CRON ?? CronExpression.EVERY_10_MINUTES)
+/**
+ * The scheduling frequency can be overridden through configuration.
+ * An absent or empty value uses the default ten-minute interval.
+ *
+ * `process.env` is used instead of `ConfigService` because `@Cron`
+ * evaluates its argument when the module is imported.
+ */
+ @Cron(process.env.REBALANCING_CRON?.trim() || CronExpression.EVERY_10_MINUTES)
   async triggerRebalancingCycle(): Promise<void> {
     await this.runOnce();
   }
