@@ -29,12 +29,12 @@ export class AdvanceBookingSchedule {
   constructor(private readonly activator: AdvanceBookingActivatorPort) {}
 
   /**
- * The scheduling frequency can be overridden through configuration.
- * An absent or empty value uses the default ten-minute interval.
- *
- * `process.env` is used instead of `ConfigService` because `@Cron`
- * evaluates its argument when the module is imported.
- */
+   * The scheduling frequency can be overridden through configuration.
+   * An absent or empty value uses the default ten-minute interval.
+   *
+   * `process.env` is used instead of `ConfigService` because `@Cron`
+   * evaluates its argument when the module is imported.
+   */
   @Cron(process.env.ADVANCE_BOOKING_CRON?.trim() || CronExpression.EVERY_MINUTE)
   async activateDueBookings(): Promise<void> {
     try {

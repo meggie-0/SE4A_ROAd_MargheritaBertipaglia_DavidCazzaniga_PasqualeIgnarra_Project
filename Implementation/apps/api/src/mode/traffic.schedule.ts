@@ -30,12 +30,12 @@ export class TrafficSchedule {
 
   constructor(private readonly monitor: TrafficMonitorPort) {}
   /**
- * The scheduling frequency can be overridden through configuration.
- * An absent or empty value uses the default ten-minute interval.
- *
- * `process.env` is used instead of `ConfigService` because `@Cron`
- * evaluates its argument when the module is imported.
- */
+   * The scheduling frequency can be overridden through configuration.
+   * An absent or empty value uses the default ten-minute interval.
+   *
+   * `process.env` is used instead of `ConfigService` because `@Cron`
+   * evaluates its argument when the module is imported.
+   */
   @Cron(process.env.TRAFFIC_CRON?.trim() || CronExpression.EVERY_5_MINUTES)
   async readTrafficLevel(): Promise<void> {
     try {
