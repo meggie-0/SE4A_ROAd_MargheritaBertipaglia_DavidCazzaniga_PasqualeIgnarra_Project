@@ -87,6 +87,29 @@ const STADIUM_EXPECTED_RIDES = 6;
 const QUIET_DEMAND = 1;
 
 const MINUTE_MS = 60_000;
+const DEMO_FLEET_OFFSETS: readonly {
+  readonly lat: number;
+  readonly lon: number;
+}[] = [
+  { lat: 0.001, lon: 0.001 },
+  { lat: 0.001, lon: -0.001 },
+  { lat: -0.001, lon: 0.001 },
+  { lat: -0.001, lon: -0.001 },
+  { lat: 0.002, lon: 0 },
+  { lat: -0.002, lon: 0 },
+  { lat: 0, lon: 0.002 },
+  { lat: 0, lon: -0.002 },
+];
+
+const LINATE_DEMO_FLEET_POSITIONS: readonly {
+  readonly lat: number;
+  readonly lon: number;
+}[] = [
+  { lat: 45.4615, lon: 9.2782 },
+  { lat: 45.4617, lon: 9.2785 },
+  { lat: 45.4619, lon: 9.2788 },
+  { lat: 45.4621, lon: 9.2791 },
+];
 
 runCommand(async (context) => {
   const persistence = context.get(PersistencePort);
@@ -194,21 +217,36 @@ runCommand(async (context) => {
    * corsa dalla volta precedente non mostrerebbe il riposizionamento, mostrerebbe il residuo.
    */
   let relocated = 0;
+  const vehiclesPerZone = new Map<string, number>();
+
   for (const robotaxi of robotaxis) {
     const targetZoneId = robotaxi.zoneId === STADIUM_ZONE_ID ? RELOCATION_ZONE_ID : robotaxi.zoneId;
+
     const home = targetZoneId === null ? undefined : zoneById(targetZoneId);
+
     if (home === undefined) continue;
 
-    if (robotaxi.zoneId === STADIUM_ZONE_ID) relocated += 1;
+    if (robotaxi.zoneId === STADIUM_ZONE_ID) {
+      relocated += 1;
+    }
+
+    const index = vehiclesPerZone.get(home.id) ?? 0;
+    vehiclesPerZone.set(home.id, index + 1);
+
+    const offset = DEMO_FLEET_OFFSETS[index % DEMO_FLEET_OFFSETS.length]!;
+
+    const linatePosition =
+      home.id === 'linate'
+        ? LINATE_DEMO_FLEET_POSITIONS[index % LINATE_DEMO_FLEET_POSITIONS.length]!
+        : undefined;
 
     await persistence.update('robotaxi', robotaxi.id, {
       state: 'AVAILABLE',
       zoneId: home.id,
-      lat: home.lat,
-      lon: home.lon,
+      lat: linatePosition?.lat ?? home.lat + offset.lat,
+      lon: linatePosition?.lon ?? home.lon + offset.lon,
     });
   }
-
   /*
    * Ciò che la dimostrazione precedente ha lasciato aperto.
    *

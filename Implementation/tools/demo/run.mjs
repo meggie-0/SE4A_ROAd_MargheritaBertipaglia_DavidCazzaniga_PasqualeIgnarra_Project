@@ -110,11 +110,8 @@ const SCENARIOS = {
       TRAFFIC_TIME_FACTORS: 'MEDIUM:1.6,HIGH:4',
       // Ogni assegnazione lascia la sua riga nel log operativo.
       ALLOCATION_EXPLANATIONS: 'on',
-      // Le stime in linea d'aria, non OSRM: la demo deve ripetersi uguale e funzionare senza rete,
-      // e cinquanta matrici da sessantaquattro candidati non sono un carico da chiedere al server
-      // pubblico. Vuota nell'ambiente vince sul `.env`: verificato su Node, `ConfigModule` e
-      // `ConfigService`.
-      OSRM_BASE_URL: '',
+
+      OSRM_BASE_URL: 'https://router.project-osrm.org',
       // Più lento degli scenari a effetto immediato, come il 4: le auto devono vedersi muovere.
       SIMULATOR_TICK_SECONDS: '15',
     },
