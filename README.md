@@ -23,7 +23,7 @@ The project is organized into three main deliverables:
   System architecture, component design, interfaces, runtime behavior and design decisions.
 
 - **[Implementation](Implementation/)**  
-  Complete implementation of the ROAd system, including the backend, operator dashboard, passenger application, fleet simulator, automated tests and demonstration scenarios.  
+  Complete implementation of the ROAd system and demonstration scenarios.  
   Open the **[Implementation README](Implementation/README.md)** for installation instructions, execution commands and demo procedures.
 
 ## Project Proposal
