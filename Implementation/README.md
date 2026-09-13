@@ -159,7 +159,7 @@ Before running a demo:
 
 Each demo automatically prepares the required database state and starts the application stack.
 
-### Scenario 1 — Immediate ride
+### Scenario 1 - Immediate ride
 
 ```powershell
 pnpm demo:immediate --live
@@ -167,7 +167,7 @@ pnpm demo:immediate --live
 
 Demonstrates an immediate passenger ride request, robotaxi allocation, vehicle approach, passenger pickup, and ride execution.
 
-### Scenario 2 — Advance booking
+### Scenario 2 - Advance booking
 
 ```powershell
 pnpm demo:advance
@@ -175,7 +175,7 @@ pnpm demo:advance
 
 Demonstrates the creation of an advance booking and its automatic activation before the requested departure time.
 
-### Scenario 3 — Traffic-aware allocation
+### Scenario 3 - Traffic-aware allocation
 
 ```powershell
 pnpm demo:traffic
@@ -183,7 +183,7 @@ pnpm demo:traffic
 
 Demonstrates changing traffic conditions, automatic allocation-strategy switching, and traffic-aware robotaxi assignment.
 
-### Scenario 4 — Fleet rebalancing
+### Scenario 4 - Fleet rebalancing
 
 ```powershell
 pnpm demo:rebalancing

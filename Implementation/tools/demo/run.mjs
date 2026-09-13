@@ -28,120 +28,102 @@ import { run, runOrExit, buildPackages, colors, repoRoot } from '../lib/run.mjs'
  */
 const SCENARIOS = {
   immediate: {
-    durata: 'la corsa si completa in un paio di minuti dall’avvio.',
+    durata: 'circa due minuti, a seconda del percorso scelto.',
     guida: {
-      apri: ['App passeggero  http://localhost:5174', 'Dashboard operatore  http://localhost:5173'],
+      apri: [
+        'App passeggero      http://localhost:5174',
+        'Dashboard operatore http://localhost:5173',
+      ],
       guarda: [
-        'Nell’app passeggero: accedi, tocca la mappa per il ritiro e per la destinazione, chiedi la corsa.',
-        'Il pannello passa a vista di stato e segue assegnazione, avvicinamento, ritiro e corsa.',
-        'Sulla dashboard: il conteggio «Disponibili» cala di uno, «In corsa» sale, e il log operativo',
-        'mostra le transizioni del veicolo mentre accadono — senza ricaricare niente (NFR2).',
+        '1. Nell’app passeggero, accedi e seleziona sulla mappa il punto di partenza e la destinazione.',
+        '2. Richiedi la corsa e osserva il passaggio attraverso le diverse fasi del viaggio.',
+        '3. Nella dashboard operatore, individua il taxi assegnato e seguilo mentre raggiunge il passeggero.',
+        '4. Osserva il cambio di stato del veicolo e gli aggiornamenti in tempo reale nel log operativo.',
       ],
     },
     scripted: true,
-    title: 'Scenario 1 — corsa immediata',
+    title: 'Scenario 1 - corsa immediata',
     grep: 'Scenario 1',
     dataset: 'seed',
     env: { SIMULATOR_TICK_SECONDS: '45' },
   },
   advance: {
-    durata: 'dipende da quando prenoti: l’attivazione scatta un minuto prima dell’orario scelto.',
+    durata:
+      'circa tre o quattro minuti. Per velocizzare la demo, prenota una corsa con partenza fra due o tre minuti.',
     guida: {
-      apri: ['App passeggero  http://localhost:5174', 'Dashboard operatore  http://localhost:5173'],
+      apri: [
+        'App passeggero      http://localhost:5174',
+        'Dashboard operatore http://localhost:5173',
+      ],
       guarda: [
-        'Prenota una corsa per **fra due o tre minuti**: l’anticipo di attivazione qui è di un minuto',
-        'invece di quindici, e il controllo gira ogni dieci secondi invece che ogni minuto.',
-        'La prenotazione resta in elenco, separata dalla corsa live, finché non scatta l’attivazione.',
-        'Quando manca un minuto all’orario il veicolo viene assegnato da solo e la corsa comincia:',
-        'nessuno ha premuto niente, ed è il punto dello scenario.',
+        '1. Nell’app passeggero, prenota una corsa con partenza fra due o tre minuti.',
+        '2. La prenotazione compare inizialmente tra le corse programmate, senza un taxi ancora in viaggio.',
+        '3. Un minuto prima dell’orario previsto, il sistema attiva automaticamente la corsa.',
+        '4. Osserva l’assegnazione del taxi e l’inizio della corsa sia nell’app passeggero sia nella dashboard operatore.',
       ],
     },
-    // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
-    title: 'Scenario 2 — prenotazione anticipata',
+    title: 'Scenario 2 - prenotazione anticipata',
     grep: 'Scenario 2',
     dataset: 'seed',
     env: {
-      // Rallentato come lo scenario 4, e per la stessa ragione misurata: a 45 la corsa che segue
-      // l'attivazione dura **sette secondi** — il veicolo è assegnato, arriva e ha finito prima che
-      // si faccia in tempo a guardare la mappa. A 15 il tragitto dura una cinquantina di secondi.
       SIMULATOR_TICK_SECONDS: '15',
-      // L'anticipo di attivazione scende da quindici minuti a uno, e il controllo passa da ogni
-      // minuto a ogni dieci secondi: senza entrambi, lo scenario si guarderebbe per un quarto d'ora.
       RESERVATION_ACTIVATION_LEAD_MINUTES: '1',
       ADVANCE_BOOKING_CRON: '*/10 * * * * *',
     },
   },
   traffic: {
-    durata:
-      'circa tre minuti e mezzo: le richieste finiscono a 185 secondi, il traffico torna LOW a 180. ' +
-      'Poi lo stack resta acceso e le ultime corse si concludono da sole.',
+    durata: 'circa tre minuti. Lo scenario evolve automaticamente e non richiede interazione.',
     guida: {
-      apri: ['Dashboard operatore  http://localhost:5173'],
+      apri: ['Dashboard operatore http://localhost:5173'],
       guarda: [
-        'Una città in cui la gente chiede corse, e il traffico che sale **in centro**. Guarda la mappa,',
-        'il pannello «Strategia di allocazione» e il «Log operativo», dove ogni assegnazione dice con',
-        'quale strategia è stata decisa e — quando non è andata al più vicino — quanto ci avrebbe messo lui.',
-        '    0s  LOW     richieste sparse per la città: vince sempre l’auto più vicina',
-        '   40s          il ritmo sale e la mappa si riempie',
-        '   60s  MEDIUM  un alert suggerisce ETA minimo, e la strategia NON cambia; le auto in centro rallentano',
-        '   90s  HIGH    il sistema commuta da solo a «ETA minimo», e i ritiri ai bordi del centro vanno',
-        '                ad auto che arrivano dalla periferia: lì si viaggia, in centro no',
-        '  150s  MEDIUM  resta su ETA minimo: è l’isteresi (NFR9)',
-        '  180s  LOW     solo ora rientra su «Più vicino disponibile»',
-        'I tempi nel log sono del mondo simulato, che corre trenta volte più veloce del tuo orologio.',
+        'Osserva contemporaneamente la mappa, la strategia di allocazione e il log operativo.',
+        '',
+        '  0 s   LOW     Il sistema usa la strategia «Più vicino disponibile».',
+        ' 60 s   MEDIUM  Il traffico aumenta nelle zone centrali e viene mostrato un suggerimento.',
+        ' 90 s   HIGH    Il sistema passa automaticamente alla strategia «ETA minimo».',
+        '                Alcuni taxi più lontani possono risultare più convenienti grazie alle condizioni di traffico.',
+        '150 s   MEDIUM  La strategia «ETA minimo» viene mantenuta per evitare cambi troppo frequenti.',
+        '180 s   LOW     Il sistema torna automaticamente a «Più vicino disponibile».',
+        '',
+        'Durante lo scenario vengono generate automaticamente nuove richieste di corsa.',
+        'Nel log operativo puoi vedere quale strategia ha determinato ogni assegnazione.',
       ],
     },
-    // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
-    // Le richieste di corsa le fa il generatore, attraverso l'API pubblica (decisione D79).
     requests: true,
-    title: 'Scenario 3 — traffico, domanda e allocazione',
+    title: 'Scenario 3 - traffico e allocazione dinamica',
     grep: 'Scenario 3',
     dataset: 'seed',
     env: {
       TRAFFIC_SOURCE: 'scripted',
-      // Il centro: basso, medio a un minuto, alto da un minuto e mezzo, e ritorno.
       TRAFFIC_SCRIPT: 'LOW:0,MEDIUM:60,HIGH:90,MEDIUM:150,LOW:180',
-      // Il monitor legge ogni dieci secondi, quindi ogni gradino della tabella viene osservato.
       TRAFFIC_CRON: '*/10 * * * * *',
-      // Il traffico vive nel mondo (D79): sale in centro, rallenta le auto e allunga le stime.
       TRAFFIC_CENTRE_ZONES: 'duomo,cadorna,porta-venezia,navigli,porta-romana',
       TRAFFIC_TIME_FACTORS: 'MEDIUM:1.6,HIGH:4',
-      // Ogni assegnazione lascia la sua riga nel log operativo.
       ALLOCATION_EXPLANATIONS: 'on',
-
-      OSRM_BASE_URL: 'https://router.project-osrm.org',
-      // Più lento degli scenari a effetto immediato, come il 4: le auto devono vedersi muovere.
       SIMULATOR_TICK_SECONDS: '15',
     },
   },
   rebalancing: {
-    durata:
-      'circa due minuti: sette partenze, una ogni quindici secondi — sei coprono la domanda, la ' +
-      'settima è di troppo perché il ciclo non conta chi è ancora in viaggio. Poi non parte più ' +
-      'nessuno: se apri la pagina dopo, trovi la flotta ferma e il pannello alert che lo racconta.',
+    durata: 'circa due minuti. Lo scenario evolve automaticamente e non richiede interazione.',
     guida: {
-      apri: ['Dashboard operatore  http://localhost:5173'],
+      apri: ['Dashboard operatore http://localhost:5173'],
       guarda: [
-        'C’è una partita a San Siro adesso, e i veicoli sono altrove. Il ciclo gira ogni quindici',
-        'secondi invece che ogni dieci minuti.',
-        'Guarda la mappa: un veicolo inattivo per volta si mette in viaggio verso lo stadio, con il',
-        'marker nel colore di «In riposizionamento», e il log operativo ne dà conto.',
-        'Quando arriva torna «Disponibile» **nella zona raggiunta**, senza attendere il ciclo',
-        'successivo — è la telemetria a chiudere il riposizionamento (decisione D74).',
+        'È in corso un evento a San Siro e la domanda prevista nella zona è aumentata.',
+        '',
+        '1. Osserva la distribuzione iniziale della flotta sulla mappa.',
+        '2. A intervalli regolari, il sistema seleziona automaticamente taxi disponibili da altre zone.',
+        '3. I taxi selezionati passano allo stato «In riposizionamento» e si dirigono verso San Siro.',
+        '4. Il log operativo mostra ogni decisione di rebalancing.',
+        '5. Quando un taxi raggiunge la zona di destinazione torna automaticamente «Disponibile».',
       ],
     },
-    // Lo script Playwright di questo scenario non è ancora scritto: è il task successivo.
     scripted: false,
-    title: 'Scenario 4 — riposizionamento verso San Siro',
+    title: 'Scenario 4 — rebalancing verso San Siro',
     grep: 'Scenario 4',
-    // La serata con la partita: il seed costruisce la città, `db:demo` ci mette sopra l'evento.
     dataset: 'demo',
     env: {
-      // Più lento degli altri scenari, di proposito: a 45 un veicolo copre mezza Milano in cinque
-      // secondi, cioè lampeggia. Qui il movimento **è** ciò che si deve vedere, quindi vale la pena
-      // che duri quanto l'intervallo fra due partenze.
       SIMULATOR_TICK_SECONDS: '15',
       REBALANCING_CRON: '*/15 * * * * *',
     },
@@ -307,25 +289,18 @@ if (!(await waitForApi())) {
   );
 } else {
   console.log(colors.bold('\n' + '─'.repeat(78)));
-  console.log(colors.bold('Tutto pronto. Da aprire adesso:'));
+  console.log(colors.bold('Demo pronta.'));
+  console.log(colors.bold('\nApri:'));
   for (const riga of scenario.guida.apri) console.log(`  ${riga}`);
 
-  console.log(colors.bold('\nChe cosa guardare:'));
+  console.log(colors.bold('\nStep della demo:'));
   for (const riga of scenario.guida.guarda) console.log(`  ${riga}`);
 
   if (scenario.durata !== undefined) {
     console.log(colors.bold(`\nQuanto dura: ${scenario.durata}`));
   }
 
-  if (scenario.scripted !== true) {
-    console.log(
-      colors.dim(
-        '\nQuesto scenario non ha ancora uno script Playwright: si guarda, non si rigioca da solo.',
-      ),
-    );
-  }
-
-  console.log(colors.bold('\nLo stack resta acceso. Ctrl-C per fermarlo.'));
+  console.log(colors.bold('\nLa demo è in esecuzione. Premi Ctrl+C per terminarla.'));
   console.log(colors.bold('─'.repeat(78) + '\n'));
 
   /**
@@ -335,7 +310,7 @@ if (!(await waitForApi())) {
    * guarda: i primi quaranta secondi sono volutamente tranquilli, ed è il tempo di aprire la pagina.
    */
   if (scenario.requests === true) {
-    console.log(colors.dim('Richieste di corsa, dal generatore della demo:'));
+    console.log(colors.dim('Generazione automatica delle richieste di corsa:'));
     // Import dinamico, e non in testa al file: il generatore legge la build di `packages/shared`,
     // che su un clone pulito esiste solo dopo `buildPackages()` qui sopra.
     const { runRideRequests } = await import('./ride-requests.mjs');
