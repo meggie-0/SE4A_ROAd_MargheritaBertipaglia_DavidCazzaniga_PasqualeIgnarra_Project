@@ -3,7 +3,7 @@
 skinparam backgroundColor white
 skinparam shadowing false
 skinparam defaultFontName Arial
-skinparam defaultFontSize 14
+skinparam defaultFontSize 18
 skinparam dpi 150
 skinparam maxMessageSize 90
 
@@ -43,104 +43,71 @@ sequenceDiagram {
 hide footbox
 autonumber
 
-' Component-level view: arguments and returned DTOs are abbreviated.
-' PersistenceManager includes database access; its internal SQL is omitted.
-' Internal helper work is grouped under the component that owns it.
-' Calls to update(event) include subject notification where applicable.
-' WebSocket delivery uses the sessions registered by the API Gateway.
-
-participant "sched:RebalancingScheduler" as S
+participant "scheduler:RebalancingScheduler" as Scheduler
 participant "rbm:RebalancingManager" as RBM
 participant "pm:PersistenceManager" as PM
 participant "fm:FleetMonitor" as FM
 participant "esg:ExternalServicesGateway" as ESG
 participant "nm:NotificationManager" as NM
 participant "api:APIGateway" as API
-participant "op:FleetOperatorClient" as OP
+participant "operatorClient:FleetOperatorClient" as Operator
 
-activate OP
-activate S
-S -> RBM : rebalance()
+activate Scheduler
+
+Scheduler -> RBM: rebalance()
 activate RBM
 
-group gather demand-planning inputs
-    RBM -> PM : find(zone)
-    activate PM
-    PM --> RBM : zones and centroids
-    deactivate PM
-    RBM -> PM : find(demand_sample, current weekly hour slot)
-    activate PM
-    PM --> RBM : historical baseline
-    deactivate PM
-    RBM -> PM : find(demand_event, active at current time)
-    activate PM
-    PM --> RBM : active events
-    deactivate PM
-    RBM -> FM : getAvailableRobotaxis()
-    activate FM
-    FM --> RBM : idleRobotaxis
-    deactivate FM
-end
+RBM -> PM: getDemandData()
+activate PM
+PM --> RBM: demandData
+deactivate PM
 
-RBM -> RBM : estimate zone demand and available supply
-RBM -> RBM : rank zones by decreasing deficit
+RBM -> FM: getAvailableRobotaxis()
+activate FM
+FM --> RBM: availableRobotaxis
+deactivate FM
 
-opt zones with positive deficit exist
-    loop for each target zone in deficit order
-        loop until one vehicle is dispatched or no suitable candidate remains
-            RBM -> RBM : select nearest unused idle robotaxi\nfrom a zone with surplus availability
-            opt a suitable candidate exists
-                RBM -> FM : requestRebalancing(robotaxiId)
-                activate FM
-                alt transition to REBALANCING persisted successfully
-                    FM -> NM : update(RobotaxiStateChangedEvent: REBALANCING)
-                    activate NM
-                    NM ->> API : push(fleet state update)
-                    activate API
-                    API ->> OP : fleet state update
-                    deactivate API
-                    deactivate NM
-                    FM --> RBM : transition completed
-                else illegal transition or concurrent state change
-                    FM --> RBM : transition error
-                end
-                deactivate FM
+RBM -> RBM: analyzeDemand(demandData,\navailableRobotaxis)
 
-                alt transition completed
-                    RBM -> RBM : mark vehicle used and decrease donor-zone surplus
-                    RBM -> PM : create(rebalancing_action,\nrobotaxiId, targetZoneId, TRIGGERED)
-                    activate PM
-                    deactivate PM
-                    RBM -> ESG : commandRoute(robotaxiId, routeToTargetCentroid)
-                    activate ESG
-                    ESG --> RBM : route information
-                    deactivate ESG
-                    RBM -> NM : update(RebalancingStartedEvent, robotaxiId, targetZoneId)
-                    activate NM
-                    NM ->> API : push(rebalancing alert)
-                    activate API
-                    API ->> OP : rebalancing alert
-                    deactivate API
-                    deactivate NM
-                else transition failed
-                    RBM -> RBM : exclude vehicle and try the next candidate
-                end
-            end
-        end
+RBM -> RBM: identifyDeficitZones()
+RBM -> RBM: selectVehiclesAndTargetZones()
+
+alt rebalancing needed
+
+    loop for each selected robotaxi
+
+        RBM -> FM: requestRebalancing(robotaxi)
+        activate FM
+        FM --> RBM: rebalancingStarted
+        deactivate FM
+
+        RBM -> PM: saveRebalancingAction(robotaxi,\ntargetZone)
+        activate PM
+        PM --> RBM: actionSaved
+        deactivate PM
+
+        RBM -> ESG: commandRoute(robotaxi,\ntargetZone)
+        activate ESG
+        ESG --> RBM: commandAccepted
+        deactivate ESG
+
+        RBM ->> NM: update(RebalancingStartedEvent)
+        activate NM
+        NM ->> API: push(RebalancingStartedEvent)
+        API ->> Operator: push(RebalancingStartedEvent)
+        deactivate NM
+
     end
+
+else no rebalancing needed
+
+    RBM -> RBM: keepCurrentFleetDistribution()
+
 end
 
-RBM --> S : plan and dispatched actions
+RBM --> Scheduler: rebalancingCompleted
+
 deactivate RBM
-deactivate S
-
-note over S, ESG
-    This diagram shows demand planning and dispatch.
-    No new action is created if no suitable vehicle can be sent.
-    Arrival completion runs independently through
-    completeArrivedVehicles() -> completeArrivedRebalancing().
-end note
-
-deactivate OP
+deactivate Scheduler
 
 @enduml

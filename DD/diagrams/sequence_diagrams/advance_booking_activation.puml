@@ -3,7 +3,7 @@
 skinparam backgroundColor white
 skinparam shadowing false
 skinparam defaultFontName Arial
-skinparam defaultFontSize 14
+skinparam defaultFontSize 18
 skinparam dpi 150
 skinparam maxMessageSize 90
 
@@ -43,162 +43,66 @@ sequenceDiagram {
 hide footbox
 autonumber
 
-' Component-level view: arguments and returned DTOs are abbreviated.
-' PersistenceManager includes database access; its internal SQL is omitted.
-' Internal helper work is grouped under the component that owns it.
-' Calls to update(event) include subject notification where applicable.
-' WebSocket delivery uses the sessions registered by the API Gateway.
+participant "sched:AdvanceBookingSchedule" as sched
+participant "aba:AdvanceBookingActivator" as aba
+participant "pm:PersistenceManager" as pm
+participant "fm:FleetMonitor" as fm
+participant "am:AllocationManager" as am
 
-participant "sched:AdvanceBookingSchedule" as S
-participant "aba:AdvanceBookingActivator" as ABA
-participant "pm:PersistenceManager" as PM
-participant "fm:FleetMonitor" as FM
-participant "am:AllocationManager" as AM
-participant "esg:ExternalServicesGateway" as ESG
-participant "nm:NotificationManager" as NM
+sched -> aba: activateDueBookings(now)
 
-note over ABA
-    Internal part of the RideRequestManager component.
-    RideAllocator and RideJournal work is grouped here.
-end note
-
-activate S
-S -> ABA : runOnce()
-activate ABA
-ABA -> PM : find(booking, activationDueAt <= now, closedAt = null)
-activate PM
-PM --> ABA : dueBookings
-deactivate PM
+aba -> pm: getDueBookings(now)
+activate pm
+pm --> aba: dueBookings
+deactivate pm
 
 loop for each due booking
-    ABA -> PM : find(ride_request, booking.rideRequestId)
-    activate PM
-    PM --> ABA : request
-    deactivate PM
 
-    alt request missing or no longer ACCEPTED
-        ABA -> PM : update(booking, closedAt = now)
-        activate PM
-        deactivate PM
-    else request still ACCEPTED
-        ABA -> FM : getCandidates()
-        activate FM
-        FM --> ABA : candidates in AVAILABLE or REBALANCING
-        deactivate FM
+    aba -> fm: getCandidates()
+    activate fm
+    fm --> aba: candidates
+    deactivate fm
 
-        opt reserved robotaxi is still a candidate
-            ABA -> PM : update(ride_request, assignedRobotaxiId = reservedId)
-            activate PM
-            deactivate PM
-            ABA -> FM : assign(reservedId, rideAssignment)
-            activate FM
-            alt state transition persisted successfully
-                FM -> NM : update(RobotaxiStateChangedEvent: ASSIGNED)
-                activate NM
-                deactivate NM
-                FM --> ABA : assignment completed
-            else illegal transition or concurrent state change
-                FM --> ABA : transition error
-            end
-            deactivate FM
-        end
+    alt reserved robotaxi still eligible
 
-        opt reserved robotaxi was not assigned
-            ABA -> PM : update(oldReservation, releasedAt = now)
-            activate PM
-            deactivate PM
-            ABA -> ESG : getETA(pickupOrigin, destination)
-            activate ESG
-            ESG --> ABA : estimatedRideDuration
-            deactivate ESG
+        aba -> fm: assign(reservedRobotaxi, request)
+        activate fm
+        fm --> aba: assignmentConfirmed
+        deactivate fm
 
-            opt ride duration can be estimated
-                ABA -> ABA : compute nominal booking window
-                ABA -> PM : filterAvailable(candidateIds, nominalWindow)
-                activate PM
-                PM --> ABA : availableCandidateIds
-                deactivate PM
+    else reserved robotaxi no longer eligible
 
-                loop while not assigned and candidates remain
-                    ABA -> AM : allocate(request, remainingCandidates)
-                    activate AM
-                    note over AM, ESG
-                        The active strategy is read from persistence.
-                        Only MinimumETAStrategy requests ranking ETAs;
-                        NearestAvailableStrategy uses distance.
-                    end note
-                    AM --> ABA : selectedRobotaxi or null
-                    deactivate AM
+        aba -> pm: filterAvailable(candidates, timeWindow)
+        activate pm
+        pm --> aba: availableCandidates
+        deactivate pm
 
-                    alt a robotaxi was selected
-                        ABA -> ABA : remove selected robotaxi from remaining candidates
-                        ABA -> ESG : getETA(selectedRobotaxiOrigin, pickup)
-                        activate ESG
-                        ESG --> ABA : etaToPickup
-                        deactivate ESG
-                        opt pickup ETA can be estimated
-                            ABA -> ABA : compute actual reservation window
-                            ABA -> PM : reserve(vehicle, request, window,\nrequest-to-vehicle link)
-                            activate PM
-                            PM --> ABA : reservationResult
-                            deactivate PM
-                            opt reservation committed
-                                ABA -> FM : assign(robotaxiId, rideAssignment)
-                                activate FM
-                                alt state transition persisted successfully
-                                    FM -> NM : update(RobotaxiStateChangedEvent: ASSIGNED)
-                                    activate NM
-                                    deactivate NM
-                                    FM --> ABA : assignment completed
-                                else illegal transition or concurrent state change
-                                    FM --> ABA : transition error
-                                end
-                                deactivate FM
+        aba -> am: allocate(request, availableCandidates)
+        activate am
+        am --> aba: selectedRobotaxi
+        deactivate am
 
-                                opt assignment failed
-                                    ABA -> PM : update(newReservation, releasedAt = now)
-                                    activate PM
-                                    deactivate PM
-                                end
-                            end
-                        end
-                    else no candidate can be selected
-                        ABA -> ABA : stop candidate search
-                    end
-                end
-            end
-        end
+        alt feasible robotaxi found
 
-        alt a robotaxi has been assigned
-            ABA -> PM : update(booking, activatedAt, closedAt,\nvehicle and reservation references)
-            activate PM
-            deactivate PM
-            ABA -> PM : update(ride, assigned robotaxiId)
-            activate PM
-            deactivate PM
-            note over ABA, NM
-                Assignment was already notified inside FleetMonitor.assign().
-                Attaching the robotaxi to the Ride does not duplicate it.
-            end note
-        else no feasible assignment
-            ABA -> PM : update(ride_request, REJECTED, assignedRobotaxiId = null)
-            activate PM
-            deactivate PM
-            ABA -> PM : update(booking, closedAt = now)
-            activate PM
-            deactivate PM
-            ABA -> PM : update(ride, CANCELLED)
-            activate PM
-            deactivate PM
-            ABA -> NM : update(RideStatusChangedEvent: CANCELLED)
-            activate NM
-            deactivate NM
+            aba -> pm: reserve(request, selectedRobotaxi, timeWindow)
+            activate pm
+            pm --> aba: reservationConfirmed
+            deactivate pm
+
+            aba -> fm: assign(selectedRobotaxi, request)
+            activate fm
+            fm --> aba: assignmentConfirmed
+            deactivate fm
+
+        else no feasible robotaxi
+
+            aba -> pm: update(request, REJECTED)
+            activate pm
+            pm --> aba: updateConfirmed
+            deactivate pm
+
         end
     end
 end
-
-ABA --> S : activationReport
-deactivate ABA
-deactivate S
 
 @enduml
