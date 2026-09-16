@@ -162,9 +162,8 @@ Before running a demo:
 Each demo automatically prepares the required database state and starts the application stack.
 
 In the immediate-ride, advance-booking and traffic scenarios, `Demo pronta` is followed by a 7-second countdown («La demo comincia fra 7…»), which leaves time to open the pages and sign in; nothing happens before `La demo è cominciata`. The margin can be changed, or removed with 0, through the `DEMO_START_DELAY_SECONDS` environment variable, for example `$env:DEMO_START_DELAY_SECONDS="10"` before the command.
-For details on the demonstration environment, scenarios and diagrams,
 
-see [Demonstration Environment](docs/DEMONSTRATION.md).
+For details on the demonstration environment, scenarios and diagrams, see [Demonstration Environment](docs/DEMONSTRATION.md).
 
 
 ### Scenario 1 - Immediate ride
