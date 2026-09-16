@@ -36,7 +36,7 @@ The application exposes configuration settings for:
 
 Each setting has a default value for normal operation. The demonstration runner supplies scenario-specific values when needed.
 
-![Demonstration environment: tools outside the application and configuration points inside it.](demonstration_environment.svg)
+![Demonstration environment: tools outside the application and configuration points inside it.](diagrams/demonstration_environment.svg)
 
 ## Execution flow
 
@@ -46,7 +46,7 @@ During an interactive demonstration, the stack remains active. Scheduled activit
 
 The automated browser replay terminates after checking its scenario.
 
-![Activity diagram of a demonstration run.](demonstration_run.svg)
+![Activity diagram of a demonstration run.](diagrams/demonstration_run.svg)
 
 ## Demonstration scenarios
 
@@ -85,7 +85,7 @@ The local traffic model remains encapsulated within the external-services module
 
 For travel-time adjustment, the current implementation samples the straight segment between origin and destination. This is an approximation when the routing provider supplies a road route. The simulator applies slowdown along the actual polyline it follows, so estimated and observed travel times are not guaranteed to match exactly.
 
-![Class diagram of the traffic sources and shared slowdown model.](traffic_sources.svg)
+![Class diagram of the traffic sources and shared slowdown model.](diagrams/traffic_sources.svg)
 
 ### Automatic strategy switching
 
@@ -107,7 +107,7 @@ During high traffic, Minimum ETA compares estimates that include traffic slowdow
 
 When allocation explanations are enabled, the operator can inspect the reasoning associated with the selected vehicle.
 
-![Sequence diagram of a generated ride request allocated under high traffic, including the allocation explanation.](seq_demo_traffic_allocation.svg)
+![Sequence diagram of a generated ride request allocated under high traffic, including the allocation explanation.](diagrams/seq_demo_traffic_allocation.svg)
 
 ## Fleet simulation
 
