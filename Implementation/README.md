@@ -161,6 +161,9 @@ Before running a demo:
 
 Each demo automatically prepares the required database state and starts the application stack.
 
+For details on the demonstration environment, scenarios and diagrams,
+see [Demonstration Environment](docs/DEMONSTRATION.md).
+
 ### Scenario 1 - Immediate ride
 
 ```powershell
