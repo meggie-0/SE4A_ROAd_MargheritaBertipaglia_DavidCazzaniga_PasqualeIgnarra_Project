@@ -161,8 +161,11 @@ Before running a demo:
 
 Each demo automatically prepares the required database state and starts the application stack.
 
+In the immediate-ride, advance-booking and traffic scenarios, `Demo pronta` is followed by a 7-second countdown («La demo comincia fra 7…»), which leaves time to open the pages and sign in; nothing happens before `La demo è cominciata`. The margin can be changed, or removed with 0, through the `DEMO_START_DELAY_SECONDS` environment variable, for example `$env:DEMO_START_DELAY_SECONDS="10"` before the command.
 For details on the demonstration environment, scenarios and diagrams,
+
 see [Demonstration Environment](docs/DEMONSTRATION.md).
+
 
 ### Scenario 1 - Immediate ride
 
@@ -172,7 +175,7 @@ pnpm demo:immediate --live
 
 Demonstrates an immediate passenger ride request, robotaxi allocation, vehicle approach, passenger pickup, and ride execution.
 
-- **Open:** wait for `Demo pronta` in the terminal (the first API compilation can take a minute), then open the passenger application at http://localhost:5174 with the passenger account and the operator dashboard at http://localhost:5173 with the operator account.
+- **Open:** wait for `Demo pronta` in the terminal (the first API compilation can take a minute), then, during the countdown, open the passenger application at http://localhost:5174 with the passenger account and the operator dashboard at http://localhost:5173 with the operator account.
 - **Do:** in the passenger application, select the pickup point and the destination on the map and request the ride.
 - **Watch:** the ride panel goes through assignment, approach, pickup, and ride; on the dashboard the assigned robotaxi moves and the operational log («Log operativo») updates in real time.
 - **Duration:** about two minutes, depending on the chosen route.
@@ -186,7 +189,7 @@ pnpm demo:advance
 
 Demonstrates the creation of an advance booking and its automatic activation before the requested departure time.
 
-- **Open:** wait for `Demo pronta` in the terminal, then open the passenger application at http://localhost:5174 with the passenger account and the operator dashboard at http://localhost:5173 with the operator account.
+- **Open:** wait for `Demo pronta` in the terminal, then, during the countdown, open the passenger application at http://localhost:5174 with the passenger account and the operator dashboard at http://localhost:5173 with the operator account.
 - **Do:** book a ride with a departure **two or three minutes from now**. In this demo the activation happens 1 minute before the departure time instead of 15.
 - **Watch:** the booking first appears among the scheduled rides, without a robotaxi; one minute before the departure time the system activates it by itself, assigns a robotaxi, and the ride starts.
 - **Duration:** about three or four minutes.
@@ -199,8 +202,8 @@ pnpm demo:traffic
 
 Demonstrates changing traffic conditions, automatic allocation-strategy switching, and traffic-aware robotaxi assignment.
 
-- **Open:** as soon as `Demo pronta` appears, open the operator dashboard at http://localhost:5173 with the operator account. Nothing needs to be pressed.
-- **Watch:** timings are counted from the API start and can shift by up to ten seconds. At 60 s traffic in the centre reaches MEDIUM, a suggestion appears, but the strategy does not change. At 90 s it reaches HIGH and the strategy switches by itself to «ETA minimo». At 150 s (MEDIUM) it stays there, and at 180 s (LOW) it returns to «Più vicino disponibile».
+- **Open:** when `Demo pronta` appears, open the operator dashboard at http://localhost:5173 with the operator account during the countdown. Nothing needs to be pressed.
+- **Watch:** timings are counted from `La demo è cominciata` and can shift by up to ten seconds; the first ride requests arrive about ten seconds after it. At 60 s traffic in the centre reaches MEDIUM, a suggestion appears, but the strategy does not change. At 90 s it reaches HIGH and the strategy switches by itself to «ETA minimo». At 150 s (MEDIUM) it stays there, and at 180 s (LOW) it returns to «Più vicino disponibile».
 - In the operational log, lines ending in «… il più vicino, RT-xx, ne avrebbe impiegati …» are assignments where the algorithm picked a robotaxi that is farther away but faster. The minutes in the log are simulated-world minutes: the world runs about 30 times faster than the clock.
 - **Duration:** about three minutes. The 51 ride requests are generated automatically with a fixed seed, so they are the same at every run; which robotaxi serves each one can vary slightly, because the stack runs in real time and the travel-time estimates come from the OSRM service.
 

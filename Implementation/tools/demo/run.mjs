@@ -42,6 +42,9 @@ const SCENARIOS = {
       ],
     },
     scripted: true,
+    // Dal vivo non succede niente finché qualcuno non chiede una corsa: il margine è solo il conto
+    // alla rovescia, per dare a chi registra lo stesso segnale di partenza degli altri scenari.
+    startDelay: true,
     title: 'Scenario 1 - corsa immediata',
     grep: 'Scenario 1',
     dataset: 'seed',
@@ -63,6 +66,8 @@ const SCENARIOS = {
       ],
     },
     scripted: false,
+    // Come la corsa immediata: tutto parte da una prenotazione, quindi basta il conto alla rovescia.
+    startDelay: true,
     title: 'Scenario 2 - prenotazione anticipata',
     grep: 'Scenario 2',
     dataset: 'seed',
@@ -78,6 +83,7 @@ const SCENARIOS = {
       apri: ['Dashboard operatore http://localhost:5173'],
       guarda: [
         'Osserva contemporaneamente la mappa, la strategia di allocazione e il log operativo.',
+        'I tempi contano da «La demo è cominciata», e possono slittare fino a dieci secondi.',
         '',
         '  0 s   LOW     Il sistema usa la strategia «Più vicino disponibile».',
         ' 60 s   MEDIUM  Il traffico aumenta nelle zone centrali e viene mostrato un suggerimento.',
@@ -92,6 +98,8 @@ const SCENARIOS = {
     },
     scripted: false,
     requests: true,
+    // Il margine sposta insieme la tabella del traffico e il generatore: vedi `withStartDelay()`.
+    startDelay: true,
     title: 'Scenario 3 - traffico e allocazione dinamica',
     grep: 'Scenario 3',
     dataset: 'seed',
@@ -131,6 +139,62 @@ const SCENARIOS = {
 };
 
 const PORTS = [3000, 5173, 5174];
+
+/**
+ * Il margine fra «Demo pronta» e il momento in cui la demo comincia davvero, in secondi.
+ *
+ * Serve a chi registra la demo dall'inizio: letto «Demo pronta», apre le pagine ed entra con le
+ * credenziali, e in quel tempo non deve succedere niente che il video perderebbe. Sette secondi di
+ * default; `DEMO_START_DELAY_SECONDS` lo cambia, e zero lo toglie. È una variabile **del runner**:
+ * l'API non la legge, quindi fuori da `pnpm demo:*` non ha alcun effetto.
+ */
+function readStartDelay() {
+  const raw = process.env.DEMO_START_DELAY_SECONDS;
+  if (raw === undefined || raw.trim() === '') return 7;
+  const seconds = Number(raw);
+  if (!Number.isInteger(seconds) || seconds < 0) {
+    console.error(`DEMO_START_DELAY_SECONDS deve essere un intero ≥ 0, non «${raw}».`);
+    process.exit(1);
+  }
+  return seconds;
+}
+
+const START_DELAY_SECONDS = readStartDelay();
+
+/**
+ * L'ambiente dello scenario con il margine applicato **al mondo**, dove serve.
+ *
+ * Nel traffico un'attesa nel runner non basterebbe, perché gli orologi sono due. La tabella del
+ * traffico scriptato conta dall'avvio dell'API — `ScriptedTrafficGateway` fissa l'istante nel
+ * costruttore — mentre il generatore di richieste conta da quando il runner lo lancia, subito dopo
+ * «Demo pronta». Il ritmo delle richieste è tarato su quella tabella (decisione D79): il picco cade
+ * ai bordi del centro mentre il centro è a `HIGH`. Ritardare solo il generatore farebbe cadere il
+ * picco fuori da `HIGH`.
+ *
+ * Quindi si spostano **entrambi** dello stesso margine: qui ogni gradino della tabella, più avanti
+ * la partenza del generatore. Il loro allineamento resta quello di prima, al secondo — compreso lo
+ * scarto fra l'avvio dell'API e «Demo pronta», che c'era già e non cambia. Prima del primo gradino
+ * la sorgente vale il primo livello, quindi nei secondi di margine il centro resta `LOW`.
+ */
+function withStartDelay(env) {
+  if (START_DELAY_SECONDS === 0 || env.TRAFFIC_SCRIPT === undefined) return env;
+  const shifted = env.TRAFFIC_SCRIPT.split(',')
+    .map((step) => {
+      const [level, second] = step.split(':');
+      return `${level}:${Number(second) + START_DELAY_SECONDS}`;
+    })
+    .join(',');
+  return { ...env, TRAFFIC_SCRIPT: shifted };
+}
+
+/** Il conto alla rovescia, una riga al secondo, e poi il segnale di partenza. */
+async function countdown(seconds) {
+  for (let left = seconds; left > 0; left -= 1) {
+    console.log(colors.bold(`La demo comincia fra ${left}…`));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  console.log(colors.bold('\nLa demo è cominciata.\n'));
+}
 
 /**
  * Vero se qualcuno risponde su quella porta, da una delle due interfacce di loopback.
@@ -257,11 +321,13 @@ if (scenario.scripted === true && !live) {
  *
  * Quindi: si avvia, si aspetta che `GET /health` risponda, e solo allora si parla.
  */
+const liveEnv = scenario.startDelay === true ? withStartDelay(scenario.env) : scenario.env;
+
 const dev = spawn('pnpm dev', {
   cwd: repoRoot,
   shell: true,
   stdio: 'inherit',
-  env: { ...process.env, ...scenario.env },
+  env: { ...process.env, ...liveEnv },
 });
 
 dev.on('exit', (code) => process.exit(code ?? 0));
@@ -303,11 +369,14 @@ if (!(await waitForApi())) {
   console.log(colors.bold('\nLa demo è in esecuzione. Premi Ctrl+C per terminarla.'));
   console.log(colors.bold('─'.repeat(78) + '\n'));
 
+  if (scenario.startDelay === true && START_DELAY_SECONDS > 0) await countdown(START_DELAY_SECONDS);
+
   /**
-   * Le richieste partono **dopo** che si è detto cosa aprire, e subito.
+   * Le richieste partono **alla fine del margine**, e subito.
    *
-   * La tabella del traffico conta dall'avvio dell'API, quindi il generatore non può aspettare chi
-   * guarda: i primi quaranta secondi sono volutamente tranquilli, ed è il tempo di aprire la pagina.
+   * La tabella del traffico è già stata spostata dello stesso margine (`withStartDelay()`), quindi
+   * partire qui e non a «Demo pronta» lascia richieste e traffico allineati come prima. Il generatore
+   * non aspetta chi guarda oltre il margine: i primi quaranta secondi sono volutamente tranquilli.
    */
   if (scenario.requests === true) {
     console.log(colors.dim('Generazione automatica delle richieste di corsa:'));
